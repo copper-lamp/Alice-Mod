@@ -25,7 +25,7 @@ export function isValidResponse(msg: unknown): msg is JsonRpcResponse {
   if (typeof msg !== 'object' || msg === null) return false;
   const obj = msg as Record<string, unknown>;
   if (obj.jsonrpc !== '2.0') return false;
-  if (obj.id === undefined && obj.id === null) return false;
+  if (obj.id === undefined || obj.id === null) return false;
   return 'result' in obj || ('error' in obj && isValidError(obj.error));
 }
 

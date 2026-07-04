@@ -56,12 +56,20 @@ export enum ErrorCode {
   MethodNotFound = -32601,
   InvalidParams = -32602,
   InternalError = -32603,
-  /** 自定义：工具执行超时 */
-  ToolTimeout = -32000,
-  /** 自定义：工具执行失败 */
-  ToolExecutionFailed = -32001,
-  /** 自定义：认证失败 */
-  AuthFailed = -32002,
-  /** 自定义：连接断开 */
-  ConnectionLost = -32003,
+  /** 自定义：工具执行失败（工具返回 success=false） */
+  ToolExecutionFailed = -32000,
+  /** 自定义：认证失败（handshake 校验不通过） */
+  AuthFailed = -32001,
+  /** 自定义：未认证（未 handshake 就发送其他消息） */
+  Unauthorized = -32002,
+  /** 自定义：版本不匹配（AC 和 Adapter 协议版本不一致） */
+  VersionMismatch = -32003,
+  /** 自定义：工具未找到（调用的工具未注册） */
+  ToolNotFound = -32004,
+  /** 自定义：工具超时（工具执行超过 timeout） */
+  ToolTimeout = -32005,
+  /** 自定义：实例忙（实例正在执行其他命令） */
+  InstanceBusy = -32006,
+  /** 自定义：连接数超限（超过最大连接数 10） */
+  ConnectionLimitExceeded = -32009,
 }
