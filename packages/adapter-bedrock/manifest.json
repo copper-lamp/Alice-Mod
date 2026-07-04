@@ -1,0 +1,6 @@
+{
+  "name": "McAgent-BE",
+  "version": "1.0.0",
+  "description": "McAgent 基岩版接入核心",
+  "entry": "dist/index.js"
+}

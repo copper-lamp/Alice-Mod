@@ -1,0 +1,27 @@
+{
+  "name": "mcagent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minecraft AI Agent 框架 — 让大语言模型像真人玩家一样在 Minecraft 中自主完成任务",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter agent-core dev",
+    "test": "pnpm -r test",
+    "lint": "eslint 'packages/*/src/**/*.{ts,tsx}'",
+    "typecheck": "pnpm -r typecheck",
+    "format": "prettier --write 'packages/*/src/**/*.{ts,tsx,json}'"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint-plugin-react": "^7.34.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "prettier": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}

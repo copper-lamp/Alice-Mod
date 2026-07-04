@@ -1,0 +1,28 @@
+plugins {
+    id("fabric-loom") version "1.9.4"
+    id("java-library")
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = "Fabric"
+        url = uri("https://maven.fabricmc.net/")
+    }
+}
+
+dependencies {
+    minecraft("com.mojang:minecraft:${project.property("minecraftVersion")}")
+    mappings(loom.officialMojangMappings())
+    modImplementation("net.fabricmc:fabric-loader:${project.property("loaderVersion")}")
+    modImplementation("net.fabricmc.fabric-api:fabric-api:${project.property("apiVersion")}")
+
+    implementation("org.xerial:sqlite-jdbc:3.45.1.0")
+    implementation("com.google.code.gson:gson:2.11.0")
+}

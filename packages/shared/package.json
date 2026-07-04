@@ -1,0 +1,24 @@
+{
+  "name": "@mcagent/shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "McAgent 共享类型定义库 — JSON-RPC 2.0 核心类型、Tool Schema、协议校验工具、常量与枚举",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'No tests yet'"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

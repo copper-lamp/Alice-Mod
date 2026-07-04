@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "mcagent-adapter",
+  "version": "1.0.0",
+  "name": "McAgent Adapter JE",
+  "description": "McAgent Fabric adapter for Java Edition",
+  "authors": [
+    "McAgent"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/mcagent-adapter/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "io.mcagent.adapter.McAgentMod"
+    ]
+  },
+  "mixins": [
+    "mcagent-adapter.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": ">=1.21",
+    "java": ">=21"
+  }
+}

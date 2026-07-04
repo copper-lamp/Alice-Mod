@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+out/
+.github/workflows/
+
+# IDE
+.vscode/
+.trae/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# Database
+*.db
+*.db-journal
+*.sqlite
+
+# Electron
+out/
+
+# Java / Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# pnpm
+.pnpm-store/
+
+#
+.superpowers/
+.trae-html-share-packages/
+bds26.10/
+libs/
