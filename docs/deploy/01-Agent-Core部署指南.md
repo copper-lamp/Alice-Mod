@@ -10,7 +10,7 @@
 
 ### 1.1 Agent Core 的角色
 
-Agent Core 是 McAgent 系统的**智能体核心**，基于 Electron + TypeScript/Node.js 构建的桌面应用。它是整个系统的"大脑"，承担三个核心角色：
+Agent Core 是 Alice Mod 系统的**智能体核心**，基于 Electron + TypeScript/Node.js 构建的桌面应用。它是整个系统的"大脑"，承担三个核心角色：
 
 | 角色 | 说明 |
 |------|------|

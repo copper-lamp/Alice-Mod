@@ -10,7 +10,7 @@
 
 ### 1.1 Adapter Core JE 的角色
 
-Adapter Core JE（Java Edition）是 McAgent 系统中运行在 **Minecraft Java Edition 客户端** 上的 Fabric 模组，使用 Java 语言实现。它是整个系统的"手脚"，承担两个核心角色：
+Adapter Core JE（Java Edition）是 Alice Mod 系统中运行在 **Minecraft Java Edition 客户端** 上的 Fabric 模组，使用 Java 语言实现。它是整个系统的"手脚"，承担两个核心角色：
 
 | 角色 | 说明 |
 |------|------|

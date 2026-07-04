@@ -1,5 +1,5 @@
 /**
- * @mcagent/shared — McAgent 共享类型定义库
+ * @alice-mod/shared — Alice Mod 共享类型定义库
  */
 
 export * from './types/index.js';

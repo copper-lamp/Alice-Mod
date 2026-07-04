@@ -14,7 +14,7 @@ const App: React.FC = () => {
         color: '#e0e0e0'
       }}
     >
-      <h1 style={{ fontSize: '2.5rem', margin: 0 }}>McAgent - Agent Core</h1>
+      <h1 style={{ fontSize: '2.5rem', margin: 0 }}>Alice Mod - Agent Core</h1>
       <p style={{ fontSize: '1rem', marginTop: '0.5rem', color: '#888' }}>
         Electron + React 桌面客户端
       </p>

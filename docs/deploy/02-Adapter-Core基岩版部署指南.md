@@ -1,4 +1,4 @@
-# McAgent Adapter Core 基岩版（BE）部署指南
+# Alice Mod Adapter Core 基岩版（BE）部署指南
 
 > 版本：v1.0  
 > 日期：2026-07-04  
@@ -10,7 +10,7 @@
 
 ### 1.1 Adapter Core BE 的角色
 
-Adapter Core BE 是 McAgent 三层解耦架构中的**接入核心（基岩版）**，作为运行在 Minecraft Bedrock Dedicated Server（BDS）上的 LeviLamina 插件，负责：
+Adapter Core BE 是 Alice Mod 三层解耦架构中的**接入核心（基岩版）**，作为运行在 Minecraft Bedrock Dedicated Server（BDS）上的 LeviLamina 插件，负责：
 
 - **执行 AI 低级操作**：将 Agent Core 下发的 JSON-RPC 2.0 指令转换为游戏内的具体操作（移动、挖掘、放置、战斗等）
 - **游戏内工具集**：提供 108+ 游戏内工具，涵盖感知、移动、背包、战斗、方块、交互、生存、对话等类别

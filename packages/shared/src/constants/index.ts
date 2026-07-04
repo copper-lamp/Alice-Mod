@@ -1,5 +1,5 @@
 /**
- * McAgent 常量与枚举
+ * Alice Mod 常量与枚举
  */
 
 /** TCP 通信默认配置 */
@@ -20,7 +20,7 @@ export const VERSION = {
 } as const;
 
 /** 项目名称 */
-export const PROJECT_NAME = 'McAgent';
+export const PROJECT_NAME = 'Alice Mod';
 
 /** 工具相关常量 */
 export const TOOL = {

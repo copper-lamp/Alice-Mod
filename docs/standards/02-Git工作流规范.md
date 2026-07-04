@@ -1,8 +1,8 @@
-# McAgent Git 工作流规范
+# Alice Mod Git 工作流规范
 
 > 版本：v1.0
 > 日期：2026-07-04
-> 适用范围：所有 McAgent 子模块（Agent Core、Adapter Core BE、Adapter Core JE、Shared）
+> 适用范围：所有 Alice Mod 子模块（Agent Core、Adapter Core BE、Adapter Core JE、Shared）
 > 关联文档：[00-顶层设计.md](../00-顶层设计.md)、[02-模块划分与功能简介.md](../02-模块划分与功能简介.md)
 
 ---
@@ -11,7 +11,7 @@
 
 ### 1.1 目标
 
-本规范旨在建立 McAgent 项目的统一 Git 工作流标准，实现以下目标：
+本规范旨在建立 Alice Mod 项目的统一 Git 工作流标准，实现以下目标：
 
 | 目标 | 说明 |
 | --- | --- |
