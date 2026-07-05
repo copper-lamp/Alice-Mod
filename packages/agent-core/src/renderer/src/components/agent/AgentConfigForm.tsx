@@ -94,9 +94,9 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId }) => {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 overflow-hidden">
       {/* 顶部操作栏 */}
-      <div className="flex items-center justify-between mb-6 shrink-0">
+      <div className="flex items-center justify-between mb-6 px-8 pt-6 shrink-0">
         <h2 className="text-lg font-semibold text-gray-800">
           {agentId ? '编辑智能体' : '创建智能体'}
         </h2>
@@ -123,7 +123,7 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId }) => {
       )}
 
       {/* 表单内容 - 留白优化 */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto px-8">
         <div className="max-w-2xl mx-auto space-y-8 pb-8">
           {/* 1. 基本信息 */}
           <section>

@@ -8,6 +8,7 @@ import { useConfigStore } from '../../stores/configStore'
 
 const AppLayout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const showRightSidebar = useUIStore(s => s.showRightSidebar)
+  const layoutMode = useUIStore(s => s.layoutMode)
   const openConfigPanel = useConfigStore(s => s.openConfigPanel)
 
   return (
@@ -15,7 +16,7 @@ const AppLayout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
       <CustomTitleBar onConfigOpen={openConfigPanel} />
       <div className="flex flex-1 overflow-hidden">
         <LeftSidebar />
-        <main className="flex-1 flex flex-col overflow-hidden p-4">
+        <main className={`flex-1 flex flex-col overflow-hidden ${layoutMode === 'nav-view' ? 'p-4' : ''}`}>
           {children}
         </main>
         {showRightSidebar && <RightSidebar />}

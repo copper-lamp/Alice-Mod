@@ -148,6 +148,7 @@ export interface AgentSummary {
   toolCount: number
   lastActiveAt?: number
   workspaceId?: string
+  skinData?: string
 }
 
 /** 智能体完整配置 */

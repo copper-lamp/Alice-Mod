@@ -47,6 +47,6 @@ export function useChat() {
     error: store.error,
     sendMessage,
     clearChat: store.clearChat,
-    stopStreaming: store.stopStreaming
+    stopStream: store.stopStream
   }
 }

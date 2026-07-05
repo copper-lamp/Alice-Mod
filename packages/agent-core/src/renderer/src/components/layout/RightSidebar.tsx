@@ -2,7 +2,7 @@ import React from 'react'
 
 const RightSidebar: React.FC = () => {
   return (
-    <aside className="w-72 flex flex-col bg-gray-100">
+    <aside className="w-72 flex flex-col bg-gray-100 border-l border-gray-200">
       <div className="p-4">
         <h3 className="text-xs text-gray-400 font-medium mb-2">上下文窗口</h3>
         <div className="flex items-center gap-3">

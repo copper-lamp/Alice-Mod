@@ -78,8 +78,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setError: err => set({ error: err }),
 
-  stopStreaming: () => {
-    const { finishStream } = get()
-    finishStream()
+  stopStream: () => {
+    if (get().isStreaming) {
+      set({
+        currentStreamingId: null,
+        streamingEvents: [],
+        isStreaming: false
+      })
+    }
   }
 }))

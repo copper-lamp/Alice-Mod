@@ -5,6 +5,18 @@ import { useAgentStore } from '../../stores/agentStore'
 import ChatPanel from '../chat/ChatPanel'
 import AgentConfigForm from './AgentConfigForm'
 
+function formatTime(ts: number): string {
+  const d = new Date(ts)
+  const now = new Date()
+  const diffMs = now.getTime() - d.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return '刚刚'
+  if (diffMin < 60) return `${diffMin} 分钟前`
+  const diffHour = Math.floor(diffMin / 60)
+  if (diffHour < 24) return `${diffHour} 小时前`
+  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+}
+
 const AgentInstanceView: React.FC = () => {
   const { agentViewTab, setAgentViewTab } = useUIStore()
   const { currentAgent, fetchAgent, agents, currentAgentId } = useAgentStore()
@@ -15,7 +27,7 @@ const AgentInstanceView: React.FC = () => {
     }
   }, [currentAgentId])
 
-  // 从 agents 列表中找到当前智能体的概要信息（用于获取状态）
+  // 从 agents 列表中找到当前智能体的概要信息
   const currentSummary = agents.find(a => a.id === currentAgentId)
 
   if (!currentAgentId || !currentSummary) {
@@ -38,33 +50,39 @@ const AgentInstanceView: React.FC = () => {
     )
   }
 
-  const statusColor = {
-    online: 'bg-green-400',
-    connecting: 'bg-yellow-400',
-    offline: 'bg-gray-300'
-  }[currentSummary.status] ?? 'bg-gray-300'
-
   return (
     <div className="flex-1 flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-      {/* 标题栏：左侧头像/名字/时间，右侧 tabs */}
+      {/* 标题栏 - 上栏：头像、名字、最后运行时间、Tabs */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 shrink-0">
         <div className="flex items-center gap-3">
-          {currentAgent?.skinData && (
-            <img src={currentAgent.skinData} alt="头像" className="w-8 h-8 rounded-full object-cover" />
-          )}
-          <span className={`w-2.5 h-2.5 rounded-full ${statusColor}`} />
-          <span className="text-base font-semibold text-gray-800">{currentSummary.name}</span>
-          <span className="text-xs text-gray-400">
-            最后运行: {currentSummary.lastActiveAt
-              ? new Date(currentSummary.lastActiveAt).toLocaleString('zh-CN')
-              : '从未运行'}
+          {/* 头像 */}
+          <div className="w-8 h-8 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center border border-gray-200">
+            {(currentSummary.skinData || currentAgent?.skinData) ? (
+              <img
+                src={currentSummary.skinData || currentAgent?.skinData}
+                alt="头像"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <span className="text-sm font-medium text-gray-500">
+                {currentSummary.name.charAt(0)}
+              </span>
+            )}
+          </div>
+          {/* 名字 */}
+          <div>
+            <span className="text-base font-semibold text-gray-800">{currentSummary.name}</span>
+            <span className="text-xs text-gray-400 ml-2 capitalize">{currentSummary.status}</span>
+          </div>
+          {/* 最后运行时间 */}
+          <span className="text-xs text-gray-400 ml-1">
+            {currentSummary.lastActiveAt ? `最后活跃: ${formatTime(currentSummary.lastActiveAt)}` : '未运行'}
           </span>
         </div>
-
+        {/* Tabs 在右侧 */}
         <Tabs
           selectedKey={agentViewTab}
           onSelectionChange={(key) => setAgentViewTab(key as 'info' | 'config')}
-          className="shrink-0"
         >
           <Tabs.ListContainer>
             <Tabs.List aria-label="智能体视图">
@@ -81,16 +99,12 @@ const AgentInstanceView: React.FC = () => {
         </Tabs>
       </div>
 
-      {/* 内容区 */}
-      <div className="flex-1 overflow-hidden">
-        {agentViewTab === 'info' ? (
-          <ChatPanel />
-        ) : (
-          <div className="h-full p-5">
-            <AgentConfigForm agentId={currentAgentId} />
-          </div>
-        )}
-      </div>
+      {/* 内容区 - 下栏 */}
+      {agentViewTab === 'info' ? (
+        <ChatPanel />
+      ) : (
+        <AgentConfigForm agentId={currentAgentId} />
+      )}
     </div>
   )
 }

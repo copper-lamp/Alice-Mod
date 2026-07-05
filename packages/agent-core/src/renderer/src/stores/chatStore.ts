@@ -25,7 +25,7 @@ interface ChatState {
   finishStream: () => void
   clearChat: () => void
   setError: (err: string | null) => void
-  stopStreaming: () => void
+  stopStream: () => void
 }
 
 export type { ChatState }
