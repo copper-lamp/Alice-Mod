@@ -1,2 +1,40 @@
-// LLM 模块 - 与大语言模型交互
-export {};
+/**
+ * LLM 模块 — V6 LLM Provider ×4 + ModelRouter
+ *
+ * 与大语言模型交互的统一接口，包括：
+ * - Provider 抽象层（OpenAI / Claude / Gemini / Ollama）
+ * - ProviderRegistry 注册管理
+ * - ModelRouter 路由选择 + 降级策略
+ * - ConfigManager 配置管理
+ * - LLMObserver 调用观测
+ */
+
+// 类型定义
+export * from './types';
+
+// 基础 Provider
+export { BaseProvider, ProviderError } from './providers/base-provider';
+
+// 具体 Provider 实现
+export { OpenAIProvider } from './providers/openai';
+export { ClaudeProvider } from './providers/claude';
+export { GeminiProvider } from './providers/gemini';
+export { OllamaProvider } from './providers/ollama';
+
+// 注册管理
+export { ProviderRegistry, providerRegistry } from './registry/provider-registry';
+
+// 路由
+export { DefaultModelRouter } from './router/model-router';
+export { createBuiltinRules, createTaskTypeRule } from './router/router-rules';
+export { FallbackHandler } from './router/fallback-handler';
+
+// 配置管理
+export { DefaultLLMConfigManager, MemoryStorageAdapter } from './config/config-manager';
+export type { StorageAdapter } from './config/config-manager';
+export { LLM_CONFIG_DEFAULTS, CONFIG_KEYS } from './config/llm-config';
+
+// 观测
+export { DefaultLLMObserver } from './observer/llm-observer';
+export { MemoryObserverStore } from './observer/observer-store';
+export type { IObserverStore } from './observer/observer-store';

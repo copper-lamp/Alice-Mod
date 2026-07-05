@@ -4,6 +4,8 @@
  * 负责 Request / Response / Notification 的消息解析和组装。
  */
 
+import crypto from 'node:crypto';
+
 import type {
   JsonRpcRequest,
   JsonRpcResponse,

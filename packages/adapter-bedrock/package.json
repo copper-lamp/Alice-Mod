@@ -1,5 +1,5 @@
 {
-  "name": "@mcagent/adapter-bedrock",
+  "name": "@alice-mod/adapter-bedrock", 
   "version": "1.0.0",
   "private": true,
   "type": "module",
