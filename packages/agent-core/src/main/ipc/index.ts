@@ -6,6 +6,8 @@ import { registerDashboardHandlers } from './dashboard-handler'
 import { registerAgentHandlers } from './agent-handler'
 import { registerModelHandlers } from './model-handler'
 import { registerQQBotHandlers } from './qq-bot-handler'
+import { registerLogHandlers } from './log-handler'
+import { registerToolCallHandlers } from './tool-call-handler'
 
 export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerChatHandlers()
@@ -15,4 +17,6 @@ export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerAgentHandlers()
   registerModelHandlers()
   registerQQBotHandlers()
+  registerLogHandlers()
+  registerToolCallHandlers()
 }

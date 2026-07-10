@@ -1,8 +1,31 @@
 import { app, BrowserWindow, shell } from 'electron'
 import path from 'path'
+import { initLogger, getLogger, getLogDb } from './log'
 import { registerAllIpcHandlers } from './ipc'
+import { setLogDb } from './ipc/log-handler'
+import { getToolCallCollector, setToolCallCollector } from './ipc/tool-call-handler'
+import { PipelineEventCollector } from './pipeline/event-collector'
 
 let mainWindow: BrowserWindow | null = null
+
+async function initializeServices(): Promise<void> {
+  // 初始化日志系统（优先，其他模块初始化时即可记录日志）
+  const logger = initLogger()
+  logger.info('SYSTEM', '日志系统初始化完成')
+
+  // 设置 IPC Handler 的数据库引用
+  const logDb = getLogDb()
+  if (logDb) {
+    setLogDb(logDb)
+  }
+
+  // 初始化工具调用事件收集器
+  const collector = new PipelineEventCollector()
+  if (logDb) {
+    collector.setDatabase(logDb)
+  }
+  setToolCallCollector(collector)
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -53,7 +76,8 @@ function createWindow(): void {
   })
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await initializeServices()
   createWindow()
 
   app.on('activate', () => {

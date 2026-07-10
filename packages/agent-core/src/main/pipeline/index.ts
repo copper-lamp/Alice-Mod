@@ -29,3 +29,7 @@ export { MetricsMiddleware, type PipelineMetrics } from './middleware/builtin/me
 
 // 所有类型
 export * from './types';
+
+// V9 工具调用记录器
+export { PipelineEventCollector } from './event-collector';
+export type { ToolCallRecord, ToolCallStats } from './event-collector';
