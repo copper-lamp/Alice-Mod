@@ -72,7 +72,6 @@ const QQ_SUB_AGENT_PROFILE: AgentProfile = {
     extras: {},
   },
   fragments: [],
-  fragmentsOrder: [],
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -371,7 +370,7 @@ export class QQSubAgent {
   private recordAssistantResponse(response: LLMResponse): void {
     const msg: ConversationMessage = {
       role: 'assistant',
-      content: response.message.content || '',
+      content: typeof response.message.content === 'string' ? response.message.content : response.message.content.map(c => 'text' in c ? c.text : '').join(' '),
     };
 
     if (response.message.tool_calls && response.message.tool_calls.length > 0) {

@@ -6,6 +6,8 @@
 
 export { QQSubAgent } from './qq-sub-agent';
 export { MainAgentTaskQueue, mainAgentTaskQueue } from './main-agent-queue';
+export { NapCatManager, createNapCatManager } from './napcat-manager';
+export type { NapCatManagerOptions, NapCatStatus, QRCodeResult, LoginStatusResult, QQLoginInfo } from './napcat-manager';
 export { OneBotClient } from './onebot-client';
 export { PermissionManager } from './permission';
 export { MessageBridge } from './message-bridge';

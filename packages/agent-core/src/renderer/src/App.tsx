@@ -3,6 +3,7 @@ import AppLayout from './components/layout/AppLayout'
 import DashboardPanel from './components/dashboard/DashboardPanel'
 import ModelPanel from './components/model/ModelPanel'
 import KnowledgePanel from './components/knowledge/KnowledgePanel'
+import { RobotPage } from './components/qq-bot'
 import AgentInstanceView from './components/agent/AgentInstanceView'
 import AgentCreatePage from './components/agent/AgentCreatePage'
 import ConfigPanel from './components/settings/ConfigPanel'
@@ -33,11 +34,7 @@ const App: React.FC = () => {
       case 'knowledge':
         return <KnowledgePanel key={activeNav} />
       case 'robot':
-        return (
-          <div key={activeNav} className="flex-1 flex items-center justify-center bg-white rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
-            <span className="text-sm text-gray-400">机器人模块（V10 实现）</span>
-          </div>
-        )
+        return <RobotPage key={activeNav} />
       default:
         return null
     }

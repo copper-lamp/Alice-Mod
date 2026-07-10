@@ -92,9 +92,9 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId }) => {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* 顶部操作栏 - 固定不滚动 */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0 bg-white">
+    <div className="flex flex-col flex-1 min-h-0">
+      {/* 顶部操作栏 */}
+      <div className="shrink-0 px-6 py-4 border-b border-gray-100 bg-white flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-800">
           {agentId ? '编辑智能体' : '创建智能体'}
         </h2>
@@ -114,126 +114,124 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId }) => {
         </div>
       </div>
 
-      {/* 唯一滚动区域 */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-6 py-6 pb-12">
-          {error && (
-            <div className="mb-6 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-600">
-              {error}
-            </div>
-          )}
+      {/* 表单内容 - 单一滚动区域 */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6 pb-12 bg-white">
+        {error && (
+          <div className="mb-6 p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-600">
+            {error}
+          </div>
+        )}
 
-          <div className="space-y-8">
-            <section>
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">基本信息</h3>
-              <BasicInfoSection
-                name={form.name}
-                skinData={form.skinData}
-                onChange={(name, skinData) => setForm(prev => ({ ...prev, name, skinData }))}
-              />
-            </section>
+        <div className="max-w-2xl mx-auto space-y-8">
+          <section>
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">基本信息</h3>
+            <BasicInfoSection
+              name={form.name}
+              skinData={form.skinData}
+              onChange={(name, skinData) => setForm(prev => ({ ...prev, name, skinData }))}
+            />
+          </section>
 
-            <hr className="border-gray-100" />
+          <hr className="border-gray-100" />
 
-            <section>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-800">模型选择</h3>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onPress={() => {
-                    setLayoutMode('nav-view')
-                    setActiveNav('model')
-                  }}
-                >
-                  添加模型
-                </Button>
-              </div>
-              <Select
-                className="w-full"
-                placeholder="请选择智能体使用的模型"
-                selectedKey={form.modelId}
-                onSelectionChange={(key) => {
-                  if (key) updateField('modelId', key.toString())
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-800">模型选择</h3>
+              <Button
+                size="sm"
+                variant="ghost"
+                onPress={() => {
+                  setLayoutMode('nav-view')
+                  setActiveNav('model')
                 }}
               >
-                <Select.Trigger className="w-full">
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {models.map((model) => (
-                      <ListBox.Item key={model.id} id={model.id} textValue={`${model.providerName} - ${model.modelName}`}>
-                        {model.providerName} - {model.modelName}
-                      </ListBox.Item>
-                    ))}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
-            </section>
+                添加模型
+              </Button>
+            </div>
+            <Select
+              className="w-full"
+              placeholder="请选择智能体使用的模型"
+              selectedKey={form.modelId}
+              onSelectionChange={(key) => {
+                if (key) updateField('modelId', key.toString())
+              }}
+            >
+              <Select.Trigger className="w-full">
+                <Select.Value />
+                <Select.Indicator />
+              </Select.Trigger>
+              <Select.Popover>
+                <ListBox>
+                  {models.map((model) => (
+                    <ListBox.Item key={model.id} id={model.id} textValue={`${model.providerName} - ${model.modelName}`}>
+                      {model.providerName} - {model.modelName}
+                    </ListBox.Item>
+                  ))}
+                </ListBox>
+              </Select.Popover>
+            </Select>
+          </section>
 
-            <hr className="border-gray-100" />
+          <hr className="border-gray-100" />
 
-            <section>
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">身份配置</h3>
-              <IdentitySection
-                selectedFragments={form.identity.selectedFragments}
-                customPrompt={form.identity.customPrompt}
-                onChange={(identity: AgentIdentity) => updateField('identity', identity)}
-              />
-            </section>
+          <section>
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">身份配置</h3>
+            <IdentitySection
+              selectedFragments={form.identity.selectedFragments}
+              customPrompt={form.identity.customPrompt}
+              onChange={(identity: AgentIdentity) => updateField('identity', identity)}
+            />
+          </section>
 
-            <hr className="border-gray-100" />
+          <hr className="border-gray-100" />
 
-            <section>
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">工具配置</h3>
-              <ToolConfigSection
-                selection={form.tools.categorySelection}
-                onChange={(selection) => updateField('tools', { ...form.tools, categorySelection: selection })}
-              />
-            </section>
+          <section>
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">工具配置</h3>
+            <ToolConfigSection
+              selection={form.tools.categorySelection}
+              onChange={(selection) => updateField('tools', { ...form.tools, categorySelection: selection })}
+            />
+          </section>
 
-            <hr className="border-gray-100" />
+          <hr className="border-gray-100" />
 
-            <section>
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">记忆配置</h3>
-              <MemoryConfigSection
-                mode={form.memory.mode}
-                onChange={(mode: AgentMemoryConfig['mode']) => updateField('memory', { mode })}
-              />
-            </section>
+          <section>
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">记忆配置</h3>
+            <MemoryConfigSection
+              mode={form.memory.mode}
+              onChange={(mode: AgentMemoryConfig['mode']) => updateField('memory', { mode })}
+            />
+          </section>
 
-            <hr className="border-gray-100" />
+          <hr className="border-gray-100" />
 
-            <section>
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">执行规则</h3>
-              <ExecutionRulesSection
-                rules={form.executionRules}
-                onChange={(rules: ExecutionRule[]) => updateField('executionRules', rules)}
-              />
-            </section>
+          <section>
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">执行规则</h3>
+            <ExecutionRulesSection
+              rules={form.executionRules}
+              onChange={(rules: ExecutionRule[]) => updateField('executionRules', rules)}
+            />
+          </section>
 
-            <hr className="border-gray-100" />
+          <hr className="border-gray-100" />
 
-            <section>
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">QQ 绑定</h3>
-              <QQBindSection
-                binding={form.qqBinding}
-                onChange={(binding: QQBinding) => updateField('qqBinding', binding)}
-              />
-            </section>
+          <section>
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">QQ 绑定</h3>
+            <QQBindSection
+              binding={form.qqBinding}
+              onChange={(binding: QQBinding) => updateField('qqBinding', binding)}
+            />
+          </section>
 
-            <hr className="border-gray-100" />
+          <hr className="border-gray-100" />
 
-            <section>
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">定时启用</h3>
-              <ScheduleSection
-                schedule={form.schedule}
-                onChange={(schedule: AgentSchedule) => updateField('schedule', schedule)}
-              />
-            </section>
-          </div>
+          <section>
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">定时启用</h3>
+            <ScheduleSection
+              schedule={form.schedule}
+              onChange={(schedule: AgentSchedule) => updateField('schedule', schedule)}
+            />
+          </section>
         </div>
       </div>
     </div>

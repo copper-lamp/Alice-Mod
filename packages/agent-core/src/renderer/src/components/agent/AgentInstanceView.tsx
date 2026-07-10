@@ -95,7 +95,7 @@ const AgentInstanceView: React.FC = () => {
       </div>
 
       {/* 内容区 - 下栏：高度由父容器决定，由子组件自行处理滚动 */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 flex flex-col">
         {agentViewTab === 'info' ? (
           <ChatPanel />
         ) : (

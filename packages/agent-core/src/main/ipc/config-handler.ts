@@ -40,24 +40,4 @@ export function registerConfigHandlers(): void {
       { id: 'ollama', name: 'Ollama (本地)', available: false, latencyMs: 0 }
     ]
   })
-
-  ipcMain.handle('model:list', async (_event, { providerId }) => {
-    const models: Record<string, { id: string; name: string; providerId: string; supportsFunctionCalling: boolean; contextWindow: number }[]> = {
-      openai: [
-        { id: 'gpt-4o', name: 'GPT-4o', providerId: 'openai', supportsFunctionCalling: true, contextWindow: 128000 },
-        { id: 'gpt-4o-mini', name: 'GPT-4o Mini', providerId: 'openai', supportsFunctionCalling: true, contextWindow: 128000 }
-      ],
-      claude: [
-        { id: 'claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', providerId: 'claude', supportsFunctionCalling: true, contextWindow: 200000 },
-        { id: 'claude-3.5-haiku', name: 'Claude 3.5 Haiku', providerId: 'claude', supportsFunctionCalling: true, contextWindow: 200000 }
-      ],
-      gemini: [
-        { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', providerId: 'gemini', supportsFunctionCalling: true, contextWindow: 1048576 }
-      ],
-      ollama: [
-        { id: 'qwen2.5:7b', name: 'Qwen 2.5 7B', providerId: 'ollama', supportsFunctionCalling: true, contextWindow: 32768 }
-      ]
-    }
-    return models[providerId] || []
-  })
 }

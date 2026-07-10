@@ -26,7 +26,7 @@ const providerLabels: Record<string, string> = {
   stepfun: '阶跃星辰 (StepFun)',
 }
 
-/** 按 Provider 分组展示模型列表 */
+/** 模型列表表格 */
 const ModelList: React.FC<Props> = ({ models }) => {
   if (models.length === 0) {
     return (
@@ -40,70 +40,40 @@ const ModelList: React.FC<Props> = ({ models }) => {
     )
   }
 
-  // 按 providerId 分组
-  const groups = models.reduce<Record<string, ModelConfigItem[]>>((acc, model) => {
-    const key = model.providerId
-    if (!acc[key]) acc[key] = []
-    acc[key].push(model)
-    return acc
-  }, {})
-
   return (
-    <div className="space-y-6">
-      {Object.entries(groups).map(([providerId, providerModels]) => (
-        <div key={providerId}>
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 px-1">
-            {providerLabels[providerId] || providerId}
-          </h3>
-          <Table>
-            <Table.ScrollContainer>
-              <Table.Content aria-label={`${providerId} models`}>
-                <Table.Header>
-                  <Table.Column isRowHeader>模型名称</Table.Column>
-                  <Table.Column>Provider</Table.Column>
-                  <Table.Column>Context Window</Table.Column>
-                  <Table.Column>FC 支持</Table.Column>
-                  <Table.Column>状态</Table.Column>
-                  <Table.Column>操作</Table.Column>
-                </Table.Header>
-                <Table.Body>
-                  {providerModels.map(model => (
-                    <Table.Row key={model.id}>
-                      <Table.Cell className="font-medium">{model.modelName}</Table.Cell>
-                      <Table.Cell>{model.providerName}</Table.Cell>
-                      <Table.Cell>{model.contextWindow.toLocaleString()}</Table.Cell>
-                      <Table.Cell>
-                        {model.supportsFunctionCalling ? (
-                          <span className="text-blue-500 font-medium">是</span>
-                        ) : (
-                          <span className="text-gray-400">否</span>
-                        )}
-                      </Table.Cell>
-                      <Table.Cell>
-                        <span
-                          className={`inline-flex items-center gap-1 text-xs ${
-                            model.enabled ? 'text-green-600' : 'text-gray-400'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block w-1.5 h-1.5 rounded-full ${
-                              model.enabled ? 'bg-green-500' : 'bg-gray-300'
-                            }`}
-                          />
-                          {model.enabled ? '已启用' : '已禁用'}
-                        </span>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <ModelCard model={model} />
-                      </Table.Cell>
-                    </Table.Row>
-                  ))}
-                </Table.Body>
-              </Table.Content>
-            </Table.ScrollContainer>
-          </Table>
-        </div>
-      ))}
+    <div className="space-y-3">
+      {/* 提示文字 */}
+      <div className="flex items-center gap-2 px-1 py-2 text-xs text-gray-500 bg-blue-50/50 rounded-lg border border-blue-100">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-blue-400 shrink-0">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="16" x2="12" y2="12" />
+          <line x1="12" y1="8" x2="12.01" y2="8" />
+        </svg>
+        <span>在此管理您的模型配置。添加模型后即可在智能体配置中选择使用。</span>
+      </div>
+
+      <Table>
+        <Table.ScrollContainer>
+          <Table.Content aria-label="模型列表">
+            <Table.Header>
+              <Table.Column isRowHeader>模型</Table.Column>
+              <Table.Column>服务商</Table.Column>
+              <Table.Column>操作</Table.Column>
+            </Table.Header>
+            <Table.Body>
+              {models.map(model => (
+                <Table.Row key={model.id}>
+                  <Table.Cell className="font-medium">{model.modelName}</Table.Cell>
+                  <Table.Cell>{providerLabels[model.providerId] || model.providerName}</Table.Cell>
+                  <Table.Cell>
+                    <ModelCard model={model} />
+                  </Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
     </div>
   )
 }

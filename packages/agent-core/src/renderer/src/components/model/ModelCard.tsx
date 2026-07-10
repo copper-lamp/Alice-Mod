@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Card, TextField, Input, Label, Button, Checkbox } from '@heroui/react'
+import { Button, Switch } from '@heroui/react'
 import type { ModelConfigItem } from '../../lib/types'
 import { useModelStore } from '../../stores/modelStore'
 
@@ -7,20 +7,21 @@ interface Props {
   model: ModelConfigItem
 }
 
-/** 单个模型卡片，支持查看和编辑模式 */
+/** 模型操作按钮（编辑 / 删除 / 启用状态 / 测试连接） */
 const ModelCard: React.FC<Props> = ({ model }) => {
   const { updateModel, removeModel } = useModelStore()
   const [editing, setEditing] = useState(false)
 
   const [formApiKey, setFormApiKey] = useState(model.apiKey)
   const [formBaseUrl, setFormBaseUrl] = useState(model.baseUrl)
-  const [formEnabled, setFormEnabled] = useState(model.enabled)
+
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; latencyMs: number } | null>(null)
 
   const handleSave = async () => {
     await updateModel(model.id, {
       apiKey: formApiKey,
       baseUrl: formBaseUrl,
-      enabled: formEnabled,
     })
     setEditing(false)
   }
@@ -28,89 +29,87 @@ const ModelCard: React.FC<Props> = ({ model }) => {
   const handleCancel = () => {
     setFormApiKey(model.apiKey)
     setFormBaseUrl(model.baseUrl)
-    setFormEnabled(model.enabled)
     setEditing(false)
+  }
+
+  const handleToggleEnabled = async () => {
+    await updateModel(model.id, { enabled: !model.enabled })
   }
 
   const handleDelete = async () => {
     await removeModel(model.id)
   }
 
+  const handleTestConnection = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const result = await window.electronAPI.invoke('model:test-connection', {
+        baseUrl: formBaseUrl,
+        apiKey: formApiKey,
+        modelName: model.modelName,
+        providerId: model.providerId,
+      }) as { success: boolean; message: string; latencyMs: number }
+      setTestResult(result)
+    } catch (e) {
+      setTestResult({ success: false, message: e instanceof Error ? e.message : '测试失败', latencyMs: 0 })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  // 编辑模式：内联表单
   if (editing) {
     return (
-      <Card className="w-full">
-        <Card.Header>
-          <div className="flex items-center justify-between w-full">
-            <Card.Title>{model.modelName}</Card.Title>
-            <span className="text-xs text-blue-500 font-medium">编辑中</span>
-          </div>
-        </Card.Header>
-        <Card.Content className="space-y-3">
-          {/* API Key */}
-          <TextField value={formApiKey} onChange={setFormApiKey} type="password">
-            <Label>API Key</Label>
-            <Input placeholder="sk-..." />
-          </TextField>
-
-          {/* Base URL */}
-          <TextField value={formBaseUrl} onChange={setFormBaseUrl}>
-            <Label>Base URL</Label>
-            <Input placeholder="https://api.openai.com/v1" />
-          </TextField>
-
-          {/* 启用开关 */}
-          <Checkbox isSelected={formEnabled} onChange={setFormEnabled}>
-            <Checkbox.Content>
-              <Checkbox.Control>
-                <Checkbox.Indicator />
-              </Checkbox.Control>
-              启用
-            </Checkbox.Content>
-          </Checkbox>
-        </Card.Content>
-        <Card.Footer className="flex gap-2">
-          <Button size="sm" onPress={handleSave}>
-            保存
-          </Button>
-          <Button size="sm" variant="secondary" onPress={handleCancel}>
-            取消
-          </Button>
-        </Card.Footer>
-      </Card>
+      <div className="flex items-center gap-2">
+        <input
+          type="password"
+          value={formApiKey}
+          onChange={(e) => setFormApiKey(e.target.value)}
+          placeholder="API Key"
+          className="w-28 px-2 py-1 text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500/20 focus:border-blue-500"
+        />
+        <input
+          value={formBaseUrl}
+          onChange={(e) => setFormBaseUrl(e.target.value)}
+          placeholder="Base URL"
+          className="w-36 px-2 py-1 text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500/20 focus:border-blue-500"
+        />
+        <Button size="sm" onPress={handleSave}>保存</Button>
+        <Button size="sm" variant="secondary" onPress={handleCancel}>取消</Button>
+      </div>
     )
   }
 
+  // 展示模式：操作按钮
   return (
-    <Card className="w-full">
-      <Card.Header>
-        <div className="flex items-center gap-2">
-          <span
-            className={`inline-block w-2 h-2 rounded-full ${
-              model.enabled ? 'bg-green-500' : 'bg-gray-300'
-            }`}
-            title={model.enabled ? '已启用' : '已禁用'}
-          />
-          <Card.Title>{model.modelName}</Card.Title>
-        </div>
-      </Card.Header>
-      <Card.Content>
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
-          <span>Provider: {model.providerName}</span>
-          <span>Context: {model.contextWindow.toLocaleString()}</span>
-          {model.supportsFunctionCalling && (
-            <span className="text-blue-500 font-medium">支持 FC</span>
-          )}
-        </div>
-      </Card.Content>
-      <Card.Footer className="flex gap-1.5">
-        <Button size="sm" variant="secondary" onPress={() => setEditing(true)}>
-          设置
+    <div className="flex items-center gap-1.5">
+      <Button size="sm" variant="secondary" onPress={() => setEditing(true)}>
+        编辑
+      </Button>
+      <Button size="sm" variant="danger" onPress={handleDelete}>
+        删除
+      </Button>
+      <Switch isSelected={model.enabled} onChange={handleToggleEnabled}>
+        <Switch.Content>
+          <Switch.Control>
+            <Switch.Thumb />
+          </Switch.Control>
+        </Switch.Content>
+      </Switch>
+      <div className="flex items-center gap-1">
+        <Button size="sm" variant="secondary" isDisabled={testing} onPress={handleTestConnection}>
+          {testing ? '测试中...' : '测试'}
         </Button>
-        <Button size="sm" variant="danger" onPress={handleDelete}>
-          删除
-        </Button>
-      </Card.Footer>
-    </Card>
+        {testResult && (
+          <span className={`text-xs ${testResult.success ? 'text-green-600' : 'text-red-500'}`}>
+            {testResult.success
+              ? `${testResult.latencyMs}ms`
+              : testResult.message}
+          </span>
+        )}
+      </div>
+    </div>
   )
 }
 

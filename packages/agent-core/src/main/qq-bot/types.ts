@@ -4,7 +4,7 @@
  * 涵盖 OneBot 协议、QQ 消息、权限控制、Sub-Agent 通信等核心类型。
  */
 
-import type { ConversationMessage, AgentProfile } from '../../prompt/types';
+import type { ConversationMessage, AgentProfile } from '../prompt/types';
 
 // ════════════════════════════════════════════════════════════════
 // 1. 连接状态

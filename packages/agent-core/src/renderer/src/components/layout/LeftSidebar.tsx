@@ -13,7 +13,7 @@ const LeftSidebar: React.FC = () => {
   }, [])
 
   return (
-    <aside className="w-60 flex flex-col bg-gray-100">
+    <aside className="w-60 flex flex-col bg-gray-100 shrink-0">
       {/* 导航菜单 */}
       <nav className="p-2 pt-4 space-y-0.5">
         {navItems.map(item => (

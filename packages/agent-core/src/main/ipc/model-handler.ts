@@ -131,23 +131,8 @@ function getAutoFC(modelName: string): boolean {
   return true
 }
 
-/** 模拟模型配置存储 */
-const mockModels: ModelConfigItem[] = [
-  // OpenAI
-  { id: 'openai:gpt-4o', providerId: 'openai', providerName: 'OpenAI', modelName: 'GPT-4o', apiKey: 'sk-****', baseUrl: 'https://api.openai.com/v1', enabled: true, contextWindow: 128000, supportsFunctionCalling: true, createdAt: Date.now() - 86400000 * 30 },
-  { id: 'openai:gpt-4o-mini', providerId: 'openai', providerName: 'OpenAI', modelName: 'GPT-4o Mini', apiKey: 'sk-****', baseUrl: 'https://api.openai.com/v1', enabled: true, contextWindow: 128000, supportsFunctionCalling: true, createdAt: Date.now() - 86400000 * 20 },
-  // Claude
-  { id: 'claude:claude-3.5-sonnet', providerId: 'claude', providerName: 'Claude', modelName: 'Claude 3.5 Sonnet', apiKey: 'sk-****', baseUrl: 'https://api.anthropic.com/v1', enabled: true, contextWindow: 200000, supportsFunctionCalling: true, createdAt: Date.now() - 86400000 * 15 },
-  // Gemini
-  { id: 'gemini:gemini-2.0-flash', providerId: 'gemini', providerName: 'Gemini', modelName: 'Gemini 2.0 Flash', apiKey: 'AI****', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', enabled: false, contextWindow: 1048576, supportsFunctionCalling: true, createdAt: Date.now() - 86400000 * 10 },
-  // DeepSeek
-  { id: 'deepseek:deepseek-chat', providerId: 'deepseek', providerName: 'DeepSeek', modelName: 'DeepSeek Chat', apiKey: 'sk-****', baseUrl: 'https://api.deepseek.com/v1', enabled: true, contextWindow: 65536, supportsFunctionCalling: true, createdAt: Date.now() - 86400000 * 5 },
-  { id: 'deepseek:deepseek-coder', providerId: 'deepseek', providerName: 'DeepSeek', modelName: 'DeepSeek Coder', apiKey: 'sk-****', baseUrl: 'https://api.deepseek.com/v1', enabled: true, contextWindow: 65536, supportsFunctionCalling: true, createdAt: Date.now() - 86400000 * 5 },
-  // 通义千问
-  { id: 'qwen:qwen-plus', providerId: 'qwen', providerName: '通义千问', modelName: 'Qwen-Plus', apiKey: 'sk-****', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', enabled: true, contextWindow: 131072, supportsFunctionCalling: true, createdAt: Date.now() - 86400000 * 3 },
-  // 智谱
-  { id: 'zhipu:glm-4-flash', providerId: 'zhipu', providerName: '智谱 (GLM)', modelName: 'GLM-4-Flash', apiKey: '****', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', enabled: true, contextWindow: 131072, supportsFunctionCalling: true, createdAt: Date.now() - 86400000 * 2 },
-]
+/** 模型配置存储（用户添加的模型） */
+const mockModels: ModelConfigItem[] = []
 
 export function registerModelHandlers(): void {
   ipcMain.handle('model:list', async () => {
@@ -211,5 +196,75 @@ export function registerModelHandlers(): void {
   // 获取模型自动上下文
   ipcMain.handle('model:auto-context', async (_event, { modelName }: { modelName: string }) => {
     return { contextWindow: getAutoContextWindow(modelName), supportsFunctionCalling: getAutoFC(modelName) }
+  })
+
+  // 测试连接
+  ipcMain.handle('model:test-connection', async (_event, { baseUrl, apiKey, modelName, providerId }: { baseUrl: string; apiKey: string; modelName: string; providerId: string }) => {
+    const normalizedUrl = baseUrl.replace(/\/+$/, '')
+    const startTime = Date.now()
+
+    try {
+      let result: { success: boolean; message: string; latencyMs: number }
+
+      if (providerId === 'ollama') {
+        // Ollama 使用 /api/tags
+        const res = await fetch(`${normalizedUrl}/api/tags`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(10000),
+        })
+        const latency = Date.now() - startTime
+        if (res.ok) {
+          result = { success: true, message: '连接成功', latencyMs: latency }
+        } else {
+          result = { success: false, message: `连接失败 (${res.status})`, latencyMs: latency }
+        }
+      } else {
+        // OpenAI 兼容接口：发送最小 chat completion 请求
+        const res = await fetch(`${normalizedUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: apiKey.startsWith('Bearer ') ? apiKey : `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: [{ role: 'user', content: 'hi' }],
+            max_tokens: 1,
+          }),
+          signal: AbortSignal.timeout(15000),
+        })
+        const latency = Date.now() - startTime
+
+        if (res.ok) {
+          result = { success: true, message: '连接成功', latencyMs: latency }
+        } else if (res.status === 401 || res.status === 403) {
+          result = { success: false, message: 'API Key 无效或权限不足', latencyMs: latency }
+        } else if (res.status === 404) {
+          // 可能是路径不对，尝试 GET /models 轻量检查
+          const fallbackRes = await fetch(`${normalizedUrl}/models`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${apiKey}` },
+            signal: AbortSignal.timeout(5000),
+          })
+          if (fallbackRes.ok) {
+            result = { success: true, message: '连接成功', latencyMs: Date.now() - startTime }
+          } else {
+            const body = await res.json().catch(() => ({}))
+            result = { success: false, message: body?.error?.message || `请求失败 (${res.status})`, latencyMs: latency }
+          }
+        } else {
+          const body = await res.json().catch(() => ({}))
+          result = { success: false, message: body?.error?.message || `请求失败 (${res.status})`, latencyMs: latency }
+        }
+      }
+
+      return result
+    } catch (err) {
+      const latency = Date.now() - startTime
+      const message = err instanceof Error
+        ? (err.name === 'TimeoutError' || err.name === 'AbortError' ? '连接超时' : err.message)
+        : '连接失败'
+      return { success: false, message, latencyMs: latency }
+    }
   })
 }

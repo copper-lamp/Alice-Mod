@@ -5,6 +5,7 @@ import { registerWindowHandlers } from './window-handler'
 import { registerDashboardHandlers } from './dashboard-handler'
 import { registerAgentHandlers } from './agent-handler'
 import { registerModelHandlers } from './model-handler'
+import { registerQQBotHandlers } from './qq-bot-handler'
 
 export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerChatHandlers()
@@ -13,4 +14,5 @@ export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerDashboardHandlers()
   registerAgentHandlers()
   registerModelHandlers()
+  registerQQBotHandlers()
 }
