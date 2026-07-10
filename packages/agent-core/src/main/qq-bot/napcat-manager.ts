@@ -37,6 +37,8 @@ export interface NapCatManagerOptions {
   onLog?: (line: string) => void;
   /** 状态变更回调 */
   onStatusChange?: (status: NapCatStatus) => void;
+  /** 下载进度回调 */
+  onProgress?: (progress: DownloadProgress) => void;
 }
 
 /** 二维码结果 */
@@ -59,6 +61,16 @@ export interface QQLoginInfo {
   nickname: string;
   avatarUrl?: string;
   online?: boolean;
+}
+
+/** 下载进度信息 */
+export interface DownloadProgress {
+  /** 进度百分比 0-100 */
+  percent: number;
+  /** 当前阶段：testing_mirrors | downloading | extracting | done */
+  stage: string;
+  /** 当前阶段描述 */
+  message: string;
 }
 
 /** WebUI 通用响应 */
@@ -105,6 +117,7 @@ export class NapCatManager {
       accessToken: '',
       onLog: () => {},
       onStatusChange: () => {},
+      onProgress: () => {},
       ...options,
     };
   }
@@ -301,10 +314,33 @@ export class NapCatManager {
 
     const defaultPath = this.findDefaultExecutable();
     if (defaultPath && fs.existsSync(defaultPath)) {
+      // 如果找到的是 NapCatWinBootMain.exe（OneKey 包），且没有 QQ 号，则重下载 Shell 包
+      const name = path.basename(defaultPath).toLowerCase();
+      if (name === 'napcatwinbootmain.exe' || name === 'napcat.exe') {
+        const alt = this.findAlternativeLauncher(this.getNapCatDir());
+        if (!alt) {
+          this.log('[NapCatManager] 检测到 OneKey 包，需重新下载 Shell 包...');
+          await this.cleanupAndRedownload();
+          return;
+        }
+        this.options.executablePath = alt;
+        return;
+      }
       this.options.executablePath = defaultPath;
       return;
     }
 
+    await this.downloadRelease();
+  }
+
+  /** 清理旧安装并重新下载 Shell 包 */
+  private async cleanupAndRedownload(): Promise<void> {
+    const dir = this.getNapCatDir();
+    try {
+      // 删除旧 zip 文件（避免被误认为已下载）
+      const oldZip = path.join(dir, 'NapCat.Shell.Windows.OneKey.zip');
+      if (fs.existsSync(oldZip)) fs.unlinkSync(oldZip);
+    } catch { /* ignore */ }
     await this.downloadRelease();
   }
 
@@ -322,23 +358,138 @@ export class NapCatManager {
     const candidates: string[] = [];
     if (process.platform === 'win32') {
       candidates.push(
-        path.join(dir, 'napcat.exe'),
-        path.join(dir, 'NapCatWinBootMain.exe'),
-        path.join(dir, 'launcher.bat'),
-        path.join(dir, 'launcher-win10.bat'),
+        // OneKey 包：优先使用 napcat.bat（不要求 QQ 号）
+        'napcat.bat',
+        // Shell 包：launcher.bat / launcher-win10.bat
+        'launcher.bat',
+        'launcher-win10.bat',
+        // OneKey 包直接 exe（需要 QQ 号参数）
+        'NapCatWinBootMain.exe',
+        'napcat.exe',
       );
     } else {
-      candidates.push(path.join(dir, 'napcat'), path.join(dir, 'napcat.sh'));
+      candidates.push('napcat', 'napcat.sh');
     }
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) return candidate;
+
+    // 先搜根目录
+    for (const name of candidates) {
+      const p = path.join(dir, name);
+      if (fs.existsSync(p)) return p;
     }
+
+    // 再搜一级子目录（OneKey ZIP 解压后可能在子文件夹中）
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          for (const name of candidates) {
+            const p = path.join(dir, entry.name, name);
+            if (fs.existsSync(p)) return p;
+          }
+        }
+      }
+    } catch { /* ignore */ }
+
     return null;
   }
 
   /** 查找默认路径下的可执行文件 */
   private findDefaultExecutable(): string | null {
     return this.findExecutableInDir(this.getNapCatDir());
+  }
+
+  /** 从 GitHub Releases 获取最新 release 的 tag */
+  private async resolveLatestTag(): Promise<string> {
+    // 优先使用 curl.exe（避开 Windows SSL 吊销检查）
+    if (process.platform === 'win32') {
+      try {
+        const out = await new Promise<string>((resolve, reject) => {
+            const proc = spawn('curl.exe', [
+              '-s', '-L',
+              '--ssl-no-revoke',
+              '--connect-timeout', '10',
+              '--max-time', '15',
+            '-H', 'Accept: application/json',
+            '-H', 'User-Agent: McAgent/1.0',
+            'https://api.github.com/repos/NapNeko/NapCatQQ/releases/latest',
+          ], { stdio: ['pipe', 'pipe', 'pipe'] });
+          let data = '';
+          let err = '';
+          proc.stdout?.on('data', (d: Buffer) => { data += d.toString(); });
+          proc.stderr?.on('data', (d: Buffer) => { err += d.toString(); });
+          proc.on('error', reject);
+          proc.on('close', (code) => {
+            if (code === 0 && data) resolve(data);
+            else reject(new Error(`curl exit ${code}: ${err.substring(0, 200)}`));
+          });
+        });
+        const parsed = JSON.parse(out) as { tag_name: string };
+        if (parsed.tag_name) {
+          this.log(`[NapCatManager] 获取到最新版本: ${parsed.tag_name}`);
+          return parsed.tag_name;
+        }
+      } catch (err) {
+        this.log(`[NapCatManager] curl API 失败: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // 回退：使用 fetch
+    try {
+      const res = await fetch('https://api.github.com/repos/NapNeko/NapCatQQ/releases/latest', {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'McAgent/1.0' },
+      });
+      if (res.ok) {
+        const data = await res.json() as { tag_name: string };
+        this.log(`[NapCatManager] 获取到最新版本: ${data.tag_name}`);
+        return data.tag_name;
+      }
+    } catch { /* 继续 */ }
+
+    // 全部失败，使用备用版本
+    this.log('[NapCatManager] 无法获取最新版本号，使用备用版本 v4.18.9');
+    return 'v4.18.9';
+  }
+
+  /** 发送下载进度 */
+  private emitProgress(percent: number, stage: string, message: string): void {
+    this.options.onProgress?.({ percent, stage, message });
+  }
+
+  /** 测速选择最快下载通道 */
+  private async selectFastestUrl(urls: string[]): Promise<string[]> {
+    this.emitProgress(0, 'testing_mirrors', '正在测试下载通道...');
+    const results: { url: string; time: number }[] = [];
+
+    await Promise.allSettled(
+      urls.map(async (url) => {
+        const start = Date.now();
+        try {
+          if (process.platform === 'win32') {
+            await this.runCommand('curl.exe', [
+              '-s', '-o', 'nul', '-w', '%{http_code}',
+              '--ssl-no-revoke',
+              '--connect-timeout', '5',
+              '--max-time', '10',
+              '-I', url,
+            ]);
+          } else {
+            const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(10_000) });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          }
+          results.push({ url, time: Date.now() - start });
+          this.log(`[NapCatManager] 通道测速 ${url.substring(0, 60)}...: ${Date.now() - start}ms`);
+        } catch {
+          results.push({ url, time: Infinity });
+          this.log(`[NapCatManager] 通道不可达 ${url.substring(0, 60)}...`);
+        }
+      }),
+    );
+
+    // 按速度排序，不可达的排在最后
+    results.sort((a, b) => a.time - b.time);
+    const sorted = results.map(r => r.url);
+    this.log(`[NapCatManager] 通道优先级: ${sorted.map(u => u.substring(0, 40)).join(' > ')}`);
+    return sorted;
   }
 
   /** 从 GitHub Releases 下载 NapCat（含国内镜像容错） */
@@ -349,22 +500,34 @@ export class NapCatManager {
     fs.mkdirSync(napcatDir, { recursive: true });
 
     const version = this.options.version;
-    const tag = version === 'latest' ? 'latest' : version;
+    const tag = version === 'latest' ? await this.resolveLatestTag() : version;
     const assetName = this.resolveAssetName();
     const zipPath = path.join(napcatDir, assetName);
 
-    // 下载地址列表：官方 GitHub + 国内镜像，依次尝试
+    // 下载地址列表：官方 GitHub + 国内镜像
     const urls: string[] = [
       `https://github.com/NapNeko/NapCatQQ/releases/download/${tag}/${assetName}`,
       `https://ghproxy.net/https://github.com/NapNeko/NapCatQQ/releases/download/${tag}/${assetName}`,
-      `https://mirror.ghproxy.com/https://github.com/NapNeko/NapCatQQ/releases/download/${tag}/${assetName}`,
+      `https://gh.api.99988866.xyz/https://github.com/NapNeko/NapCatQQ/releases/download/${tag}/${assetName}`,
+      `https://gh.ddlc.top/https://github.com/NapNeko/NapCatQQ/releases/download/${tag}/${assetName}`,
     ];
 
+    // Shell 包仅 ~1MB，直接按顺序尝试下载，省略独立测速阶段
+    this.emitProgress(5, 'downloading', '开始下载 NapCat...');
+
     let lastError: string | null = null;
-    for (const url of urls) {
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
       this.log(`[NapCatManager] 尝试下载: ${url}`);
       try {
-        await this.downloadFile(url, zipPath);
+        const stageStart = 5 + (i / urls.length) * 80;
+        const stageEnd = 5 + ((i + 1) / urls.length) * 80;
+        this.emitProgress(Math.round(stageStart), 'downloading', `正在下载 (通道 ${i + 1}/${urls.length})...`);
+        await this.downloadFile(url, zipPath, (progress) => {
+          const pct = Math.round(stageStart + (stageEnd - stageStart) * (progress.percent / 100));
+          this.emitProgress(pct, 'downloading',
+            `下载中 ${this.formatBytes(progress.loaded)} / ${progress.total ? this.formatBytes(progress.total) : '...'}`);
+        });
         lastError = null;
         break;
       } catch (err) {
@@ -384,6 +547,7 @@ export class NapCatManager {
       );
     }
 
+    this.emitProgress(90, 'extracting', '正在解压 NapCat...');
     try {
       await this.extractZip(zipPath, napcatDir);
       fs.unlinkSync(zipPath);
@@ -398,23 +562,272 @@ export class NapCatManager {
       throw new Error('解压后未找到 NapCat 可执行文件，请手动配置 executablePath');
     }
     this.options.executablePath = execPath;
+
+    this.emitProgress(100, 'done', 'NapCat 安装完成');
   }
 
   /** 根据平台选择 release asset */
   private resolveAssetName(): string {
     if (process.platform === 'win32') {
-      return 'NapCat.Shell.Windows.OneKey.zip';
+      // NapCat.Shell.zip 是轻量级 Shell 包（~1MB），不内嵌 QQ，适合托管
+      // NapCat.Shell.Windows.OneKey.zip 是自包含包（~200MB），内嵌 QQ，但需要 QQ 号才能启动
+      return 'NapCat.Shell.zip';
     }
     return 'NapCat.Shell.zip';
   }
 
-  private async downloadFile(url: string, dest: string): Promise<void> {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  private async downloadFile(url: string, dest: string, onProgress?: (p: { loaded: number; total: number | null; percent: number }) => void): Promise<void> {
+    this.log(`[NapCatManager] downloadFile 开始: url=${url.substring(0, 80)}... dest=${dest}`);
+
+    if (process.platform === 'win32') {
+      // 优先使用 aria2c（多连接下载，大幅提升速度）
+      const aria2cPath = await this.findTool('aria2c.exe');
+      if (aria2cPath) {
+        this.log(`[NapCatManager] 使用 aria2c 下载 (多连接)...`);
+        try {
+          await this.runCommand('aria2c.exe', [
+            '-x', '8', '-s', '8', '-k', '1M',
+            '--connect-timeout', '15',
+            '--timeout', '30',
+            '--max-tries', '5',
+            '--retry-wait', '5',
+            '--console-log-level', 'warn',
+            '--summary-interval', '0',
+            '-d', path.dirname(dest),
+            '-o', path.basename(dest),
+            url,
+          ]);
+          const stat = fs.statSync(dest);
+          this.log(`[NapCatManager] aria2c 下载完成，文件大小: ${stat.size} bytes`);
+          onProgress?.({ loaded: stat.size, total: stat.size, percent: 100 });
+          if (stat.size > 1024) return;
+          throw new Error(`下载文件过小: ${stat.size} bytes`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.log(`[NapCatManager] aria2c 下载失败: ${msg}，降级到 curl`);
+          try { fs.unlinkSync(dest); } catch { /* ignore */ }
+        }
+      }
+
+      // 次选 curl.exe（Windows 自带，尊重系统代理）
+      try {
+        const curlPath = await this.findTool('curl.exe');
+        this.log(`[NapCatManager] where curl.exe 结果: ${curlPath || '(未找到)'}`);
+
+        if (curlPath) {
+          this.log(`[NapCatManager] 使用 curl.exe 下载...`);
+          await this.runCommand('curl.exe', [
+            '-L',
+            '-o', dest,
+            '--connect-timeout', '15',
+            '--max-time', '600',
+            '--ssl-no-revoke',
+            '--retry', '3',
+            '--retry-delay', '5',
+            url,
+          ]);
+          const stat = fs.statSync(dest);
+          this.log(`[NapCatManager] curl.exe 下载完成，文件大小: ${stat.size} bytes`);
+          onProgress?.({ loaded: stat.size, total: stat.size, percent: 100 });
+          if (stat.size > 1024) return;
+          throw new Error(`下载文件过小: ${stat.size} bytes`);
+        } else {
+          this.log(`[NapCatManager] curl.exe 不存在，使用 Node 多连接下载`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.log(`[NapCatManager] curl.exe 下载失败: ${msg}，使用 Node 多连接下载`);
+        try { fs.unlinkSync(dest); } catch { /* ignore */ }
+      }
+    } else {
+      this.log(`[NapCatManager] 非 Windows 平台，使用 Node 多连接下载`);
     }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    fs.writeFileSync(dest, buffer);
+
+    // Node.js 内置多连接分块下载（无需外部工具）
+    await this.downloadWithMultiFetch(url, dest, onProgress);
+  }
+
+  /** Node.js 内置多连接分块下载：用 HTTP Range 头并发下载不同片段 */
+  private async downloadWithMultiFetch(url: string, dest: string, onProgress?: (p: { loaded: number; total: number | null; percent: number }) => void): Promise<void> {
+    this.log(`[NapCatManager] Node 多连接下载开始...`);
+
+    // 1. HEAD 请求获取文件大小
+    let totalSize: number;
+    try {
+      const headRes = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(15_000) });
+      const cl = headRes.headers.get('content-length');
+      if (!cl) throw new Error('无 Content-Length');
+      totalSize = parseInt(cl, 10);
+      this.log(`[NapCatManager] 文件大小: ${this.formatBytes(totalSize)}`);
+    } catch {
+      this.log(`[NapCatManager] HEAD 请求失败，降级到单连接下载`);
+      await this.downloadWithFetch(url, dest, onProgress);
+      return;
+    }
+
+    // 2. 分成 4 块并行下载
+    const NUM = 4;
+    const chunkSize = Math.ceil(totalSize / NUM);
+    const ranges: { start: number; end: number }[] = [];
+    for (let i = 0; i < NUM; i++) {
+      const start = i * chunkSize;
+      const end = i === NUM - 1 ? totalSize - 1 : (i + 1) * chunkSize - 1;
+      ranges.push({ start, end });
+    }
+
+    this.log(`[NapCatManager] 分 ${NUM} 块并行下载: ${ranges.map(r => `${this.formatBytes(r.start)}-${this.formatBytes(r.end)}`).join(', ')}`);
+
+    const loadedPerChunk = new Array(NUM).fill(0);
+
+    try {
+      const buffers = await Promise.all(
+        ranges.map((range, idx) =>
+          this.downloadRange(url, range.start, range.end, idx, totalSize, loadedPerChunk, onProgress)
+        )
+      );
+
+      // 3. 合并文件
+      const fd = fs.openSync(dest, 'w');
+      let totalWritten = 0;
+      for (const buf of buffers) {
+        fs.writeSync(fd, buf);
+        totalWritten += buf.length;
+      }
+      fs.closeSync(fd);
+
+      this.log(`[NapCatManager] Node 多连接下载完成: ${this.formatBytes(totalWritten)}`);
+      onProgress?.({ loaded: totalWritten, total: totalWritten, percent: 100 });
+
+      if (totalWritten < 1024) throw new Error(`下载文件过小: ${totalWritten} bytes`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log(`[NapCatManager] Node 多连接下载失败: ${msg}，降级到单连接`);
+      try { fs.unlinkSync(dest); } catch { /* ignore */ }
+      await this.downloadWithFetch(url, dest, onProgress);
+    }
+  }
+
+  /** 下载单个 Range 片段 */
+  private async downloadRange(
+    url: string, start: number, end: number, idx: number,
+    totalSize: number, loadedPerChunk: number[],
+    onProgress?: (p: { loaded: number; total: number | null; percent: number }) => void,
+  ): Promise<Buffer> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 600_000);
+
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'Range': `bytes=${start}-${end}`,
+          'User-Agent': 'McAgent/1.0',
+        },
+      });
+      if (!res.ok && res.status !== 206) {
+        throw new Error(`HTTP ${res.status} (期望 206 Partial Content)`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        return buf;
+      }
+
+      const chunks: Uint8Array[] = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          loadedPerChunk[idx] += value.length;
+          // 汇总进度
+          const totalLoaded = loadedPerChunk.reduce((a, b) => a + b, 0);
+          const pct = Math.min(Math.round((totalLoaded / totalSize) * 100), 100);
+          onProgress?.({ loaded: totalLoaded, total: totalSize, percent: pct });
+        }
+      }
+
+      return Buffer.concat(chunks);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /** 查找系统工具路径 */
+  private async findTool(name: string): Promise<string | null> {
+    try {
+      const result = await new Promise<string>((resolve) => {
+        const proc = spawn('where.exe', [name], { stdio: ['pipe', 'pipe', 'pipe'] });
+        let out = '';
+        proc.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
+        proc.on('close', (code: number) => resolve(code === 0 ? out.trim() : ''));
+      });
+      return result || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async downloadWithFetch(url: string, dest: string, onProgress?: (p: { loaded: number; total: number | null; percent: number }) => void): Promise<void> {
+    this.log(`[NapCatManager] fetch 开始下载: ${url.substring(0, 80)}...`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      this.log(`[NapCatManager] fetch 超时 (600s)，终止请求`);
+      controller.abort();
+    }, 600_000);
+
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'McAgent/1.0' },
+      });
+      this.log(`[NapCatManager] fetch 响应: HTTP ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const contentLength = response.headers.get('content-length');
+      const total = contentLength ? parseInt(contentLength, 10) : null;
+      let loaded = 0;
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        // 回退：直接读完整响应
+        const buffer = Buffer.from(await response.arrayBuffer());
+        fs.writeFileSync(dest, buffer);
+        onProgress?.({ loaded: buffer.length, total: buffer.length, percent: 100 });
+        this.log(`[NapCatManager] fetch 下载完成: ${buffer.length} bytes`);
+        return;
+      }
+
+      const chunks: Uint8Array[] = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          loaded += value.length;
+          if (total) {
+            const pct = Math.min(Math.round((loaded / total) * 100), 100);
+            onProgress?.({ loaded, total, percent: pct });
+          } else {
+            onProgress?.({ loaded, total: null, percent: 0 });
+          }
+        }
+      }
+
+      const buffer = Buffer.concat(chunks);
+      fs.writeFileSync(dest, buffer);
+      onProgress?.({ loaded: buffer.length, total: buffer.length, percent: 100 });
+      this.log(`[NapCatManager] fetch 下载完成: ${buffer.length} bytes`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log(`[NapCatManager] fetch 下载失败: ${msg}`);
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async extractZip(zipPath: string, destDir: string): Promise<void> {
@@ -446,6 +859,36 @@ export class NapCatManager {
         else reject(new Error(`命令退出码 ${code}: ${stderr}`));
       });
     });
+  }
+
+  /** 格式化字节数 */
+  private formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  /** 查找无 QQ 号时可启动的替代 launcher（napcat.bat / launcher.bat） */
+  private findAlternativeLauncher(dir: string): string | null {
+    const altNames = ['napcat.bat', 'launcher.bat', 'launcher-win10.bat'];
+    // 搜根目录
+    for (const name of altNames) {
+      const p = path.join(dir, name);
+      if (fs.existsSync(p)) return p;
+    }
+    // 搜一级子目录
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          for (const name of altNames) {
+            const p = path.join(dir, entry.name, name);
+            if (fs.existsSync(p)) return p;
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    return null;
   }
 
   /** 生成 OneBot v11 配置文件 */
@@ -512,9 +955,28 @@ export class NapCatManager {
     }
 
     const napcatDir = this.getNapCatDir();
+    const execName = path.basename(execPath).toLowerCase();
+    const isNapCatExe = execName === 'napcatwinbootmain.exe' || execName === 'napcat.exe';
+
     const args: string[] = [];
     if (this.options.account) {
-      args.push('-q', this.options.account);
+      if (isNapCatExe) {
+        // NapCatWinBootMain.exe / napcat.exe 将 QQ 号作为位置参数
+        args.push(this.options.account.toString());
+      } else {
+        // launcher.bat / napcat.bat 使用 -q 参数
+        args.push('-q', this.options.account.toString());
+      }
+    } else if (isNapCatExe) {
+      // QR 登录模式：没有 QQ 号时不能启动 NapCatWinBootMain.exe
+      // 改用 napcat.bat（由 OneKey 安装器在子目录中生成）
+      const altPath = this.findAlternativeLauncher(napcatDir);
+      if (altPath) {
+        this.log(`[NapCatManager] 无 QQ 号，改用: ${altPath}`);
+        this.options.executablePath = altPath;
+        return this.spawnProcess();
+      }
+      throw new Error('NapCatWinBootMain.exe 需要 QQ 号作为参数。请先通过 napcat.bat 启动，或配置 account。');
     }
 
     this.log(`[NapCatManager] spawn: ${execPath} ${args.join(' ')}`);

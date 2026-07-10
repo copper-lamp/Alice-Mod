@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react'
-import { Button, Spinner, Tabs } from '@heroui/react'
+import React, { useEffect, useState, useRef } from 'react'
+import { Button, Tabs, ProgressBar } from '@heroui/react'
 
 interface InstallStatus {
   installed: boolean
@@ -8,8 +8,21 @@ interface InstallStatus {
   defaultInstallDir: string
 }
 
+interface InstallProgress {
+  percent: number
+  stage: string
+  message: string
+}
+
 interface Props {
   onComplete: () => void
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  testing_mirrors: '测试下载通道',
+  downloading: '下载中',
+  extracting: '解压中',
+  done: '安装完成',
 }
 
 export const NapCatSetupWizard: React.FC<Props> = ({ onComplete }) => {
@@ -18,10 +31,14 @@ export const NapCatSetupWizard: React.FC<Props> = ({ onComplete }) => {
   const [installDir, setInstallDir] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [installLog, setInstallLog] = useState<string[]>([])
+  const [installProgress, setInstallProgress] = useState<InstallProgress | null>(null)
+  const cleanupRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     loadStatus()
+    return () => {
+      cleanupRef.current?.()
+    }
   }, [])
 
   useEffect(() => {
@@ -55,20 +72,33 @@ export const NapCatSetupWizard: React.FC<Props> = ({ onComplete }) => {
   const installNapCat = async () => {
     setLoading(true)
     setError(null)
-    setInstallLog([])
+    setInstallProgress({ percent: 0, stage: 'testing_mirrors', message: '正在测试下载通道...' })
+
+    // 监听进度
+    const cleanup = window.electronAPI.on('qq-bot:install-progress', (progress: unknown) => {
+      setInstallProgress(progress as InstallProgress)
+    })
+    cleanupRef.current = cleanup
+
     try {
       const result = await window.electronAPI.invoke('qq-bot:install-napcat', installDir) as { success: boolean; installDir?: string; error?: string }
       if (result.success) {
-        setInstallLog(prev => [...prev, `安装成功: ${result.installDir}`])
-        await loadStatus()
-        onComplete()
+        setInstallProgress({ percent: 100, stage: 'done', message: '安装成功' })
+        setTimeout(() => {
+          loadStatus()
+          onComplete()
+        }, 800)
       } else {
         setError(result.error || '安装失败')
+        setInstallProgress(null)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '安装失败')
+      setInstallProgress(null)
     } finally {
       setLoading(false)
+      cleanupRef.current?.()
+      cleanupRef.current = null
     }
   }
 
@@ -90,6 +120,12 @@ export const NapCatSetupWizard: React.FC<Props> = ({ onComplete }) => {
     }
   }
 
+  const progressColor = (pct: number) => {
+    if (pct < 30) return 'danger' as const
+    if (pct < 70) return 'warning' as const
+    return 'success' as const
+  }
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center bg-white rounded-xl shadow-sm border border-gray-200 p-8 overflow-hidden">
       <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-5">
@@ -106,73 +142,90 @@ export const NapCatSetupWizard: React.FC<Props> = ({ onComplete }) => {
       </p>
 
       <div className="w-full max-w-lg">
-        <Tabs selectedKey={mode} onSelectionChange={(k) => { if (k) setMode(k as 'auto' | 'manual') }}>
-          <Tabs.List className="mb-4">
-            <Tabs.Tab id="auto">自动下载安装</Tabs.Tab>
-            <Tabs.Tab id="manual">手动指定目录</Tabs.Tab>
-          </Tabs.List>
-
-          <Tabs.Panel id="auto">
-            <div className="flex flex-col gap-4">
-              <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                <div className="text-xs text-gray-500 mb-1">安装位置</div>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 text-sm text-gray-700 truncate font-mono">{installDir}</div>
-                  <Button size="sm" variant="secondary" onPress={chooseDir}>更改</Button>
-                </div>
-                <p className="text-xs text-gray-400 mt-1">推荐选择非系统盘目录，避免占用 C 盘空间</p>
-              </div>
-
-              <Button
-                size="lg"
-                isPending={loading}
-                onPress={installNapCat}
-              >
-                {loading ? '正在下载安装...' : '开始安装 NapCat'}
-              </Button>
-
-              {error && (
-                <div className="text-sm text-red-500 bg-red-50 rounded-lg p-3 border border-red-100">
-                  {error}
-                </div>
-              )}
-
-              {installLog.length > 0 && (
-                <div className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 border border-gray-200 max-h-32 overflow-y-auto font-mono">
-                  {installLog.map((line, i) => <div key={i}>{line}</div>)}
-                </div>
-              )}
+        {installProgress ? (
+          // 安装进度
+          <div className="flex flex-col items-center gap-4 py-4">
+            <ProgressBar
+              value={installProgress.percent}
+              color={progressColor(installProgress.percent)}
+              size="md"
+              className="w-full"
+            >
+              <ProgressBar.Track>
+                <ProgressBar.Fill />
+              </ProgressBar.Track>
+            </ProgressBar>
+            <div className="flex justify-between w-full text-sm">
+              <span className="text-gray-600">{STAGE_LABELS[installProgress.stage] || installProgress.stage}</span>
+              <span className="text-gray-700 font-semibold">{installProgress.percent}%</span>
             </div>
-          </Tabs.Panel>
+            <span className="text-xs text-gray-400">{installProgress.message}</span>
+          </div>
+        ) : (
+          <Tabs selectedKey={mode} onSelectionChange={(k) => { if (k) setMode(k as 'auto' | 'manual') }}>
+            <Tabs.List className="mb-4">
+              <Tabs.Tab id="auto">自动下载安装</Tabs.Tab>
+              <Tabs.Tab id="manual">手动指定目录</Tabs.Tab>
+            </Tabs.List>
 
-          <Tabs.Panel id="manual">
-            <div className="flex flex-col gap-4">
-              <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                <div className="text-xs text-gray-500 mb-1">NapCat 目录</div>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 text-sm text-gray-700 truncate font-mono">{installDir || '未选择'}</div>
-                  <Button size="sm" variant="secondary" onPress={chooseDir}>选择目录</Button>
+            <Tabs.Panel id="auto">
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-full bg-gray-50 rounded-lg p-3 border border-gray-200">
+                  <div className="text-xs text-gray-500 mb-1">安装位置</div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 text-sm text-gray-700 truncate font-mono">{installDir}</div>
+                    <Button size="sm" variant="secondary" onPress={chooseDir}>更改</Button>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">推荐选择非系统盘目录，避免占用 C 盘空间</p>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">需要包含 napcat.exe 或 launcher.bat 等可执行文件</p>
+
+                <Button
+                  size="lg"
+                  isPending={loading}
+                  onPress={installNapCat}
+                  className="w-64"
+                >
+                  {loading ? '正在下载安装...' : '开始安装 NapCat'}
+                </Button>
+
+                {error && (
+                  <div className="w-full text-sm text-red-500 bg-red-50 rounded-lg p-3 border border-red-100">
+                    {error}
+                  </div>
+                )}
               </div>
+            </Tabs.Panel>
 
-              <Button
-                size="lg"
-                isPending={loading}
-                isDisabled={!installDir}
-                onPress={setManualDir}
-              >
-                {loading ? '校验中...' : '确认使用该目录'}
-              </Button>
-
-              {error && (
-                <div className="text-sm text-red-500 bg-red-50 rounded-lg p-3 border border-red-100">
-                  {error}
+            <Tabs.Panel id="manual">
+              <div className="flex flex-col items-center gap-4">
+                <div className="w-full bg-gray-50 rounded-lg p-3 border border-gray-200">
+                  <div className="text-xs text-gray-500 mb-1">NapCat 目录</div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 text-sm text-gray-700 truncate font-mono">{installDir || '未选择'}</div>
+                    <Button size="sm" variant="secondary" onPress={chooseDir}>选择目录</Button>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">需要包含 napcat.exe 或 launcher.bat 等可执行文件</p>
                 </div>
-              )}
-            </div>
-          </Tabs.Panel>
-        </Tabs>
+
+                <Button
+                  size="lg"
+                  isPending={loading}
+                  isDisabled={!installDir}
+                  onPress={setManualDir}
+                  className="w-64"
+                >
+                  {loading ? '校验中...' : '确认使用该目录'}
+                </Button>
+
+                {error && (
+                  <div className="w-full text-sm text-red-500 bg-red-50 rounded-lg p-3 border border-red-100">
+                    {error}
+                  </div>
+                )}
+              </div>
+            </Tabs.Panel>
+          </Tabs>
+        )}
       </div>
 
       <div className="mt-6 text-xs text-gray-400">

@@ -144,7 +144,7 @@ function saveNapCatSettings(settings: { installDir?: string; executablePath?: st
   fs.writeFileSync(file, JSON.stringify({ ...existing, ...settings }, null, 2), 'utf-8')
 }
 
-function getOrCreateNapCatManager(account?: string): NapCatManager {
+function getOrCreateNapCatManager(account?: string, onProgress?: (p: { percent: number; stage: string; message: string }) => void): NapCatManager {
   const settings = loadNapCatSettings()
   if (!napCatManager) {
     napCatManager = new NapCatManager({
@@ -158,6 +158,7 @@ function getOrCreateNapCatManager(account?: string): NapCatManager {
       onStatusChange: (status) => {
         console.log('[NapCatManager] status:', status)
       },
+      onProgress,
     })
   }
   return napCatManager
@@ -435,10 +436,14 @@ export function registerQQBotHandlers(): void {
   })
 
   // 安装 NapCat：指定目录并触发自动下载
-  ipcMain.handle('qq-bot:install-napcat', async (_, installDir: string) => {
+  ipcMain.handle('qq-bot:install-napcat', async (event, installDir: string) => {
     saveNapCatSettings({ installDir })
     destroyNapCatManager()
-    const manager = getOrCreateNapCatManager()
+    const manager = getOrCreateNapCatManager(undefined, (progress) => {
+      try {
+        event.sender.send('qq-bot:install-progress', progress)
+      } catch { /* ignore */ }
+    })
     try {
       await manager.start()
       await manager.stop()

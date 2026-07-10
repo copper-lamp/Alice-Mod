@@ -43,8 +43,15 @@ build/
 # pnpm
 .pnpm-store/
 
+# NapCat 安装目录
+napcat/
+packages/**/napcat/
+
 #
 .superpowers/
 .trae-html-share-packages/
 bds26.10/
 libs/
+
+# TypeScript
+*.tsbuildinfo
