@@ -10,9 +10,9 @@ const ConfigPanel: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-xl mx-4 flex flex-col max-h-[80vh]">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-xl mx-4 flex flex-col max-h-[80vh] overflow-hidden">
         {/* 头部 */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 shrink-0">
           <h2 className="text-base font-semibold text-gray-800">设置</h2>
           <button
             onClick={closeConfigPanel}
@@ -24,13 +24,13 @@ const ConfigPanel: React.FC = () => {
           </button>
         </div>
 
-        {/* 内容 */}
+        {/* 内容 - 单一滚动容器 */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
           <TabsView />
         </div>
 
         {/* 底部 */}
-        <div className="flex justify-end px-5 py-3 border-t border-gray-200">
+        <div className="flex justify-end px-5 py-3 border-t border-gray-200 shrink-0">
           <Button variant="secondary" size="sm" onPress={closeConfigPanel}>
             关闭
           </Button>

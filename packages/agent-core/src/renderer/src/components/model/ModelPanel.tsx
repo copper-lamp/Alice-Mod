@@ -19,8 +19,8 @@ const ModelPanel: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <Card className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden animate-fadeIn">
+      <Card className="flex-1 flex flex-col overflow-hidden rounded-xl shadow-sm border border-gray-200">
         <Card.Header>
           <div className="flex items-center justify-between w-full">
             <Card.Title>模型管理</Card.Title>

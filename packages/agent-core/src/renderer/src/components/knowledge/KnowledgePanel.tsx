@@ -20,8 +20,8 @@ const KnowledgePanel: React.FC = () => {
   const { activeTab, setActiveTab } = useKnowledgeStore()
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden -m-4">
-      <Card className="flex-1 flex flex-col overflow-hidden rounded-none">
+    <div className="flex-1 flex flex-col overflow-hidden animate-fadeIn">
+      <Card className="flex-1 flex flex-col overflow-hidden rounded-xl shadow-sm border border-gray-200">
         <Card.Content className="flex-1 flex flex-col overflow-hidden pt-5">
           <Tabs
             selectedKey={activeTab}
@@ -42,7 +42,7 @@ const KnowledgePanel: React.FC = () => {
               </Tabs.List>
             </Tabs.ListContainer>
 
-            <div className="flex-1 overflow-auto pt-4">
+            <div className="flex-1 min-h-0 overflow-y-auto pt-4 px-5">
               <Tabs.Panel id="database">
                 <DatabaseView />
               </Tabs.Panel>

@@ -14,11 +14,11 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (layoutMode) {
       case 'nav-view':
-        return renderNavContent()
+        return <div key={layoutMode} className="flex-1 flex flex-col overflow-hidden">{renderNavContent()}</div>
       case 'agent-view':
-        return <AgentInstanceView />
+        return <AgentInstanceView key={layoutMode} />
       case 'agent-create':
-        return <AgentCreatePage />
+        return <AgentCreatePage key={layoutMode} />
       default:
         return null
     }
@@ -27,14 +27,14 @@ const App: React.FC = () => {
   const renderNavContent = () => {
     switch (activeNav) {
       case 'dashboard':
-        return <DashboardPanel />
+        return <DashboardPanel key={activeNav} />
       case 'model':
-        return <ModelPanel />
+        return <ModelPanel key={activeNav} />
       case 'knowledge':
-        return <KnowledgePanel />
+        return <KnowledgePanel key={activeNav} />
       case 'robot':
         return (
-          <div className="flex-1 flex items-center justify-center bg-white rounded-lg shadow-sm border border-gray-200">
+          <div key={activeNav} className="flex-1 flex items-center justify-center bg-white rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
             <span className="text-sm text-gray-400">机器人模块（V10 实现）</span>
           </div>
         )

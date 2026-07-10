@@ -27,12 +27,11 @@ const AgentInstanceView: React.FC = () => {
     }
   }, [currentAgentId])
 
-  // 从 agents 列表中找到当前智能体的概要信息
   const currentSummary = agents.find(a => a.id === currentAgentId)
 
   if (!currentAgentId || !currentSummary) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="flex-1 flex items-center justify-center bg-white rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
         <div className="text-center">
           <div className="text-4xl mb-3 text-gray-300">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto">
@@ -51,12 +50,11 @@ const AgentInstanceView: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
       {/* 标题栏 - 上栏：头像、名字、最后运行时间、Tabs */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 shrink-0">
-        <div className="flex items-center gap-3">
-          {/* 头像 */}
-          <div className="w-8 h-8 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center border border-gray-200">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-8 h-8 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center border border-gray-200 flex-shrink-0">
             {(currentSummary.skinData || currentAgent?.skinData) ? (
               <img
                 src={currentSummary.skinData || currentAgent?.skinData}
@@ -69,17 +67,14 @@ const AgentInstanceView: React.FC = () => {
               </span>
             )}
           </div>
-          {/* 名字 */}
-          <div>
+          <div className="min-w-0">
             <span className="text-base font-semibold text-gray-800">{currentSummary.name}</span>
             <span className="text-xs text-gray-400 ml-2 capitalize">{currentSummary.status}</span>
+            <span className="text-xs text-gray-400 ml-3">
+              {currentSummary.lastActiveAt ? `最后活跃: ${formatTime(currentSummary.lastActiveAt)}` : '未运行'}
+            </span>
           </div>
-          {/* 最后运行时间 */}
-          <span className="text-xs text-gray-400 ml-1">
-            {currentSummary.lastActiveAt ? `最后活跃: ${formatTime(currentSummary.lastActiveAt)}` : '未运行'}
-          </span>
         </div>
-        {/* Tabs 在右侧 */}
         <Tabs
           selectedKey={agentViewTab}
           onSelectionChange={(key) => setAgentViewTab(key as 'info' | 'config')}
@@ -99,12 +94,14 @@ const AgentInstanceView: React.FC = () => {
         </Tabs>
       </div>
 
-      {/* 内容区 - 下栏 */}
-      {agentViewTab === 'info' ? (
-        <ChatPanel />
-      ) : (
-        <AgentConfigForm agentId={currentAgentId} />
-      )}
+      {/* 内容区 - 下栏：高度由父容器决定，由子组件自行处理滚动 */}
+      <div className="flex-1 min-h-0">
+        {agentViewTab === 'info' ? (
+          <ChatPanel />
+        ) : (
+          <AgentConfigForm agentId={currentAgentId} />
+        )}
+      </div>
     </div>
   )
 }

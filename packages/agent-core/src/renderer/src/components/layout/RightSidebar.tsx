@@ -2,39 +2,41 @@ import React from 'react'
 
 const RightSidebar: React.FC = () => {
   return (
-    <aside className="w-72 flex flex-col bg-gray-100 border-l border-gray-200">
-      <div className="p-4">
-        <h3 className="text-xs text-gray-400 font-medium mb-2">上下文窗口</h3>
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 rounded-full" style={{ width: '45%' }} />
+    <aside className="flex flex-col h-full overflow-hidden bg-gray-100">
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="p-4">
+          <h3 className="text-xs text-gray-400 font-medium mb-2">上下文窗口</h3>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-500 rounded-full" style={{ width: '45%' }} />
+            </div>
+            <span className="text-xs text-gray-500 font-mono">45%</span>
           </div>
-          <span className="text-xs text-gray-500 font-mono">45%</span>
+          <div className="mt-1 text-xs text-gray-400">1,843 / 4,096 tokens</div>
         </div>
-        <div className="mt-1 text-xs text-gray-400">1,843 / 4,096 tokens</div>
-      </div>
 
-      <div className="px-4 pb-4">
-        <h3 className="text-xs text-gray-400 font-medium mb-2">用量监控</h3>
-        <div className="mb-2">
-          <div className="flex justify-between text-xs text-gray-500 mb-0.5">
-            <span>今日用量</span>
-            <span className="font-mono">12,847</span>
+        <div className="px-4 pb-4">
+          <h3 className="text-xs text-gray-400 font-medium mb-2">用量监控</h3>
+          <div className="mb-2">
+            <div className="flex justify-between text-xs text-gray-500 mb-0.5">
+              <span>今日用量</span>
+              <span className="font-mono">12,847</span>
+            </div>
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>本月用量</span>
+              <span className="font-mono">284,193</span>
+            </div>
           </div>
-          <div className="flex justify-between text-xs text-gray-500">
-            <span>本月用量</span>
-            <span className="font-mono">284,193</span>
-          </div>
+          <UsageChart />
         </div>
-        <UsageChart />
-      </div>
 
-      <div className="flex-1 px-4">
-        <h3 className="text-xs text-gray-400 font-medium mb-2">待办事项</h3>
-        <div className="space-y-1.5">
-          <TodoItem label="待集统计" completed={false} />
-          <TodoItem label="预编译项" completed={false} />
-          <TodoItem label="配置 Provider" completed={true} />
+        <div className="px-4 pb-4">
+          <h3 className="text-xs text-gray-400 font-medium mb-2">待办事项</h3>
+          <div className="space-y-1.5">
+            <TodoItem label="待集统计" completed={false} />
+            <TodoItem label="预编译项" completed={false} />
+            <TodoItem label="配置 Provider" completed={true} />
+          </div>
         </div>
       </div>
     </aside>

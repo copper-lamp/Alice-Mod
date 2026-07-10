@@ -26,7 +26,7 @@ const MessageList: React.FC<Props> = ({
 
   if (messages.length === 0 && !isStreaming) {
     return (
-      <div className="flex-1 h-0 flex items-center justify-center text-gray-400 px-5">
+      <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center text-gray-400 px-5">
         <div className="text-center">
           <p className="text-base font-medium text-gray-500">LLM 对话面板</p>
           <p className="text-sm mt-1">等待玩家通过游戏或 QQ 发起对话</p>
@@ -36,8 +36,8 @@ const MessageList: React.FC<Props> = ({
   }
 
   return (
-    <div ref={scrollRef} className="flex-1 h-0 overflow-y-auto">
-      <div className="py-3">
+    <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
+      <div className="py-3 px-4">
         {messages.map(msg => (
           <MessageBubble key={msg.id} message={msg} />
         ))}

@@ -1,5 +1,4 @@
 import React from 'react'
-import { Card } from '@heroui/react'
 import { useDashboardStore } from '../../stores/dashboardStore'
 import type { DashboardStats, DailyUsage, ActivityData, ProviderUsage, ModelUsage } from '../../lib/types'
 
@@ -33,103 +32,110 @@ const getActivityLevel = (value: number, max: number): string => {
 const DashboardPanel: React.FC = () => {
   const { stats, dailyUsage, activityData, loading } = useDashboardStore()
 
+  const inner = (
+    <>
+      {/* Token 用量总览 */}
+      <section>
+        <h3 className="text-sm font-semibold text-gray-700 mb-4">Token 用量总览</h3>
+        <div className="grid grid-cols-3 gap-6">
+          <div className="bg-blue-50 rounded-xl p-5">
+            <span className="text-sm text-blue-600 font-medium">今日 Token</span>
+            <p className="text-2xl font-bold text-blue-700 font-mono mt-1">{formatNumber(stats.todayTokens)}</p>
+            <div className="w-full h-1.5 bg-blue-200 rounded-full mt-3 overflow-hidden">
+              <div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.min((stats.todayTokens / (stats.monthTokens || 1)) * 100, 100)}%` }} />
+            </div>
+          </div>
+          <div className="bg-violet-50 rounded-xl p-5">
+            <span className="text-sm text-violet-600 font-medium">本月 Token</span>
+            <p className="text-2xl font-bold text-violet-700 font-mono mt-1">{formatNumber(stats.monthTokens)}</p>
+            <div className="w-full h-1.5 bg-violet-200 rounded-full mt-3 overflow-hidden">
+              <div className="h-full bg-violet-600 rounded-full" style={{ width: `${Math.min((stats.monthTokens / (stats.totalTokens || 1)) * 100, 100)}%` }} />
+            </div>
+          </div>
+          <div className="bg-emerald-50 rounded-xl p-5">
+            <span className="text-sm text-emerald-600 font-medium">总 Token</span>
+            <p className="text-2xl font-bold text-emerald-700 font-mono mt-1">{formatNumber(stats.totalTokens)}</p>
+            <div className="w-full h-1.5 bg-emerald-200 rounded-full mt-3 overflow-hidden">
+              <div className="h-full bg-emerald-600 rounded-full" style={{ width: '100%' }} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Token 日趋势 + Provider 分布 */}
+      <section className="grid grid-cols-2 gap-8">
+        <div className="bg-gray-50/50 rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-4">Token 日趋势</h3>
+          {dailyUsage.length === 0 ? (
+            <div className="flex items-center justify-center h-[200px] text-xs text-gray-400">暂无数据</div>
+          ) : (
+            <TokenTrendChart data={dailyUsage} />
+          )}
+        </div>
+        <div className="bg-gray-50/50 rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-4">Provider 分布</h3>
+          {stats.providerDistribution.length === 0 ? (
+            <div className="flex items-center justify-center h-[200px] text-xs text-gray-400">暂无数据</div>
+          ) : (
+            <ProviderPieChart data={stats.providerDistribution} />
+          )}
+        </div>
+      </section>
+
+      {/* 模型调用排行 + 连接概览 */}
+      <section className="grid grid-cols-2 gap-8">
+        <div className="bg-gray-50/50 rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-4">模型调用排行</h3>
+          {stats.topModels.length === 0 ? (
+            <div className="flex items-center justify-center h-[200px] text-xs text-gray-400">暂无数据</div>
+          ) : (
+            <ModelRankingChart data={stats.topModels} />
+          )}
+        </div>
+        <div className="bg-gray-50/50 rounded-xl p-5">
+          <h3 className="text-sm font-semibold text-gray-700 mb-4">连接概览</h3>
+          <ConnectionOverview stats={stats} />
+        </div>
+      </section>
+
+      {/* 活跃时段热力图 */}
+      <section className="bg-gray-50/50 rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-gray-700 mb-4">智能体 24h 活跃时段</h3>
+        {activityData.length === 0 ? (
+          <div className="flex items-center justify-center h-[120px] text-xs text-gray-400">暂无数据</div>
+        ) : (
+          <ActivityHeatmapChart data={activityData} />
+        )}
+      </section>
+    </>
+  )
+
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm text-gray-400">加载中...</span>
+      <div className="flex-1 flex flex-col overflow-hidden bg-white rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm text-gray-400">加载中...</span>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <Card className="w-full">
-        <Card.Header>
-          <Card.Title>仪表盘</Card.Title>
-          <Card.Description>
-            系统概览 · {stats.onlineAgents}/{stats.totalAgents} 智能体在线
-          </Card.Description>
-        </Card.Header>
-
-        <Card.Content className="space-y-8">
-          {/* Token 用量总览 */}
-          <section>
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">Token 用量总览</h3>
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-blue-50 rounded-xl p-5">
-                <span className="text-sm text-blue-600 font-medium">今日 Token</span>
-                <p className="text-2xl font-bold text-blue-700 font-mono mt-1">{formatNumber(stats.todayTokens)}</p>
-                <div className="w-full h-1.5 bg-blue-200 rounded-full mt-3 overflow-hidden">
-                  <div className="h-full bg-blue-600 rounded-full" style={{ width: `${Math.min((stats.todayTokens / (stats.monthTokens || 1)) * 100, 100)}%` }} />
-                </div>
-              </div>
-              <div className="bg-violet-50 rounded-xl p-5">
-                <span className="text-sm text-violet-600 font-medium">本月 Token</span>
-                <p className="text-2xl font-bold text-violet-700 font-mono mt-1">{formatNumber(stats.monthTokens)}</p>
-                <div className="w-full h-1.5 bg-violet-200 rounded-full mt-3 overflow-hidden">
-                  <div className="h-full bg-violet-600 rounded-full" style={{ width: `${Math.min((stats.monthTokens / (stats.totalTokens || 1)) * 100, 100)}%` }} />
-                </div>
-              </div>
-              <div className="bg-emerald-50 rounded-xl p-5">
-                <span className="text-sm text-emerald-600 font-medium">总 Token</span>
-                <p className="text-2xl font-bold text-emerald-700 font-mono mt-1">{formatNumber(stats.totalTokens)}</p>
-                <div className="w-full h-1.5 bg-emerald-200 rounded-full mt-3 overflow-hidden">
-                  <div className="h-full bg-emerald-600 rounded-full" style={{ width: '100%' }} />
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* Token 日趋势 + Provider 分布 */}
-          <section className="grid grid-cols-2 gap-8">
-            <div className="bg-gray-50/50 rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">Token 日趋势</h3>
-              {dailyUsage.length === 0 ? (
-                <div className="flex items-center justify-center h-[200px] text-xs text-gray-400">暂无数据</div>
-              ) : (
-                <TokenTrendChart data={dailyUsage} />
-              )}
-            </div>
-            <div className="bg-gray-50/50 rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">Provider 分布</h3>
-              {stats.providerDistribution.length === 0 ? (
-                <div className="flex items-center justify-center h-[200px] text-xs text-gray-400">暂无数据</div>
-              ) : (
-                <ProviderPieChart data={stats.providerDistribution} />
-              )}
-            </div>
-          </section>
-
-          {/* 模型调用排行 + 连接概览 */}
-          <section className="grid grid-cols-2 gap-8">
-            <div className="bg-gray-50/50 rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">模型调用排行</h3>
-              {stats.topModels.length === 0 ? (
-                <div className="flex items-center justify-center h-[200px] text-xs text-gray-400">暂无数据</div>
-              ) : (
-                <ModelRankingChart data={stats.topModels} />
-              )}
-            </div>
-            <div className="bg-gray-50/50 rounded-xl p-5">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">连接概览</h3>
-              <ConnectionOverview stats={stats} />
-            </div>
-          </section>
-
-          {/* 活跃时段热力图 */}
-          <section className="bg-gray-50/50 rounded-xl p-5">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">智能体 24h 活跃时段</h3>
-            {activityData.length === 0 ? (
-              <div className="flex items-center justify-center h-[120px] text-xs text-gray-400">暂无数据</div>
-            ) : (
-              <ActivityHeatmapChart data={activityData} />
-            )}
-          </section>
-        </Card.Content>
-      </Card>
+    <div className="flex-1 flex flex-col overflow-hidden bg-white rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 shrink-0">
+        <div>
+          <h2 className="text-base font-semibold text-gray-800">仪表盘</h2>
+          <p className="text-xs text-gray-400 mt-0.5">系统概览 · {stats.onlineAgents}/{stats.totalAgents} 智能体在线</p>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="space-y-8">
+          {inner}
+        </div>
+      </div>
     </div>
   )
 }
