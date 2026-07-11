@@ -6,6 +6,26 @@
 
 export const BOT_DATA_DIR = './plugins/mcagent-adapter-be/data/bots/';
 export const BOT_INVENTORY_DIR = './plugins/mcagent-adapter-be/data/inventories/';
+export const PLUGIN_ROOT = './plugins/mcagent-adapter-be/';
+export const TOOLS_DIR = PLUGIN_ROOT + 'tools/';
+export const ALICE_DIR = './Alice/';
+export const DATA_DIR = ALICE_DIR + 'data/';
+export const INSTANCE_ID_FILE = DATA_DIR + 'instance_id.txt';
+export const INSTANCE_FILE_PATH = ALICE_DIR + 'instance.json';
+
+// ── TCP 客户端 ──
+
+export const DEFAULT_TCP_HOST = '127.0.0.1';
+export const DEFAULT_TCP_PORT = 27541;
+export const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+export const RECONNECT_INTERVALS = [1000, 2000, 4000, 8000, 16000];
+export const MAX_RECONNECT_ATTEMPTS = 5;
+
+// ── 状态上报 ──
+
+export const DEFAULT_STATUS_INTERVAL_MS = 2000;
+export const STATUS_REPORT_WARN_THRESHOLD_MS = 100;
 
 // ── 操作列表 ──
 

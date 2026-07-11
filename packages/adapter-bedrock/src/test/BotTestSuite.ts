@@ -6,10 +6,9 @@
  */
 
 import { BotManager } from '../bot/BotManager.js';
-import { BotInstance, BotOperation, BotStatus } from '../bot/BotInstance.js';
+import { BotInstance, BotOperation } from '../bot/BotInstance.js';
 import type { BotPosition } from '../bot/BotInstance.js';
 import { BOT_DATA_DIR, BOT_INVENTORY_DIR, SUCCESS } from '../utils/constants.js';
-import { getEntityFeetPos } from '../utils/helpers.js';
 
 // ── 测试报告 ──
 

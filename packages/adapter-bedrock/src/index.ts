@@ -1,293 +1,297 @@
 /**
  * McAgent Adapter BE - 插件入口
  *
- * 参考 LLSE-FakePlayer 实现模式：
- * - 无 module.exports 生命周期钩子
- * - main() 在文件末尾直接调用
+ * 采用 LLSE-FakePlayer 模式：
+ * - 无 module.exports 生命周期钩子，文件末尾直接执行
  * - 命令注册在 onServerStarted 事件中
- * - 全链路日志跟踪
+ *
+ * V2: TCP 客户端模块（连接/握手/心跳/重连）
+ * V3: 工具注册模块 + 状态上报 + JSON 入口生成
  */
 
-// ── 启动日志 ──
-// 注意：此处的 logger 可能尚未初始化，用 console 作为后备
+import { TcpClient, ConnectionState } from './tcp/TcpClient.js';
+import type { JsonRpcMessage, JsonRpcRequest } from './tcp/json-rpc.js';
+import { JsonRpcCodec, JSONRPC_ERROR_CODES } from './tcp/json-rpc.js';
+import { ToolRegistry } from './registry/tool-registry.js';
+import { ToolManager } from './registry/tool-manager.js';
+import { ToolContextImpl } from './registry/tool-context.js';
+import { StatusReporter } from './status/status-reporter.js';
+import { InstanceFileHelper } from './entry/instance-file.js';
+import { TOOLS_DIR } from './utils/constants.js';
 
 const _VER: [number, number, number] = [1, 0, 0];
 const _NAME = 'McAgent Adapter BE';
 
 let _initialized = false;
-let _logReady = false;
 
-function log(...args: any[]): void {
-  try {
-    if (_logReady) logger.info('[McAgent]', ...args);
-    else console.log('[McAgent]', ...args);
-  } catch (_e) {
-    console.log('[McAgent]', ...args);
-  }
-}
+// ── 全局变量 ──
 
-function logWarn(...args: any[]): void {
-  try {
-    if (_logReady) logger.warn('[McAgent]', ...args);
-    else console.warn('[McAgent]', ...args);
-  } catch (_e) {
-    console.warn('[McAgent]', ...args);
-  }
-}
+let tcpClient: TcpClient;
+let toolRegistry: ToolRegistry;
+let toolManager: ToolManager;
+let statusReporter: StatusReporter;
 
-function logError(...args: any[]): void {
-  try {
-    if (_logReady) logger.error('[McAgent]', ...args);
-    else console.error('[McAgent]', ...args);
-  } catch (_e) {
-    console.error('[McAgent]', ...args);
-  }
-}
-
-// ── 模块加载（懒加载，用 require 而非 import） ──
-
-let BotManager: any = null;
-let BotTestSuite: any = null;
-
-function loadModules(): boolean {
-  try {
-    log('加载模块: BotManager...');
-    BotManager = require('./bot/BotManager.js').BotManager;
-    log('加载模块: BotManager OK');
-  } catch (e) {
-    logError('加载 BotManager 失败:', e);
-    return false;
-  }
-
-  try {
-    log('加载模块: BotTestSuite...');
-    BotTestSuite = require('./test/BotTestSuite.js').BotTestSuite;
-    log('加载模块: BotTestSuite OK');
-  } catch (e) {
-    logWarn('加载 BotTestSuite 失败（非致命）:', e);
-  }
-
-  return true;
-}
-
-// ── 初始化 ──
+// ============================================================
+// 初始化
+// ============================================================
 
 function initPlugin(): void {
-  log('=== McAgent Adapter BE 启动 ===');
-  log('版本:', _VER.join('.'));
+  logger.setTitle('McAgent');
+  logger.info(`=== ${_NAME} v${_VER.join('.')} 启动 ===`);
 
-  // 注册插件信息
-  try {
-    ll.registerPlugin(_NAME, 'McAgent 基岩版接入核心', _VER);
-    log('ll.registerPlugin 完成');
-  } catch (e) {
-    logError('ll.registerPlugin 失败:', e);
-  }
+  // 注册插件
+  ll.registerPlugin(_NAME, 'McAgent 基岩版接入核心', _VER);
 
-  // 设置日志标题
-  try {
-    logger.setTitle('McAgent');
-    _logReady = true;
-    log('logger 已就绪');
-  } catch (e) {
-    console.error('[McAgent] logger.setTitle 失败:', e);
-  }
+  // 1. 加载或创建实例 ID
+  const instanceId = InstanceFileHelper.loadOrCreateInstanceId();
 
-  // 加载核心模块
-  if (!loadModules()) {
-    logError('核心模块加载失败，插件无法运行');
-    return;
-  }
+  // 2. 初始化 TCP 客户端
+  tcpClient = new TcpClient({
+    host: '127.0.0.1',
+    port: 27541,
+    authToken: '',  // 从配置读取
+    instanceId,
+    gameVersion: '1.21.0',
+  });
 
-  // 初始化 BotManager
-  try {
-    BotManager.init();
-    log('BotManager.init() 完成');
-  } catch (e) {
-    logError('BotManager.init() 失败:', e);
-    return;
-  }
+  // 3. 初始化工具注册器
+  toolRegistry = new ToolRegistry({
+    toolsDir: TOOLS_DIR,
+  });
+  toolManager = new ToolManager(toolRegistry);
 
+  // 4. 注册 TCP 消息处理器
+  tcpClient.onMessage((msg) => {
+    handleMessage(msg);
+  });
+
+  // 5. TCP 连接状态变化处理
+  tcpClient.onStateChange((state) => {
+    handleStateChange(state);
+  });
+
+  // 6. 初始化状态上报（暂不启动）
+  statusReporter = new StatusReporter({
+    sendNotification: (method, params) => tcpClient.sendNotification(method, params),
+    isConnected: () => tcpClient.isConnected(),
+    intervalMs: 2000,
+  });
+
+  // 7. 加载传统模块
+  const BotManager = loadModule('./bot/BotManager.js', 'BotManager');
+  if (!BotManager) return;
+
+  const BotTestSuite = loadModule('./test/BotTestSuite.js', 'BotTestSuite');
+
+  BotManager.init();
   _initialized = true;
-  log('初始化阶段完成，开始注册事件监听...');
 
-  // ============================================================
-  // 事件监听
-  // ============================================================
+  // 注册事件
+  registerEvents(BotManager);
+  registerCommands(BotManager, BotTestSuite);
 
-  // 1. onServerStarted — 命令注册 + 数据加载 (重要!)
+  logger.info(`${_NAME} 启动完成，等待服务器就绪...`);
+}
+
+function loadModule(path: string, name: string): any {
   try {
-    mc.listen('onServerStarted', () => {
-      log('>>>> onServerStarted 事件触发 <<<<');
-
-      // 注册命令
-      registerCommands();
-
-      // 加载假人数据
-      try {
-        BotManager.loadAllData();
-        log('BotManager.loadAllData() 完成');
-      } catch (e) {
-        logWarn('loadAllData() 失败:', e);
-      }
-
-      // 自动上线
-      try {
-        const res = BotManager.initialAutoOnline();
-        log('initialAutoOnline() 完成, 结果:', JSON.stringify(res));
-      } catch (e) {
-        logWarn('initialAutoOnline() 失败:', e);
-      }
-
-      log('全部初始化完成，插件已就绪');
-    });
-    log('已注册 onServerStarted 事件');
+    const mod = require(path);
+    logger.debug(`模块已加载: ${name}`);
+    return mod[name];
   } catch (e) {
-    logError('注册 onServerStarted 失败:', e);
+    logger.error(`模块加载失败: ${name}`, e);
+    return null;
+  }
+}
+
+// ============================================================
+// 事件监听
+// ============================================================
+
+function registerEvents(BotManager: any): void {
+  // 服务器启动完成 — 连接 TCP + 加载数据 + 自动上线
+  mc.listen('onServerStarted', () => {
+    logger.info('服务器已就绪，开始初始化...');
+
+    // V2: 连接 TCP
+    tcpClient.connect().catch((err) => {
+      logger.error(`[McAgent] TCP 连接失败: ${err}`);
+    });
+
+    // V3: 扫描并注册工具
+    toolRegistry.scanAndRegister().then((count) => {
+      logger.info(`[McAgent] 已注册 ${count} 个工具`);
+    });
+
+    // V3: 生成 JSON 入口文件
+    InstanceFileHelper.generate({
+      instanceId: tcpClient.instanceId,
+      isConnected: () => tcpClient.isConnected(),
+      toolsCount: toolRegistry.count,
+    });
+
+    // V3: 启动状态上报
+    statusReporter.start();
+
+    // 传统模块：加载假人数据 + 自动上线
+    try { BotManager.loadAllData(); } catch (e) { logger.warn('加载假人数据失败', e); }
+    try { BotManager.initialAutoOnline(); } catch (e) { logger.warn('自动上线失败', e); }
+
+    logger.info(`${_NAME} 已就绪`);
+  });
+
+  // Tick — 驱动假人同步
+  mc.listen('onTick', () => {
+    if (_initialized) BotManager.onTick();
+    return true;
+  });
+
+  // 假人死亡重生
+  mc.listen('onPlayerDie', (player: any, source: any) => {
+    if (_initialized) BotManager.onPlayerDie(player, source);
+    return true;
+  });
+
+  // 服务器关闭 — 清理资源
+  mc.listen('onServerStop', () => {
+    logger.info('服务器关闭，清理资源...');
+    if (_initialized) {
+      statusReporter.stop();
+      tcpClient.disconnect().catch(() => {});
+      try { BotManager.offlineAll(); } catch (e) { logger.warn('假人清理失败', e); }
+    }
+    logger.info('资源清理完成');
+    return true;
+  });
+}
+
+// ============================================================
+// TCP 消息处理
+// ============================================================
+
+function handleMessage(msg: JsonRpcMessage): void {
+  if (JsonRpcCodec.isRequest(msg)) {
+    const request = msg as JsonRpcRequest;
+
+    switch (request.method) {
+      case 'tool_call':
+        handleToolCall(request);
+        break;
+      default:
+        tcpClient.sendRaw(
+          JsonRpcCodec.encodeError(
+            request.id,
+            JSONRPC_ERROR_CODES.METHOD_NOT_FOUND,
+            `方法未找到: ${request.method}`,
+          ),
+        );
+    }
+  }
+}
+
+// 工具调用处理
+async function handleToolCall(request: JsonRpcRequest): Promise<void> {
+  const { tool_name, parameters } = request.params || {};
+
+  const ctx = new ToolContextImpl({
+    sendEvent: (event) => tcpClient.sendNotification('event', event),
+  });
+
+  const result = await toolManager.executeTool(tool_name, parameters, ctx);
+
+  tcpClient.sendRaw(JsonRpcCodec.encodeResponse(request.id, result));
+}
+
+// 状态变化处理
+function handleStateChange(state: ConnectionState): void {
+  // 更新 JSON 入口文件
+  InstanceFileHelper.updateStatus({
+    instanceId: tcpClient.instanceId,
+    isConnected: () => tcpClient.isConnected(),
+    toolsCount: toolRegistry.count,
+  });
+
+  // 连接成功时自动注册工具
+  if (state === ConnectionState.CONNECTED) {
+    const payload = toolRegistry.generateRegistrationPayload();
+    tcpClient.sendNotification('register_tools', {
+      tools: payload,
+      instance_id: tcpClient.instanceId,
+    });
+    logger.info(`[McAgent] 已向 Agent Core 注册 ${payload.length} 个工具`);
   }
 
-  // 2. onTick — 驱动假人同步
-  try {
-    mc.listen('onTick', () => {
-      if (_initialized) BotManager.onTick();
-      return true;
-    });
-    log('已注册 onTick 事件');
-  } catch (e) {
-    logError('注册 onTick 失败:', e);
+  if (state === ConnectionState.DISCONNECTED) {
+    statusReporter.stop();
   }
-
-  // 3. onPlayerDie — 假人死亡重生
-  try {
-    mc.listen('onPlayerDie', (player: any, source: any) => {
-      if (_initialized) BotManager.onPlayerDie(player, source);
-      return true;
-    });
-    log('已注册 onPlayerDie 事件');
-  } catch (e) {
-    logError('注册 onPlayerDie 失败:', e);
-  }
-
-  // 4. onJoin — 玩家加入日志
-  try {
-    mc.listen('onJoin', (pl: any) => {
-      if (pl && !pl.isSimulatedPlayer()) {
-        log('玩家加入:', pl.realName);
-      }
-      return true;
-    });
-    log('已注册 onJoin 事件');
-  } catch (e) {
-    logError('注册 onJoin 失败:', e);
-  }
-
-  // 5. onLeft — 玩家离开日志
-  try {
-    mc.listen('onLeft', (pl: any) => {
-      if (pl && !pl.isSimulatedPlayer()) {
-        log('玩家离开:', pl.realName);
-      }
-      return true;
-    });
-    log('已注册 onLeft 事件');
-  } catch (e) {
-    logError('注册 onLeft 失败:', e);
-  }
-
-  // 6. onServerStop — 清理
-  try {
-    mc.listen('onServerStop', () => {
-      log('>>>> onServerStop 事件触发 <<<<');
-      if (_initialized) {
-        try { BotManager.offlineAll(); } catch (e) { logWarn('offlineAll() 失败:', e); }
-      }
-      log('清理完成');
-      return true;
-    });
-    log('已注册 onServerStop 事件');
-  } catch (e) {
-    logError('注册 onServerStop 失败:', e);
-  }
-
-  log('所有事件注册完成');
 }
 
 // ============================================================
 // 命令注册
 // ============================================================
 
-function registerCommands(): void {
-  log('>>>> 开始注册命令 /mcagent <<<<');
-
+function registerCommands(BotManager: any, BotTestSuite: any): void {
   try {
     const cmd = mc.newCommand('mcagent', 'McAgent 插件控制', 0, 0x80);
-    log('mc.newCommand() 成功');
 
-    // /mcagent test — GUI 测试菜单
+    // /mcagent test
     cmd.setEnum('TestAction', ['test']);
     cmd.mandatory('action', 5, 'TestAction', 'TestAction', 1);
     cmd.overload(['TestAction']);
-    log('已配置: /mcagent test');
 
-    // /mcagent info — 查看信息
+    // /mcagent info / status
     cmd.setEnum('InfoAction', ['info', 'status']);
     cmd.mandatory('action', 5, 'InfoAction', 'InfoAction', 1);
     cmd.overload(['InfoAction']);
-    log('已配置: /mcagent info');
 
-    // 无参调用
+    // /mcagent (无参数)
     cmd.overload([]);
-    log('已配置: /mcagent (无参数)');
 
-    // 回调
     cmd.setCallback((_cmd: any, _ori: any, out: any, res: any) => {
       try {
         const action = res.action ? String(res.action).toLowerCase() : 'info';
-        log('命令被调用, action=' + action);
 
         if (action === 'test') {
-          if (_ori.player) {
-            log('打开测试菜单...');
-            if (BotTestSuite) {
-              BotTestSuite.showMainMenu(_ori.player);
-            } else {
-              out.error('测试模块未加载');
-              logWarn('BotTestSuite 未加载，无法打开 GUI');
-            }
-          } else {
+          if (_ori.player && BotTestSuite) {
+            BotTestSuite.showMainMenu(_ori.player);
+          } else if (!_ori.player) {
             out.error('GUI 模式仅限玩家使用');
+          } else {
+            out.error('测试模块未加载');
           }
           return;
         }
 
-        // info / status / 默认
-        let msg = '§6=== McAgent Adapter BE ===\n';
-        msg += '§e版本: ' + _VER.join('.') + '\n';
-        msg += '§e状态: ' + (_initialized ? '§a已就绪' : '§c未就绪') + '\n';
-        if (_initialized) {
-          msg += '§e假人数量: ' + BotManager.getAll().length + '\n';
-          msg += '§e在线假人: ' + BotManager.getAll().filter((b: any) => b.isOnline()).length + '\n';
-        }
-        msg += '\n§a可用命令:\n';
-        msg += '  /mcagent       §7- 查看插件信息\n';
-        msg += '  /mcagent test  §7- 打开测试菜单\n';
-        msg += '  /mcagent info  §7- 查看插件信息';
-        out.success(msg);
-      } catch (cmdErr) {
-        out.error('指令执行出错，请查看控制台日志');
-        logError('指令回调异常:', cmdErr);
+        const info = _initialized
+          ? `§e假人数量: ${BotManager.getAll().length}\n` +
+            `§e在线假人: ${BotManager.getAll().filter((b: any) => b.isOnline()).length}\n` +
+            `§eTCP 状态: ${tcpClient.getState()}\n` +
+            `§e已注册工具: ${toolRegistry.count}`
+          : '§c插件尚未就绪';
+
+        out.success(
+          '§6=== McAgent Adapter BE ===\n' +
+          `§e版本: ${_VER.join('.')}\n` +
+          `§e状态: ${_initialized ? '§a已就绪' : '§c未就绪'}\n` +
+          info + '\n' +
+          '\n§a可用命令:\n' +
+          '  /mcagent       §7- 查看插件信息\n' +
+          '  /mcagent test  §7- 打开测试菜单\n' +
+          '  /mcagent info  §7- 查看插件信息'
+        );
+      } catch (e) {
+        out.error('指令执行出错');
+        logger.error('指令回调异常', e);
       }
     });
-    log('已设置命令回调');
 
-    const ok = cmd.setup();
-    if (ok) {
-      log('★★★★ /mcagent 命令注册成功 ★★★★');
+    if (cmd.setup()) {
+      logger.info('命令已注册: /mcagent');
     } else {
-      logError('★★★★ /mcagent 命令注册失败 (setup 返回 false) ★★★★');
+      logger.warn('命令注册失败: /mcagent');
     }
   } catch (e) {
-    logError('命令注册过程抛出异常:', e);
+    logger.error('命令注册异常', e);
   }
 }
 
@@ -295,8 +299,4 @@ function registerCommands(): void {
 // 启动
 // ============================================================
 
-try {
-  initPlugin();
-} catch (e) {
-  console.error('[McAgent] initPlugin() 顶层异常:', e);
-}
+initPlugin();

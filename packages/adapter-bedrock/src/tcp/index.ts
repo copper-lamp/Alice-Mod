@@ -1,25 +1,18 @@
-// TCP 客户端占位
-// 负责与外部进程（如 JS 插件层）通信
+/**
+ * TCP 客户端模块 — 导出
+ */
 
-export class TcpClient {
-  constructor() {
-    // TODO: Initialize TCP connection
-  }
-
-  async connect(): Promise<void> {
-    // TODO: Connect to host
-  }
-
-  async disconnect(): Promise<void> {
-    // TODO: Disconnect
-  }
-
-  async send(data: Uint8Array): Promise<void> {
-    // TODO: Send data
-  }
-
-  async receive(): Promise<Uint8Array | null> {
-    // TODO: Receive data
-    return null;
-  }
-}
+export { TcpClient, ConnectionState } from './TcpClient.js';
+export type { TcpClientConfig } from './TcpClient.js';
+export { JsonRpcCodec, JSONRPC_ERROR_CODES } from './json-rpc.js';
+export type {
+  JsonRpcMessage,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcNotification,
+} from './json-rpc.js';
+export { FrameAccumulator } from './message-frame.js';
+export { buildHelloParams, isHandshakeAccepted } from './handshake.js';
+export type { HelloParams, HelloResult } from './handshake.js';
+export { buildPongResponse } from './heartbeat.js';
+export { ReconnectScheduler, RECONNECT_INTERVALS, MAX_RECONNECT_ATTEMPTS } from './reconnect.js';

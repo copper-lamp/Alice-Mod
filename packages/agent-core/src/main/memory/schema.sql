@@ -112,3 +112,70 @@ CREATE TABLE IF NOT EXISTS map_regions (
 
 CREATE INDEX IF NOT EXISTS idx_map_regions_dimension ON map_regions(dimension);
 CREATE INDEX IF NOT EXISTS idx_map_regions_name ON map_regions(name);
+
+-- ════════════════════════════════════════════════════════════════
+-- V13 新增：任务系统表
+-- ════════════════════════════════════════════════════════════════
+
+-- 7. 任务元数据表
+CREATE TABLE IF NOT EXISTS task_meta (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  type TEXT NOT NULL CHECK(type IN ('simple', 'composite', 'loop', 'conditional')),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(status IN ('pending', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+  progress INTEGER NOT NULL DEFAULT 0 CHECK(progress >= 0 AND progress <= 100),
+  priority TEXT NOT NULL DEFAULT 'normal'
+    CHECK(priority IN ('critical', 'high', 'normal', 'low')),
+  timeout INTEGER,
+  tags TEXT NOT NULL DEFAULT '[]',
+  metadata TEXT,
+  action_json TEXT,
+  subtask_ids TEXT,
+  loop_config_json TEXT,
+  condition_json TEXT,
+  retry_config_json TEXT,
+  schedule_config_json TEXT,
+  result_json TEXT,
+  error TEXT,
+  retry_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  completed_at INTEGER,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_meta_workspace ON task_meta(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_task_meta_status ON task_meta(status);
+CREATE INDEX IF NOT EXISTS idx_task_meta_priority ON task_meta(priority);
+CREATE INDEX IF NOT EXISTS idx_task_meta_type ON task_meta(type);
+CREATE INDEX IF NOT EXISTS idx_task_meta_created ON task_meta(created_at);
+
+-- 8. 任务依赖表
+CREATE TABLE IF NOT EXISTS task_deps (
+  task_id TEXT NOT NULL,
+  depends_on_id TEXT NOT NULL,
+  PRIMARY KEY (task_id, depends_on_id),
+  FOREIGN KEY (task_id) REFERENCES task_meta(id) ON DELETE CASCADE,
+  FOREIGN KEY (depends_on_id) REFERENCES task_meta(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_deps(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_deps(depends_on_id);
+
+-- 9. 任务调度表
+CREATE TABLE IF NOT EXISTS task_schedule (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL UNIQUE,
+  schedule_mode TEXT NOT NULL CHECK(schedule_mode IN ('immediate', 'delayed', 'cron', 'event')),
+  scheduled_at INTEGER,
+  cron_expression TEXT,
+  trigger_event TEXT,
+  last_triggered_at INTEGER,
+  FOREIGN KEY (task_id) REFERENCES task_meta(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_schedule_scheduled ON task_schedule(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_task_schedule_event ON task_schedule(trigger_event);
