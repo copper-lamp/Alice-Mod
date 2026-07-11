@@ -3,11 +3,15 @@
  *
  * 负责 Adapter Core BE 与 Agent Core 之间的 TCP 通信通道：
  * - 连接管理（connect/disconnect）
- * - 握手认证（hello 消息）
- * - 心跳保活（ping → pong）
- * - 断线重连（指数退避）
+ * - 握手认证（handshake 消息，匹配 AC 实现）
+ * - 心跳保活（ping 通知 → pong 通知）
+ * - 断线重连（指数退避，包括初始连接失败的重试）
  * - JSON-RPC 2.0 消息收发
  * - 粘包处理
+ *
+ * ⚠ 关于 handleDisconnect 被重复调用：
+ *   在 Windows 上，socket ECONNREFUSED 时，'error' 和 'close'
+ *   事件会先后触发。用 _handlingError 标志防止重复处理。
  */
 
 import { JsonRpcCodec, JSONRPC_ERROR_CODES } from './json-rpc.js';
@@ -18,11 +22,13 @@ import type {
   JsonRpcNotification,
 } from './json-rpc.js';
 import { FrameAccumulator } from './message-frame.js';
-import { buildHelloParams, isHandshakeAccepted } from './handshake.js';
+import { buildHelloParams, isHandshakeAccepted, HANDSHAKE_METHOD } from './handshake.js';
 import type { HelloParams, HelloResult } from './handshake.js';
-import { buildPongResponse } from './heartbeat.js';
+import { buildPongResponse, isPingNotification } from './heartbeat.js';
 import { ReconnectScheduler } from './reconnect.js';
 // logger 为 LLSE 全局变量，无需导入
+// @ts-ignore — Node.js net 模块
+const net = require('net');
 
 // ── 连接状态 ──
 
@@ -42,7 +48,9 @@ export interface TcpClientConfig {
   authToken: string;
   instanceId: string;
   schemaVersion?: string;
+  /** 游戏版本号，如 "1.21.0" */
   gameVersion: string;
+  gameEdition?: 'bedrock' | 'java';
   modVersion?: string;
   connectTimeoutMs?: number;
   requestTimeoutMs?: number;
@@ -74,6 +82,7 @@ export class TcpClient {
   readonly instanceId: string;
   private schemaVersion: string;
   private gameVersion: string;
+  private gameEdition: 'bedrock' | 'java';
   private modVersion: string;
   private connectTimeoutMs: number;
   private requestTimeoutMs: number;
@@ -93,6 +102,13 @@ export class TcpClient {
   private sessionId: string = '';
   private serverVersion: string = '';
 
+  /**
+   * 防止 error + close 双重处理
+   * Windows 上 socket 连接失败时，'error' 和 'close' 事件先后触发，
+   * close handler 通过此标志跳过已由 error handler 处理的场景。
+   */
+  private _handlingError: boolean = false;
+
   constructor(config: TcpClientConfig) {
     this.host = config.host || DEFAULT_HOST;
     this.port = config.port || DEFAULT_PORT;
@@ -100,6 +116,7 @@ export class TcpClient {
     this.instanceId = config.instanceId;
     this.schemaVersion = config.schemaVersion || '1.0.0';
     this.gameVersion = config.gameVersion;
+    this.gameEdition = config.gameEdition || 'bedrock';
     this.modVersion = config.modVersion || '1.0.0';
     this.connectTimeoutMs = config.connectTimeoutMs || DEFAULT_CONNECT_TIMEOUT_MS;
     this.requestTimeoutMs = config.requestTimeoutMs || DEFAULT_REQUEST_TIMEOUT_MS;
@@ -112,6 +129,10 @@ export class TcpClient {
 
   /**
    * 连接服务器 + 握手
+   * 使用 "handshake" method（适配 AC 的实现）
+   *
+   * 注意：初始连接失败也会通过 handleDisconnect 进入重连，
+   * 以应对 AC 服务端尚未就绪的场景。
    */
   async connect(): Promise<void> {
     if (this.state === ConnectionState.CONNECTED) return;
@@ -128,16 +149,19 @@ export class TcpClient {
       const helloParams = buildHelloParams({
         instanceId: this.instanceId,
         authToken: this.authToken,
-        gameVersion: this.gameVersion,
         schemaVersion: this.schemaVersion,
+        gameEdition: this.gameEdition,
         modVersion: this.modVersion,
       });
 
-      const result = await this.sendRequest('hello', helloParams, this.connectTimeoutMs);
+      // AC 期望 method 为 "handshake"
+      const result = await this.sendRequest(HANDSHAKE_METHOD, helloParams, this.connectTimeoutMs);
       this.handleHandshakeResult(result);
     } catch (err) {
       this.cleanupSocket();
       this.setState(ConnectionState.DISCONNECTED);
+      // 连接失败（无论是否曾经连接过都触发重连）
+      this.enterReconnect();
       throw err;
     }
   }
@@ -147,6 +171,7 @@ export class TcpClient {
    */
   async disconnect(): Promise<void> {
     this.reconnectScheduler.destroy();
+    this._handlingError = false;
     this.cleanupSocket();
     this.frameAccumulator.reset();
     this.setState(ConnectionState.DISCONNECTED);
@@ -168,7 +193,7 @@ export class TcpClient {
   }
 
   /**
-   * 获取会话 ID
+   * 获取会话标识（握手成功后由 AC 设置，后续使用）
    */
   getSessionId(): string {
     return this.sessionId;
@@ -255,13 +280,13 @@ export class TcpClient {
   private createSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        // LLSE 环境使用 net.connect
-        // @ts-ignore — LLSE 全局 net 对象
+        // LSE NodeJS 使用 require('net')
         const sock = net.connect(this.port, this.host);
 
         this.socket = sock;
 
         const connectTimeout = setTimeout(() => {
+          this._handlingError = true;
           this.cleanupSocket();
           reject(new Error(`[TcpClient] 连接超时 (${this.connectTimeoutMs}ms)`));
         }, this.connectTimeoutMs);
@@ -278,12 +303,18 @@ export class TcpClient {
 
         sock.on('close', () => {
           logger.warn('[TcpClient] 连接已关闭');
+          // Windows 上 error + close 双发保护
+          if (this._handlingError) {
+            this._handlingError = false;
+            return;
+          }
           this.cleanupSocket();
           this.handleDisconnect();
         });
 
         sock.on('error', (err: Error) => {
           logger.error(`[TcpClient] 连接错误: ${err.message}`);
+          this._handlingError = true;
           this.cleanupSocket();
           if (this.state === ConnectionState.CONNECTING) {
             reject(err);
@@ -323,24 +354,33 @@ export class TcpClient {
   }
 
   private handleMessage(msg: JsonRpcMessage): void {
-    // 心跳响应 — 自动回复 pong
+    // ── 心跳处理 — AC 可能以 request 或 notification 格式发送 ping ──
+
+    // 情况 1: ping 作为 request（含 id）
     if (JsonRpcCodec.isRequest(msg)) {
       const request = msg as JsonRpcRequest;
       if (request.method === 'ping') {
-        const pongRaw = buildPongResponse(request.id);
+        const pongRaw = buildPongResponse();
         this.sendRaw(pongRaw);
         return;
       }
     }
 
-    // 响应匹配 — 处理发送请求的响应
+    // 情况 2: ping 作为 notification（无 id — AC 的实际实现）
+    if (isPingNotification(msg)) {
+      const pongRaw = buildPongResponse();
+      this.sendRaw(pongRaw);
+      return;
+    }
+
+    // ── 响应匹配 — 处理发送请求的响应 ──
     if (JsonRpcCodec.isResponse(msg)) {
       const response = msg as JsonRpcResponse;
       this.handleResponse(response);
       return;
     }
 
-    // 通知或请求 — 转发给外部处理器
+    // ── 通知或请求 — 转发给外部处理器 ──
     this.messageHandler?.(msg);
   }
 
@@ -361,16 +401,27 @@ export class TcpClient {
     }
   }
 
+  /**
+   * 处理握手结果（适配 AC 的实现）
+   *
+   * AC 返回格式：
+   * {
+   *   success: true,
+   *   version: "1.0.0",
+   *   server_name: "Alice Mod Agent Core",
+   *   max_tools: 43
+   * }
+   */
   private handleHandshakeResult(result: HelloResult): void {
     if (isHandshakeAccepted(result)) {
-      this.sessionId = result.session_id;
-      this.serverVersion = result.server_version;
-      this.heartbeatIntervalMs = result.heartbeat_interval_ms || 10000;
+      this.sessionId = result.server_name || '';
+      this.serverVersion = result.version || '';
+      this.heartbeatIntervalMs = 10000; // 固定 10s，符合协议规范
       this.reconnectScheduler.reset();
       this.setState(ConnectionState.CONNECTED);
-      logger.info(`[TcpClient] 握手成功 (session: ${this.sessionId})`);
+      logger.info(`[TcpClient] 握手成功 (server: ${result.server_name}, v${result.version})`);
     } else {
-      const message = result.message || '认证被拒绝';
+      const message = '认证被拒绝';
       logger.error(`[TcpClient] 握手失败: ${message}`);
       this.cleanupSocket();
       this.setState(ConnectionState.DISCONNECTED);
@@ -378,6 +429,12 @@ export class TcpClient {
     }
   }
 
+  /**
+   * 连接断开处理 — 进入重连
+   *
+   * 注意：此方法可能从多个入口被调用（close 事件、error 事件、
+   * connect() catch），需要确保不被重复调用。
+   */
   private handleDisconnect(): void {
     // 清理待处理请求
     for (const [, pending] of this.pendingRequests) {
@@ -386,15 +443,22 @@ export class TcpClient {
     }
     this.pendingRequests.clear();
 
-    // 连接断开后进入重连流程
-    if (this.state === ConnectionState.CONNECTED ||
-        this.state === ConnectionState.CONNECTING ||
-        this.state === ConnectionState.HANDSHAKING) {
-      this.setState(ConnectionState.RECONNECTING);
-      this.reconnectScheduler.schedule(() => {
-        this.attemptReconnect();
-      });
+    this.enterReconnect();
+  }
+
+  /**
+   * 进入重连流程
+   * 无论是否曾经连接成功，都会尝试重连（应对 AC 尚未启动的场景）。
+   * 仅当已在重连中时跳过，防止重复调度。
+   */
+  private enterReconnect(): void {
+    if (this.state === ConnectionState.RECONNECTING) {
+      return;
     }
+    this.setState(ConnectionState.RECONNECTING);
+    this.reconnectScheduler.schedule(() => {
+      this.attemptReconnect();
+    });
   }
 
   private async attemptReconnect(): Promise<void> {

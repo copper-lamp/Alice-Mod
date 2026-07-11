@@ -9,4 +9,5 @@
 
 export { InstanceValidator, type ValidationResult, type InstanceConfig } from './instance-validator';
 export { InstanceManager, type ImportResult } from './instance-manager';
+export { InstanceStore } from './instance-store';
 export { OfflineAccess, type OfflineWorkspaceData } from './offline-access';

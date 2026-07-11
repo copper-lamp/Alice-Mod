@@ -3,6 +3,7 @@
  *
  * 一个 Workspace 对应一个 Adapter Core 实例的会话抽象。
  * 管理连接状态、工具列表、会话隔离数据。
+ * 包含工具列表、会话状态、连接信息等。
  */
 
 import crypto from 'node:crypto';

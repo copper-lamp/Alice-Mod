@@ -1,4 +1,5 @@
 import React from 'react'
+import WorkspaceDropdown from '../workspace/WorkspaceDropdown'
 
 interface Props {
   onConfigOpen?: () => void
@@ -11,17 +12,18 @@ const CustomTitleBar: React.FC<Props> = ({ onConfigOpen }) => {
       className="flex items-center justify-between h-9 bg-gray-100 select-none px-2"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
-      {/* 左侧：软件名称 + 工作实例选择 */}
-      <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        <span className="text-sm font-semibold text-gray-700 ml-2 tracking-wide">Alice</span>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-200/60 rounded-md text-xs text-gray-500 cursor-pointer hover:bg-gray-200 transition-colors">
-          <ServerIcon />
-          <span>BDS server 5C</span>
-          <ChevronIcon />
+      {/* 左侧：Alice + 工作区选择器 */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold text-gray-700 ml-1 tracking-wide">Alice</span>
+        <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <WorkspaceDropdown />
         </div>
       </div>
 
-      {/* 右侧：设置按钮 + 由 OS 渲染原生窗口控制按钮 */}
+      {/* 中间：留空（拖拽区域） */}
+      <div className="flex-1" />
+
+      {/* 右侧：设置按钮 */}
       <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <button
           onClick={onConfigOpen}
@@ -34,21 +36,6 @@ const CustomTitleBar: React.FC<Props> = ({ onConfigOpen }) => {
     </div>
   )
 }
-
-const ServerIcon: React.FC = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-    <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-    <line x1="6" y1="6" x2="6" y2="6" /><line x1="10" y1="6" x2="10" y2="6" />
-    <line x1="6" y1="18" x2="6" y2="18" /><line x1="10" y1="18" x2="10" y2="18" />
-  </svg>
-)
-
-const ChevronIcon: React.FC = () => (
-  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-    <polyline points="9 18 15 12 9 6" />
-  </svg>
-)
 
 const SettingsIcon: React.FC = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

@@ -2,12 +2,12 @@
   "name": "@alice-mod/adapter-bedrock",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
+    "build": "tsc && node scripts/copy-to-bds.js",
+    "dev": "tsc && node scripts/copy-to-bds.js && tsc --watch",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'No tests yet'"
+    "test": "echo 'No tests yet'",
+    "copy-bds": "node scripts/copy-to-bds.js"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

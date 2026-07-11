@@ -1,7 +1,7 @@
 /**
  * 实例 JSON 校验器
  *
- * 校验 `mcagent_instance.json` 文件的格式合法性。
+ * 校验 `alice-mod_instance.json` 文件的格式合法性。
  */
 
 /** 校验结果 */
@@ -18,6 +18,9 @@ export interface InstanceConfig {
   host: string;
   port: number;
   auth_token: string;
+  file_path?: string;        // 来源 JSON 文件路径
+  game_version?: string;     // 游戏版本号，如 "1.26.10"
+  icon_data?: string;        // 自定义图标 base64
   description?: string;
   tags?: string[];
 }
@@ -153,6 +156,9 @@ export class InstanceValidator {
       host: String(raw.host),
       port: Number(raw.port),
       auth_token: String(raw.auth_token),
+      file_path: raw.file_path ? String(raw.file_path) : undefined,
+      game_version: raw.game_version ? String(raw.game_version) : undefined,
+      icon_data: raw.icon_data ? String(raw.icon_data) : undefined,
       description: raw.description ? String(raw.description) : undefined,
       tags: Array.isArray(raw.tags) ? raw.tags.map(String) : undefined,
     };

@@ -11,9 +11,9 @@ import os from 'node:os';
 vi.mock('electron', () => {
   return {
     app: {
-      getPath: () => path.join(os.tmpdir(), 'mcagent-test-app'),
+      getPath: () => path.join(os.tmpdir(), 'alice-mod-test-app'),
       getVersion: () => '0.0.0',
-      getName: () => 'mcagent-test',
+      getName: () => 'alice-mod-test',
     },
   };
 });

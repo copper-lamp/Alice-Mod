@@ -235,6 +235,61 @@ export interface ContextTokenInfo {
   }
 }
 
+// ==========================================
+// 工作区切换 UI 类型定义
+// ==========================================
+
+/** 工作区列表项（UI 展示用，扩展自 WorkspaceInfo） */
+export interface WorkspaceItem {
+  id: string
+  name: string
+  alias?: string
+  state: 'online' | 'offline' | 'connecting'
+  edition: 'bedrock' | 'java'
+  host: string
+  port: number
+  toolCount: number
+  filePath?: string             // alice-mod_instance.json 文件路径   
+  gameVersion?: string          // 游戏版本号，如 "1.26.10"
+  iconData?: string             // 自定义图标 base64 data URL
+  protocolVersion?: string
+  modVersion?: string
+  description?: string
+  tags?: string[]
+  lastActiveAt?: number
+  createdAt: number
+}
+
+/** 新建工作区 — 文件校验结果 */
+export interface WorkspaceFileValidation {
+  valid: boolean
+  errors: string[]
+  instance?: {
+    instanceId: string
+    name: string
+    edition: 'bedrock' | 'java'
+    host: string
+    port: number
+    authToken: string
+    filePath?: string
+    gameVersion?: string
+    description?: string
+    tags?: string[]
+  }
+  isDuplicate?: boolean
+  duplicateName?: string
+}
+
+/** 新建工作区 — 创建参数 */
+export interface WorkspaceCreateParams {
+  filePath: string
+  name?: string
+  iconData?: string
+  alias?: string
+  description?: string
+  tags?: string[]
+}
+
 /** 窗口控制 API */
 export interface WindowControls {
   minimize: () => Promise<void>

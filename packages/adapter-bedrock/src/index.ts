@@ -1,12 +1,7 @@
 /**
- * McAgent Adapter BE - 插件入口
- *
- * 采用 LLSE-FakePlayer 模式：
- * - 无 module.exports 生命周期钩子，文件末尾直接执行
- * - 命令注册在 onServerStarted 事件中
- *
- * V2: TCP 客户端模块（连接/握手/心跳/重连）
- * V3: 工具注册模块 + 状态上报 + JSON 入口生成
+ * Alice Mod BE - 插件入口
+ * 集成了 V2 TCP 客户端 + V3 工具注册/状态上报/JSON入口
+ * 适配 Agent Core 实际实现的通信协议
  */
 
 import { TcpClient, ConnectionState } from './tcp/TcpClient.js';
@@ -20,7 +15,7 @@ import { InstanceFileHelper } from './entry/instance-file.js';
 import { TOOLS_DIR } from './utils/constants.js';
 
 const _VER: [number, number, number] = [1, 0, 0];
-const _NAME = 'McAgent Adapter BE';
+const _NAME = 'Alice Mod BE';
 
 let _initialized = false;
 
@@ -36,20 +31,23 @@ let statusReporter: StatusReporter;
 // ============================================================
 
 function initPlugin(): void {
-  logger.setTitle('McAgent');
+  logger.setTitle('Alice Mod');
   logger.info(`=== ${_NAME} v${_VER.join('.')} 启动 ===`);
 
   // 注册插件
-  ll.registerPlugin(_NAME, 'McAgent 基岩版接入核心', _VER);
+  ll.registerPlugin(_NAME, 'Alice Mod BE', _VER);
 
   // 1. 加载或创建实例 ID
   const instanceId = InstanceFileHelper.loadOrCreateInstanceId();
 
-  // 2. 初始化 TCP 客户端
+  // 2. 加载或创建认证令牌
+  const authToken = InstanceFileHelper.loadOrCreateAuthToken();
+
+  // 3. 初始化 TCP 客户端（适配 AC 的 handshake 协议）
   tcpClient = new TcpClient({
     host: '127.0.0.1',
     port: 27541,
-    authToken: '',  // 从配置读取
+    authToken,  // 加载自文件
     instanceId,
     gameVersion: '1.21.0',
   });
@@ -113,21 +111,25 @@ function registerEvents(BotManager: any): void {
   mc.listen('onServerStarted', () => {
     logger.info('服务器已就绪，开始初始化...');
 
-    // V2: 连接 TCP
+    // V2: 连接 TCP（使用 handshake 协议）
     tcpClient.connect().catch((err) => {
-      logger.error(`[McAgent] TCP 连接失败: ${err}`);
+      logger.error(`[Alice Mod] TCP 连接失败: ${err}`);
     });
 
     // V3: 扫描并注册工具
     toolRegistry.scanAndRegister().then((count) => {
-      logger.info(`[McAgent] 已注册 ${count} 个工具`);
-    });
+      logger.info(`[Alice Mod] 已注册 ${count} 个工具`);
 
-    // V3: 生成 JSON 入口文件
-    InstanceFileHelper.generate({
-      instanceId: tcpClient.instanceId,
-      isConnected: () => tcpClient.isConnected(),
-      toolsCount: toolRegistry.count,
+      // V3: 工具注册完成后生成 JSON 入口文件（含工具分类信息）
+      const authToken = InstanceFileHelper.loadOrCreateAuthToken();
+      InstanceFileHelper.generate({
+        instanceId: tcpClient.instanceId,
+        instanceName: 'McAgent',
+        authToken,
+        isConnected: () => tcpClient.isConnected(),
+        totalTools: toolRegistry.count,
+        toolCategories: buildToolCategories(),
+      });
     });
 
     // V3: 启动状态上报
@@ -146,23 +148,68 @@ function registerEvents(BotManager: any): void {
     return true;
   });
 
-  // 假人死亡重生
+  // 假人死亡 — 推送事件通知
   mc.listen('onPlayerDie', (player: any, source: any) => {
     if (_initialized) BotManager.onPlayerDie(player, source);
+
+    // 推送死亡事件到 Agent Core
+    if (player && tcpClient.isConnected()) {
+      const bot = BotManager.get(player.realName);
+      if (bot) {
+        pushEvent('death', {
+          player_name: player.realName,
+          source: source ? String(source) : 'unknown',
+        });
+      }
+    }
+
     return true;
   });
 
-  // 服务器关闭 — 清理资源
-  mc.listen('onServerStop', () => {
-    logger.info('服务器关闭，清理资源...');
-    if (_initialized) {
-      statusReporter.stop();
-      tcpClient.disconnect().catch(() => {});
-      try { BotManager.offlineAll(); } catch (e) { logger.warn('假人清理失败', e); }
+  // 玩家聊天 — 推送事件通知
+  mc.listen('onChat', (player: any, msg: string) => {
+    if (_initialized && tcpClient.isConnected()) {
+      pushEvent('player_chat', {
+        player_name: player?.realName || 'unknown',
+        message: msg,
+      });
     }
-    logger.info('资源清理完成');
     return true;
   });
+
+  // 玩家加入
+  safeListen('onJoin', (player: any) => {
+    if (_initialized && tcpClient.isConnected()) {
+      pushEvent('player_join', {
+        player_name: player?.realName || 'unknown',
+      });
+    }
+  });
+
+  // 玩家离开
+  safeListen('onLeft', (player: any) => {
+    if (_initialized && tcpClient.isConnected()) {
+      pushEvent('player_leave', {
+        player_name: player?.realName || 'unknown',
+      });
+    }
+  });
+
+  // 注意：onServerStop 事件在部分 LSE 版本中不可用，跳过清理注册
+  // （BDS 关闭时会自动释放资源）
+}
+
+/**
+ * 安全注册 LLSE 事件监听，事件不存在时仅记录警告，不抛错
+ * LLSE 各版本支持的事件列表不同（如 onJoin 可能不存在于某些旧版本），
+ * 使用 safeListen 避免插件因此崩溃
+ */
+function safeListen(event: string, callback: (...args: any[]) => void): void {
+  try {
+    mc.listen(event, callback);
+  } catch (e) {
+    logger.warn(`[Alice Mod] 事件 "${event}" 不可用，已跳过`);
+  }
 }
 
 // ============================================================
@@ -177,6 +224,9 @@ function handleMessage(msg: JsonRpcMessage): void {
       case 'tool_call':
         handleToolCall(request);
         break;
+      case 'tool_call_batch':
+        handleToolCallBatch(request);
+        break;
       default:
         tcpClient.sendRaw(
           JsonRpcCodec.encodeError(
@@ -189,12 +239,17 @@ function handleMessage(msg: JsonRpcMessage): void {
   }
 }
 
-// 工具调用处理
+// 单个工具调用处理
 async function handleToolCall(request: JsonRpcRequest): Promise<void> {
   const { tool_name, parameters } = request.params || {};
 
   const ctx = new ToolContextImpl({
-    sendEvent: (event) => tcpClient.sendNotification('event', event),
+    sendEvent: (event) => tcpClient.sendNotification('event', {
+      event_type: event.type,
+      severity: 'info',
+      timestamp: event.timestamp || new Date().toISOString(),
+      data: event.data,
+    }),
   });
 
   const result = await toolManager.executeTool(tool_name, parameters, ctx);
@@ -202,27 +257,110 @@ async function handleToolCall(request: JsonRpcRequest): Promise<void> {
   tcpClient.sendRaw(JsonRpcCodec.encodeResponse(request.id, result));
 }
 
+// 批量工具调用处理
+async function handleToolCallBatch(request: JsonRpcRequest): Promise<void> {
+  const calls = request.params?.calls || request.params?.tools || [];
+  const results: any[] = [];
+
+  for (const call of calls) {
+    const { tool_name, parameters } = call;
+
+    const ctx = new ToolContextImpl({
+      sendEvent: (event) => tcpClient.sendNotification('event', {
+        event_type: event.type,
+        severity: 'info',
+        timestamp: event.timestamp || new Date().toISOString(),
+        data: event.data,
+      }),
+    });
+
+    const result = await toolManager.executeTool(tool_name, parameters, ctx);
+    results.push(result);
+  }
+
+  tcpClient.sendRaw(JsonRpcCodec.encodeResponse(request.id, {
+    success: true,
+    data: results,
+    duration_ms: results.reduce((sum: number, r: any) => sum + (r.duration_ms || 0), 0),
+  }));
+}
+
 // 状态变化处理
 function handleStateChange(state: ConnectionState): void {
   // 更新 JSON 入口文件
+  const authToken = InstanceFileHelper.loadOrCreateAuthToken();
   InstanceFileHelper.updateStatus({
     instanceId: tcpClient.instanceId,
+    instanceName: 'McAgent',
+    authToken,
     isConnected: () => tcpClient.isConnected(),
-    toolsCount: toolRegistry.count,
+    totalTools: toolRegistry.count,
+    toolCategories: buildToolCategories(),
   });
 
   // 连接成功时自动注册工具
   if (state === ConnectionState.CONNECTED) {
     const payload = toolRegistry.generateRegistrationPayload();
+    // 使用 notification 发送 register_tools（AC 端以 notification 方式处理）
     tcpClient.sendNotification('register_tools', {
       tools: payload,
       instance_id: tcpClient.instanceId,
     });
-    logger.info(`[McAgent] 已向 Agent Core 注册 ${payload.length} 个工具`);
+    logger.info(`[Alice Mod] 已向 Agent Core 注册 ${payload.length} 个工具`);
+
+    // 连接成功时也恢复状态上报
+    if (statusReporter && !statusReporter.isRunning()) {
+      statusReporter.start();
+    }
   }
 
   if (state === ConnectionState.DISCONNECTED) {
-    statusReporter.stop();
+    if (statusReporter) {
+      statusReporter.stop();
+    }
+  }
+}
+
+// ============================================================
+// 事件通知推送
+// ============================================================
+
+/**
+ * 推送事件通知到 Agent Core
+ * 遵循协议规范的事件格式
+ */
+function pushEvent(eventType: string, data: Record<string, any>): void {
+  if (!tcpClient.isConnected()) return;
+
+  tcpClient.sendNotification('event', {
+    event_type: eventType,
+    severity: getEventSeverity(eventType),
+    timestamp: new Date().toISOString(),
+    data,
+  });
+}
+
+/**
+ * 获取事件严重级别
+ */
+function getEventSeverity(eventType: string): string {
+  switch (eventType) {
+    case 'entity_attack':
+    case 'health_low':
+    case 'death':
+    case 'tool_broken':
+      return 'warning';
+    case 'hunger_low':
+      return 'warning';
+    case 'inventory_full':
+    case 'player_chat':
+    case 'player_join':
+    case 'player_leave':
+    case 'environment_change':
+    case 'task_completed':
+      return 'info';
+    default:
+      return 'info';
   }
 }
 
@@ -270,7 +408,7 @@ function registerCommands(BotManager: any, BotTestSuite: any): void {
           : '§c插件尚未就绪';
 
         out.success(
-          '§6=== McAgent Adapter BE ===\n' +
+          '§6=== Alice Mod ===\n' +
           `§e版本: ${_VER.join('.')}\n` +
           `§e状态: ${_initialized ? '§a已就绪' : '§c未就绪'}\n` +
           info + '\n' +
@@ -293,6 +431,27 @@ function registerCommands(BotManager: any, BotTestSuite: any): void {
   } catch (e) {
     logger.error('命令注册异常', e);
   }
+}
+
+// ============================================================
+// 工具函数
+// ============================================================
+
+/**
+ * 从注册器中构建工具分类计数列表
+ * 符合 protocol spec 中 toolset_info.tool_categories 格式
+ */
+function buildToolCategories(): Array<{ category: string; count: number }> {
+  const categories = toolRegistry.getAll().reduce<Record<string, number>>((acc, tool) => {
+    const cat = tool.metadata.category;
+    acc[cat] = (acc[cat] || 0) + 1;
+    return acc;
+  }, {});
+
+  return Object.entries(categories).map(([category, count]) => ({
+    category,
+    count,
+  }));
 }
 
 // ============================================================

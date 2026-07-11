@@ -446,6 +446,7 @@ export interface CallRecordFilter {
   providerId?: string;
   model?: string;
   success?: boolean;
+  workspaceId?: string;
   startTime?: number;
   endTime?: number;
   limit?: number;

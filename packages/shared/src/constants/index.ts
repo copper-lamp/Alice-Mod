@@ -57,4 +57,4 @@ export const SCHEDULER = {
 } as const;
 
 /** 数据库名 */
-export const DB_NAME = 'mcagent.db';
+export const DB_NAME = 'alice-mod.db';

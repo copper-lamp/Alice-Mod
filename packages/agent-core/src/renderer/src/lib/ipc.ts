@@ -4,6 +4,9 @@ import type {
   ModelInfo,
   ConfigEntry,
   WorkspaceInfo,
+  WorkspaceItem,
+  WorkspaceFileValidation,
+  WorkspaceCreateParams,
   TcpStatus,
   UsageStats,
   ContextTokenInfo,
@@ -55,11 +58,32 @@ export const windowApi = {
 
 /** IPC 调用封装 - 工作区 */
 export const workspaceApi = {
-  current: () =>
-    window.electronAPI.invoke('workspace:current') as Promise<WorkspaceInfo>,
-
   list: () =>
-    window.electronAPI.invoke('workspace:list') as Promise<WorkspaceInfo[]>
+    window.electronAPI.invoke('workspace:list') as Promise<WorkspaceItem[]>,
+
+  selectFile: () =>
+    window.electronAPI.invoke('workspace:select-file') as Promise<{ filePath: string | null }>,
+
+  validateFile: (filePath: string) =>
+    window.electronAPI.invoke('workspace:validate-file', { filePath }) as Promise<WorkspaceFileValidation>,
+
+  create: (params: WorkspaceCreateParams) =>
+    window.electronAPI.invoke('workspace:create', params) as Promise<{ success: boolean; id?: string; error?: string }>,
+
+  rename: (id: string, name: string) =>
+    window.electronAPI.invoke('workspace:rename', { id, name }) as Promise<{ success: boolean }>,
+
+  remove: (id: string, force?: boolean) =>
+    window.electronAPI.invoke('workspace:remove', { id, force }) as Promise<{ success: boolean; online?: boolean; message?: string }>,
+
+  openInExplorer: (filePath: string) =>
+    window.electronAPI.invoke('workspace:open-in-explorer', { filePath }) as Promise<{ success: boolean }>,
+
+  selectIcon: () =>
+    window.electronAPI.invoke('workspace:select-icon') as Promise<{ iconData: string | null; error?: string }>,
+
+  updateIcon: (id: string, iconData?: string) =>
+    window.electronAPI.invoke('workspace:update-icon', { id, iconData }) as Promise<{ success: boolean }>,
 }
 
 /** IPC 调用封装 - TCP */

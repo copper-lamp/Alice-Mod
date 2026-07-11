@@ -9,6 +9,7 @@ import { registerQQBotHandlers } from './qq-bot-handler'
 import { registerLogHandlers } from './log-handler'
 import { registerToolCallHandlers } from './tool-call-handler'
 import { registerMemoryHandlers } from './memory-handler'
+import { registerWorkspaceHandlers } from './workspace-handler'
 
 export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerChatHandlers()
@@ -21,4 +22,5 @@ export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerLogHandlers()
   registerToolCallHandlers()
   registerMemoryHandlers()
+  registerWorkspaceHandlers(mainWindow)
 }

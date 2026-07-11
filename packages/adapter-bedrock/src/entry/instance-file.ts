@@ -1,53 +1,74 @@
 /**
  * InstanceFileHelper — 实例入口文件管理
  *
- * 插件首次启动时在 BDS 根目录创建 Alice/ 文件夹，内含：
- * - instance.json   — 实例入口文件（JSON-RPC 发现）
- * - data/           — 数据目录
- *   - instance_id.txt — UUID 持久化
- *
- * 遵循与 TCP 服务端模块一致的握手认证协议。
- * 参考：docs/modules/01-TCP服务端模块.md
+ * 遵循 docs/protocols/01-通信协议规范.md 第2章（JSON 入口文件规范）。
+ * 模组首次启动时在 Alice/ 目录下生成 mcagent_instance.json，
+ * 包含实例标识、网络配置、认证信息、数据库路径、工具集信息。
  */
 
 // logger 为 LLSE 全局变量，无需导入
+const crypto = require('crypto');
+const path = require('path');
 
 // ── 目录路径 ──
 
 const ALICE_DIR = './Alice/';
 const DATA_DIR = './Alice/data/';
-const INSTANCE_FILE_PATH = './Alice/instance.json';
+const INSTANCE_FILE_PATH = './Alice/mcagent_instance.json';
 const INSTANCE_ID_FILE = './Alice/data/instance_id.txt';
+const AUTH_TOKEN_FILE = './Alice/data/auth_token.txt';
 
-// ── 入口文件类型 ──
+// ── 入口文件类型（遵循协议规范 schema） ──
 
-export interface InstanceFile {
-  _schema_version: string;
+export interface ToolCategoryCount {
+  category: string;
+  count: number;
+}
+
+export interface McAgentInstanceFile {
+  schema_version: string;
   instance_id: string;
-  mod_version: string;
-  game: {
-    edition: 'bedrock';
+  instance_name: string;
+  game_version: {
+    edition: 'bedrock' | 'java';
     version: string;
   };
-  network: {
-    protocol: 'json-rpc-2.0';
-    transport: 'tcp';
+  mod_version: string;
+  status: {
+    online: boolean;
+    last_online: string;
+    world_name: string;
+  };
+  tcp: {
     host: string;
     port: number;
   };
-  status: {
-    online: boolean;
-    last_seen: string;
+  auth: {
+    token: string;
   };
-  capabilities: {
-    tools_count: number;
-    max_bots: number;
+  database: {
+    sqlite_path: string;
+    chroma_path: string;
+    config_path: string;
+    log_path: string;
+  };
+  toolset_info: {
+    total_tools: number;
+    tool_categories: ToolCategoryCount[];
   };
 }
 
 // ── InstanceFileHelper ──
 
 export class InstanceFileHelper {
+  /**
+   * 获取 BDS 根目录的绝对路径
+   */
+  private static getBdsRoot(): string {
+    // LSE NodeJS 中 process.cwd() 返回 BDS 根目录
+    return process.cwd().replace(/\\/g, '/');
+  }
+
   /**
    * 确保 Alice/ 目录结构存在
    */
@@ -61,41 +82,59 @@ export class InstanceFileHelper {
   }
 
   /**
-   * 生成或更新 Alice/instance.json
-   * @param options.tcpClient  TCP 客户端实例（用于获取连接状态和 instanceId）
-   * @param options.toolsCount 已注册工具数量
+   * 生成或更新 Alice/mcagent_instance.json
+   *
+   * @param options.instanceId  实例 UUID
+   * @param options.instanceName 实例名称（默认 "McAgent"）
+   * @param options.authToken   认证令牌
+   * @param options.isConnected TCP 连接状态检测函数
+   * @param options.toolCategories 工具分类计数列表
+   * @param options.totalTools  工具总数
    */
   static generate(options: {
     instanceId: string;
+    instanceName?: string;
+    authToken: string;
     isConnected: () => boolean;
-    toolsCount: number;
+    totalTools: number;
+    toolCategories: ToolCategoryCount[];
   }): boolean {
     this.ensureDirectories();
 
-    // @ts-ignore — LLSE 全局变量
-    const serverVersion = mc.getServerVersion() || '1.21.0';
+    const bdsRoot = this.getBdsRoot();
+    const serverVersion = mc.getBDSVersion();
+    const worldName = 'Bedrock level'; // LSE NodeJS 无 getLevelName，使用默认值
 
-    const instanceFile: InstanceFile = {
-      _schema_version: '1.0.0',
+    const instanceFile: McAgentInstanceFile = {
+      schema_version: '1.0.0',
       instance_id: options.instanceId,
-      mod_version: '1.0.0',
-      game: {
+      instance_name: options.instanceName || 'McAgent',
+      game_version: {
         edition: 'bedrock',
         version: serverVersion,
       },
-      network: {
-        protocol: 'json-rpc-2.0',
-        transport: 'tcp',
+      mod_version: '1.0.0',
+      status: {
+        online: options.isConnected(),
+        last_online: new Date().toISOString(),
+        world_name: worldName,
+      },
+      tcp: {
         host: '127.0.0.1',
         port: 27541,
       },
-      status: {
-        online: options.isConnected(),
-        last_seen: new Date().toISOString(),
+      auth: {
+        token: options.authToken,
       },
-      capabilities: {
-        tools_count: options.toolsCount,
-        max_bots: 3,
+      database: {
+        sqlite_path: bdsRoot + '/Alice/data/mcagent.db',
+        chroma_path: bdsRoot + '/Alice/data/chroma',
+        config_path: bdsRoot + '/Alice/data/config.json',
+        log_path: bdsRoot + '/Alice/data/logs',
+      },
+      toolset_info: {
+        total_tools: options.totalTools,
+        tool_categories: options.toolCategories,
       },
     };
 
@@ -122,11 +161,30 @@ export class InstanceFileHelper {
       if (id.length > 0) return id;
     }
 
-    // @ts-ignore — LLSE 全局变量
-    const uuid = mc.randomGuid();
+    const uuid = crypto.randomUUID();
     File.writeTo(INSTANCE_ID_FILE, uuid);
     logger.info(`[InstanceFile] 已生成实例 ID: ${uuid}`);
     return uuid;
+  }
+
+  /**
+   * 加载或创建认证令牌
+   * 首次运行时随机生成 mct_ 前缀的令牌，持久化到 Alice/data/auth_token.txt
+   * 后续重启直接复用
+   */
+  static loadOrCreateAuthToken(): string {
+    this.ensureDirectories();
+
+    if (File.exists(AUTH_TOKEN_FILE)) {
+      const token = File.readFrom(AUTH_TOKEN_FILE).trim();
+      if (token.length > 0) return token;
+    }
+
+    const randomPart = crypto.randomBytes(16).toString('hex');
+    const token = 'mct_' + randomPart;
+    File.writeTo(AUTH_TOKEN_FILE, token);
+    logger.info(`[InstanceFile] 已生成认证令牌`);
+    return token;
   }
 
   /**
@@ -134,8 +192,11 @@ export class InstanceFileHelper {
    */
   static updateStatus(options: {
     instanceId: string;
+    instanceName?: string;
+    authToken: string;
     isConnected: () => boolean;
-    toolsCount: number;
+    totalTools: number;
+    toolCategories: ToolCategoryCount[];
   }): boolean {
     return this.generate(options);
   }

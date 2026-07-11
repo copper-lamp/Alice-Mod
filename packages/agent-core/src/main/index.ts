@@ -5,25 +5,36 @@ import { registerAllIpcHandlers } from './ipc'
 import { setLogDb } from './ipc/log-handler'
 import { getToolCallCollector, setToolCallCollector } from './ipc/tool-call-handler'
 import { PipelineEventCollector } from './pipeline/event-collector'
+import { getDatabaseManager } from './database'
+import { getWorkspaceManager } from './workspace'
 
 let mainWindow: BrowserWindow | null = null
 
 async function initializeServices(): Promise<void> {
-  // 初始化日志系统（优先，其他模块初始化时即可记录日志）
+  // 1. 初始化数据库（优先，其他模块依赖数据库连接）
+  const dbManager = getDatabaseManager()
+  const userDataPath = app.getPath('userData')
+  const dbPath = path.join(userDataPath, 'alice-mod.db')
+  await dbManager.init(dbPath)
+  console.info('主进程', '数据库初始化完成')
+
+  // 2. 初始化日志系统
   const logger = initLogger()
   logger.info('SYSTEM', '日志系统初始化完成')
 
-  // 设置 IPC Handler 的数据库引用
+  // 3. 设置 IPC Handler 的数据库引用
   const logDb = getLogDb()
   if (logDb) {
     setLogDb(logDb)
   }
 
-  // 初始化工具调用事件收集器
+  // 4. 恢复持久化的工作区列表
+  const workspaceManager = getWorkspaceManager()
+  const restored = workspaceManager.loadPersistedWorkspaces()
+  logger.info('SYSTEM', `已恢复 ${restored.length} 个持久化工作区`)
+
+  // 5. 初始化工具调用事件收集器
   const collector = new PipelineEventCollector()
-  if (logDb) {
-    collector.setDatabase(logDb)
-  }
   setToolCallCollector(collector)
 }
 

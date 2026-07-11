@@ -3,6 +3,7 @@
  *
  * 初始化 Logger 及其所有 Transport（控制台、文件、SQLite）。
  * 纯后端调试模块，不接入前端 UI。
+ * 使用 DatabaseManager 统一管理 SQLite 连接。
  */
 import path from 'node:path'
 import { app } from 'electron'
@@ -11,14 +12,21 @@ import { Logger } from './logger'
 import { createConsoleTransport, createFileTransport } from './transports'
 import { createSqliteTransport } from './sqlite-transport'
 import type { LogConfig, LogLevel, LogModule, LogEntry } from './types'
+import { getDatabaseManager } from '../database'
 
 export type { LogConfig, LogLevel, LogModule, LogEntry }
 export { Logger }
 
 let db: Database.Database | null = null
+let hasRegisteredTransport = false
 
 export function initLogger(config?: Partial<LogConfig>): Logger {
   const logger = Logger.getInstance()
+
+  // 避免重复注册 Transport
+  if (hasRegisteredTransport) {
+    return logger
+  }
 
   const defaultConfig: LogConfig = {
     level: 'debug',
@@ -41,13 +49,14 @@ export function initLogger(config?: Partial<LogConfig>): Logger {
   // 添加文件 Transport
   logger.addTransport(createFileTransport(mergedConfig))
 
-  // 添加 SQLite Transport
+  // 添加 SQLite Transport（使用 DatabaseManager 的统一连接）
   try {
-    const dbPath = app.getPath('userData')
-    db = new Database(path.join(dbPath, 'mcagent.db'))
+    const dbManager = getDatabaseManager()
+    db = dbManager.getDb()
     logger.addTransport(createSqliteTransport(db, mergedConfig))
+    hasRegisteredTransport = true
   } catch (err) {
-    console.error('日志 SQLite 初始化失败:', err)
+    console.error('日志 SQLite Transport 初始化失败:', err)
   }
 
   return logger
@@ -58,12 +67,13 @@ export function getLogger(): Logger {
 }
 
 export function getLogDb(): Database.Database | null {
-  return db
+  try {
+    return getDatabaseManager().getDb()
+  } catch {
+    return db
+  }
 }
 
 export function closeLogger(): void {
-  if (db) {
-    db.close()
-    db = null
-  }
+  hasRegisteredTransport = false
 }

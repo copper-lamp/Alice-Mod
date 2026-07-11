@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ToolRegistry } from '../../src/main/workspace/tool-registry';
-import type { ToolSchema } from '@mcagent/shared';
+import type { ToolSchema } from '@alice-mod/shared';
 
 const makeTool = (name: string): ToolSchema => ({
   name,

@@ -12,7 +12,12 @@ export type {
   JsonRpcNotification,
 } from './json-rpc.js';
 export { FrameAccumulator } from './message-frame.js';
-export { buildHelloParams, isHandshakeAccepted } from './handshake.js';
+export {
+  buildHelloParams,
+  isHandshakeAccepted,
+  HANDSHAKE_METHOD,
+  extractHeartbeatInterval,
+} from './handshake.js';
 export type { HelloParams, HelloResult } from './handshake.js';
-export { buildPongResponse } from './heartbeat.js';
+export { buildPongResponse, isPingNotification } from './heartbeat.js';
 export { ReconnectScheduler, RECONNECT_INTERVALS, MAX_RECONNECT_ATTEMPTS } from './reconnect.js';

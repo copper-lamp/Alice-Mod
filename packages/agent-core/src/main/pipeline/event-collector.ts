@@ -61,6 +61,7 @@ export interface ToolCallStats {
  */
 export class PipelineEventCollector {
   private records: Map<string, ToolCallRecord[]> = new Map()
+  private pipelineWorkspaces: Map<string, string> = new Map()  // pipelineId → workspaceId
   private db: Database.Database | null = null
   private readonly maxRecords: number
 
@@ -196,6 +197,7 @@ export class PipelineEventCollector {
     }
 
     this.records.delete(pipelineId)
+    this.pipelineWorkspaces.delete(pipelineId)
   }
 
   private persistRecord(record: ToolCallRecord): void {

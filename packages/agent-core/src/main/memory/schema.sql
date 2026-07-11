@@ -65,6 +65,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_access_log_accessed_at ON memory_access_lo
 CREATE TABLE IF NOT EXISTS map_features (
   id TEXT PRIMARY KEY,
   memory_id TEXT,
+  workspace_id TEXT NOT NULL DEFAULT '',
   feature_type TEXT NOT NULL,
   name TEXT,
   x INTEGER NOT NULL,
@@ -80,6 +81,7 @@ CREATE TABLE IF NOT EXISTS map_features (
 CREATE INDEX IF NOT EXISTS idx_map_features_dimension ON map_features(dimension);
 CREATE INDEX IF NOT EXISTS idx_map_features_type ON map_features(feature_type);
 CREATE INDEX IF NOT EXISTS idx_map_features_coords ON map_features(dimension, x, z);
+CREATE INDEX IF NOT EXISTS idx_map_features_workspace ON map_features(workspace_id);
 
 -- 5. 空间网格索引表
 CREATE TABLE IF NOT EXISTS map_spatial_grid (
@@ -105,6 +107,7 @@ CREATE TABLE IF NOT EXISTS map_regions (
   dimension TEXT NOT NULL,
   description TEXT,
   memory_id TEXT,
+  workspace_id TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
   FOREIGN KEY (memory_id) REFERENCES memory_meta(id) ON DELETE SET NULL
@@ -112,6 +115,7 @@ CREATE TABLE IF NOT EXISTS map_regions (
 
 CREATE INDEX IF NOT EXISTS idx_map_regions_dimension ON map_regions(dimension);
 CREATE INDEX IF NOT EXISTS idx_map_regions_name ON map_regions(name);
+CREATE INDEX IF NOT EXISTS idx_map_regions_workspace ON map_regions(workspace_id);
 
 -- ════════════════════════════════════════════════════════════════
 -- V13 新增：任务系统表

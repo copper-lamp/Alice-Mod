@@ -4,14 +4,14 @@
 
 // ── 目录路径 ──
 
-export const BOT_DATA_DIR = './plugins/mcagent-adapter-be/data/bots/';
-export const BOT_INVENTORY_DIR = './plugins/mcagent-adapter-be/data/inventories/';
-export const PLUGIN_ROOT = './plugins/mcagent-adapter-be/';
+export const BOT_DATA_DIR = './plugins/Alices Mod/data/bots/';
+export const BOT_INVENTORY_DIR = './plugins/Alices Mod/data/inventories/';
+export const PLUGIN_ROOT = './plugins/Alices Mod/';
 export const TOOLS_DIR = PLUGIN_ROOT + 'tools/';
 export const ALICE_DIR = './Alice/';
 export const DATA_DIR = ALICE_DIR + 'data/';
 export const INSTANCE_ID_FILE = DATA_DIR + 'instance_id.txt';
-export const INSTANCE_FILE_PATH = ALICE_DIR + 'instance.json';
+export const INSTANCE_FILE_PATH = ALICE_DIR + 'mcagent_instance.json';
 
 // ── TCP 客户端 ──
 

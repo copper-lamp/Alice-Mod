@@ -172,6 +172,7 @@ export class InstanceManager {
   load(): void {
     try {
       if (!fs.existsSync(this.storagePath)) {
+        console.log('[InstanceManager] 文件不存在:', this.storagePath)
         this.instances = [];
         return;
       }
@@ -180,6 +181,7 @@ export class InstanceManager {
       const parsed = JSON.parse(content);
 
       if (typeof parsed !== 'object' || parsed === null || !Array.isArray(parsed.instances)) {
+        console.log('[InstanceManager] 无效格式:', typeof parsed, Array.isArray(parsed?.instances))
         this.instances = [];
         return;
       }
@@ -187,7 +189,17 @@ export class InstanceManager {
       this.instances = parsed.instances
         .filter((i: unknown) => typeof i === 'object' && i !== null)
         .map((i: Record<string, unknown>) => InstanceValidator.toInstanceConfig(i));
-    } catch {
+      console.log('[InstanceManager] 已加载', this.instances.length, '个实例, 路径:', this.storagePath)
+      if (this.instances.length > 0) {
+        console.log('[InstanceManager] 首个实例:', {
+          instance_id: this.instances[0].instance_id,
+          file_path: this.instances[0].file_path,
+          game_version: this.instances[0].game_version,
+          icon_data: this.instances[0].icon_data ? '(存在)' : undefined,
+        })
+      }
+    } catch (err) {
+      console.error('[InstanceManager] 加载失败:', err)
       this.instances = [];
     }
   }

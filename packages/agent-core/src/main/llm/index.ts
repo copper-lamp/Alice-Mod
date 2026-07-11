@@ -37,4 +37,5 @@ export { LLM_CONFIG_DEFAULTS, CONFIG_KEYS } from './config/llm-config';
 // 观测
 export { DefaultLLMObserver } from './observer/llm-observer';
 export { MemoryObserverStore } from './observer/observer-store';
+export { SqliteObserverStore } from './observer/sqlite-observer-store';
 export type { IObserverStore } from './observer/observer-store';

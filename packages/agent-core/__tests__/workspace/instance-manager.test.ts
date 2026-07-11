@@ -9,7 +9,7 @@ describe('InstanceManager', () => {
   let manager: InstanceManager;
 
   beforeEach(() => {
-    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcagent-test-'));
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'alice-mod-test-'));
     manager = new InstanceManager(path.join(tempDir, 'instances.json'));
   });
 

@@ -109,8 +109,8 @@ describe('constants', () => {
   });
 
   describe('DB_NAME', () => {
-    it('should be mcagent.db', () => {
-      expect(DB_NAME).toBe('mcagent.db');
+    it('should be alice-mod.db', () => {
+      expect(DB_NAME).toBe('alice-mod.db');
     });
   });
 

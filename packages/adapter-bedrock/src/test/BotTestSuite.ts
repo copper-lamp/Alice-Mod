@@ -38,7 +38,7 @@ export class BotTestSuite {
   static showMainMenu(player: Player): void {
     const fm = mc.newSimpleForm();
     fm.setTitle('§lMcAgent 假人测试');
-    fm.setContent('选择要执行的测试类别：');
+    fm.setTitle('§lAlice Mod 假人测试');
 
     fm.addButton('§a■ 全部冒烟测试\n一键运行所有核心功能', '');
     fm.addButton('§b● 生命周期\n上线/下线/创建/移除', '');
@@ -74,7 +74,7 @@ export class BotTestSuite {
 
     player.sendText('§e[McAgent 测试] 开始全部冒烟测试...');
     player.sendText('');
-
+    player.sendText('§e[Alice Mod 测试] 开始全部冒烟测试...');
     const startTime = Date.now();
 
     // 顺序执行测试

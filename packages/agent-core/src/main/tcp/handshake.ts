@@ -7,8 +7,8 @@
  * 3. AC 校验 auth_token → 返回 version 确认或错误
  */
 
-import type { JsonRpcResponse } from '@mcagent/shared';
-import { PROTOCOL_VERSION, ErrorCode as SharedErrorCode } from '@mcagent/shared';
+import type { JsonRpcResponse } from '@alice-mod/shared';
+import { PROTOCOL_VERSION, ErrorCode as SharedErrorCode } from '@alice-mod/shared';
 import { createSuccessResponse, createErrorResponse } from './codec';
 
 /** 握手请求参数 */

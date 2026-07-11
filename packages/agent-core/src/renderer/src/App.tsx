@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useEffect } from 'react'
+import { Toast } from '@heroui/react'
 import AppLayout from './components/layout/AppLayout'
 import DashboardPanel from './components/dashboard/DashboardPanel'
 import ModelPanel from './components/model/ModelPanel'
@@ -8,9 +9,36 @@ import AgentInstanceView from './components/agent/AgentInstanceView'
 import AgentCreatePage from './components/agent/AgentCreatePage'
 import ConfigPanel from './components/settings/ConfigPanel'
 import { useUIStore } from './stores/uiStore'
+import { useWorkspaceStore } from './stores/workspaceStore'
 
 const App: React.FC = () => {
   const { layoutMode, activeNav } = useUIStore()
+  const refreshWorkspaces = useWorkspaceStore(s => s.refreshWorkspaces)
+  const handleStateChange = useWorkspaceStore(s => s.handleStateChange)
+
+  useEffect(() => {
+    // 启动时加载工作区列表
+    refreshWorkspaces()
+
+    // 监听工作区状态变化
+    const unsubscribeState = window.electronAPI.on('workspace:state-changed', (event) => {
+      handleStateChange(event as { id: string; state: string })
+    })
+
+    // 创建/删除后刷新列表
+    const unsubscribeCreated = window.electronAPI.on('workspace:created', () => {
+      refreshWorkspaces()
+    })
+    const unsubscribeRemoved = window.electronAPI.on('workspace:removed', () => {
+      refreshWorkspaces()
+    })
+
+    return () => {
+      unsubscribeState()
+      unsubscribeCreated()
+      unsubscribeRemoved()
+    }
+  }, [refreshWorkspaces, handleStateChange])
 
   const renderContent = () => {
     switch (layoutMode) {
@@ -42,6 +70,7 @@ const App: React.FC = () => {
 
   return (
     <>
+      <Toast.Provider />
       <AppLayout>
         {renderContent()}
       </AppLayout>
