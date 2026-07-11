@@ -34,6 +34,9 @@ export class MemoryManager {
   public readonly mapIndex: MapIndex
   public readonly mapSync: MapSync
 
+  /** Chroma 是否可用（不可用时跳过嵌入和 MapSync） */
+  private chromaAvailable: boolean = false
+
   private config: MemoryConfig
   private logger: { warn: (msg: string, err?: unknown) => void; info: (msg: string) => void; error: (msg: string, err?: unknown) => void }
 
@@ -70,14 +73,18 @@ export class MemoryManager {
     this.sqlite.init()
     try {
       await this.chroma.init()
+      this.chromaAvailable = true
     } catch (err) {
+      this.chromaAvailable = false
       this.logger.warn('ChromaStore 初始化失败，语义检索将降级为 SQLite LIKE 搜索', err)
     }
-    // V12: 全量加载地图索引到内存
-    try {
-      await this.mapIndex.load()
-    } catch (err) {
-      this.logger.warn('MapIndex 加载失败，地图查询将不可用', err)
+    // V12: 全量加载地图索引到内存（仅在 Chroma 可用时加载）
+    if (this.chromaAvailable) {
+      try {
+        await this.mapIndex.load()
+      } catch (err) {
+        this.logger.warn('MapIndex 加载失败，地图查询将不可用', err)
+      }
     }
   }
 
@@ -109,14 +116,18 @@ export class MemoryManager {
     // 1. 写入 SQLite
     this.sqlite.saveMeta(memory)
 
-    // 2. 尝试生成向量并写入 Chroma
-    await this.tryEmbed(memory)
+    // 2. 尝试生成向量并写入 Chroma（仅 Chroma 可用时）
+    if (this.chromaAvailable) {
+      await this.tryEmbed(memory)
+    }
 
-    // 3. V12: MapSync 自动同步空间索引
-    try {
-      await this.mapSync.onMemoryStored(memory)
-    } catch (err) {
-      this.logger.warn(`MapSync 同步失败: ${memory.id}`, err)
+    // 3. V12: MapSync 自动同步空间索引（仅 Chroma 可用时）
+    if (this.chromaAvailable) {
+      try {
+        await this.mapSync.onMemoryStored(memory)
+      } catch (err) {
+        this.logger.warn(`MapSync 同步失败: ${memory.id}`, err)
+      }
     }
 
     this.logger.info(`记忆存储成功: ${memory.id} (${memory.type})`)
@@ -129,10 +140,12 @@ export class MemoryManager {
     // 1. 批量写入 SQLite
     this.sqlite.saveMetaBatch(memories)
 
-    // 2. 批量尝试生成向量
-    const toEmbed = memories.filter(m => m.content && Object.keys(m.content).length > 0)
-    for (const memory of toEmbed) {
-      await this.tryEmbed(memory)
+    // 2. 批量尝试生成向量（仅 Chroma 可用时）
+    if (this.chromaAvailable) {
+      const toEmbed = memories.filter(m => m.content && Object.keys(m.content).length > 0)
+      for (const memory of toEmbed) {
+        await this.tryEmbed(memory)
+      }
     }
 
     this.logger.info(`批量记忆存储成功: ${memories.length} 条`)

@@ -64,7 +64,7 @@ export class TcpConnection extends EventEmitter {
 
   constructor(
     socket: Socket,
-    authToken: string,
+    validTokens: Set<string>,
     heartbeatOptions: Partial<HeartbeatOptions> = {},
   ) {
     super();
@@ -75,7 +75,7 @@ export class TcpConnection extends EventEmitter {
     this.connectedAt = Date.now();
     this.lastActivity = Date.now();
 
-    this.handshake = new HandshakeHandler(authToken);
+    this.handshake = new HandshakeHandler(validTokens);
     this.heartbeat = new HeartbeatManager(heartbeatOptions, (event, data) => {
       this.handleHeartbeatEvent(event, data);
     });
@@ -236,6 +236,8 @@ export class TcpConnection extends EventEmitter {
     if (request.method === 'handshake') {
       const result = this.handshake.validate(request.params);
       if (result.response) {
+        // 使用请求的 ID 而非 null，确保客户端能匹配到待处理请求
+        result.response.id = request.id;
         this.sendJson(result.response);
       }
       if (result.valid && result.instanceId) {

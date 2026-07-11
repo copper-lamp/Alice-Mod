@@ -39,6 +39,8 @@ export class TcpServer extends EventEmitter {
   private messageHandlerFactory: ((connectionId: string) => MessageHandler) | null = null;
   private listening = false;
 
+  private readonly validTokens: Set<string>;
+
   constructor(options: Partial<TcpServerOptions> = {}) {
     super();
     this.options = {
@@ -47,9 +49,9 @@ export class TcpServer extends EventEmitter {
       maxConnections: 10,
       heartbeatInterval: 10000,
       heartbeatTimeout: 30000,
-      authToken: 'mcagent-default-token',
       ...options,
     };
+    this.validTokens = options.authTokens ?? new Set([DEFAULT_AUTH_TOKEN]);
   }
 
   // ── Public API ──
@@ -197,7 +199,7 @@ export class TcpServer extends EventEmitter {
       return;
     }
 
-    const connection = new TcpConnection(socket, this.options.authToken, {
+    const connection = new TcpConnection(socket, this.validTokens, {
       interval: this.options.heartbeatInterval,
       timeout: this.options.heartbeatTimeout,
       maxFailures: 5,

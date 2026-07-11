@@ -5,6 +5,7 @@
  * 所有具体 Provider（OpenAI / Claude / Gemini / Ollama）继承此类。
  */
 
+import { getLLMObserver } from '../observer/llm-observer'
 import type { ProviderConfig, LLMProvider, ProviderMetadata, LLMResponse, LLMChunk, Message, ChatOptions, ToolDefinition, HealthCheckResult } from '../types';
 
 /** Provider 内部错误 */
@@ -163,7 +164,18 @@ export abstract class BaseProvider implements LLMProvider {
   /** 解析错误响应（子类实现） */
   protected abstract parseErrorResponse(response: Response): Promise<Error>;
 
-  abstract chat(messages: Message[], tools?: ToolDefinition[], options?: ChatOptions): Promise<LLMResponse>;
+  /**
+   * 发送聊天请求（自动通过 LLM Observer 记录 Token 用量）
+   */
+  async chat(messages: Message[], tools?: ToolDefinition[], options?: ChatOptions): Promise<LLMResponse> {
+    const observer = getLLMObserver()
+    const model = options?.extra?.model as string || this.config.defaultModel
+    return observer.wrap(this.metadata.id, model, () => this.doChat(messages, tools, options))
+  }
+
+  /** 子类实现具体的聊天请求逻辑 */
+  protected abstract doChat(messages: Message[], tools?: ToolDefinition[], options?: ChatOptions): Promise<LLMResponse>;
+
   abstract chatStream(messages: Message[], tools?: ToolDefinition[], options?: ChatOptions): AsyncIterable<LLMChunk>;
   abstract healthCheck(): Promise<HealthCheckResult>;
 

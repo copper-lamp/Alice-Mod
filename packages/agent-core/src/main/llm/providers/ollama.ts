@@ -36,7 +36,7 @@ export class OllamaProvider extends BaseProvider {
     });
   }
 
-  async chat(
+  async doChat(
     messages: Message[],
     tools?: ToolDefinition[],
     options?: ChatOptions,

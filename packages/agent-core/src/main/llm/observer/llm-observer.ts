@@ -154,3 +154,34 @@ export class DefaultLLMObserver implements ILLMObserver {
     this.store.clear();
   }
 }
+
+// ════════════════════════════════════════════════════════════════
+// 全局单例
+// ════════════════════════════════════════════════════════════════
+
+let observerInstance: DefaultLLMObserver | null = null
+
+/**
+ * 获取全局 LLM 调用观测器实例
+ * 如果尚未创建，会使用 MemoryObserverStore 自动创建一个。
+ */
+export function getLLMObserver(): DefaultLLMObserver {
+  if (!observerInstance) {
+    observerInstance = new DefaultLLMObserver()
+  }
+  return observerInstance
+}
+
+/**
+ * 设置全局 LLM 调用观测器实例（通常在主进程初始化时注入 SqliteObserverStore 版本）
+ */
+export function setLLMObserver(observer: DefaultLLMObserver): void {
+  observerInstance = observer
+}
+
+/**
+ * 重置全局观测器实例（主要用于测试）
+ */
+export function resetLLMObserver(): void {
+  observerInstance = null
+}

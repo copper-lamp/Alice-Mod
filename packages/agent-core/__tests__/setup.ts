@@ -15,5 +15,8 @@ vi.mock('electron', () => {
       getVersion: () => '0.0.0',
       getName: () => 'alice-mod-test',
     },
+    ipcMain: {
+      handle: vi.fn(),
+    },
   };
 });

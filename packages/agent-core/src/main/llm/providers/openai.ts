@@ -34,7 +34,7 @@ export class OpenAIProvider extends BaseProvider {
     });
   }
 
-  async chat(
+  async doChat(
     messages: Message[],
     tools?: ToolDefinition[],
     options?: ChatOptions,

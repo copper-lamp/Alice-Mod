@@ -15,6 +15,8 @@ import type { ToolSchema } from '@mcagent/shared';
 import { Workspace, WorkspaceState, type WorkspaceData, type WorkspaceSource } from './workspace';
 import { ToolRegistry } from './tool-registry';
 import { WorkspaceStore } from './workspace-store';
+import { WIKI_TOOL_SCHEMAS } from '../wiki';
+import { SEARCH_TOOL_SCHEMAS } from '../search';
 
 /** 工作区管理器事件 */
 export enum WorkspaceEvent {
@@ -47,8 +49,13 @@ export class WorkspaceManager extends EventEmitter {
   private readonly connectionIndex: Map<string, string> = new Map();
   /** 工具注册表 */
   private readonly toolRegistry = new ToolRegistry();
-  /** 持久化存储 */
-  private readonly store = new WorkspaceStore();
+  /** 持久化存储（可传入 null 禁用持久化，便于测试） */
+  private readonly store: WorkspaceStore | null;
+
+  constructor(enablePersistence: boolean = true) {
+    super();
+    this.store = enablePersistence ? new WorkspaceStore() : null;
+  }
 
   // ── 创建/获取 ──
 
@@ -80,7 +87,7 @@ export class WorkspaceManager extends EventEmitter {
     this.instanceIndex.set(params.instanceId, workspace.id);
 
     // 持久化
-    this.store.save(workspace.toJSON());
+    this.store?.save(workspace.toJSON());
 
     this.emitEvent(WorkspaceEvent.Created, workspace.id, params.instanceId, {
       edition: params.edition,
@@ -157,7 +164,7 @@ export class WorkspaceManager extends EventEmitter {
     const oldState = workspace.state;
     workspace.goOnline();
     this.connectionIndex.set(connectionId, workspace.id);
-    this.store.save(workspace.toJSON());
+    this.store?.save(workspace.toJSON());
 
     if (oldState !== WorkspaceState.Online) {
       this.emitEvent(WorkspaceEvent.StateChanged, workspace.id, instanceId, {
@@ -183,7 +190,7 @@ export class WorkspaceManager extends EventEmitter {
     const oldState = workspace.state;
     workspace.goOffline();
     this.connectionIndex.delete(connectionId);
-    this.store.save(workspace.toJSON());
+    this.store?.save(workspace.toJSON());
 
     if (oldState !== WorkspaceState.Offline) {
       this.emitEvent(WorkspaceEvent.StateChanged, workspace.id, workspace.instanceId, {
@@ -204,11 +211,14 @@ export class WorkspaceManager extends EventEmitter {
     const workspace = this.workspaces.get(workspaceId);
     if (!workspace) return;
 
-    workspace.updateTools(tools);
-    this.toolRegistry.register(workspaceId, tools);
+    // 自动注入内置工具（Wiki 等）
+    const allTools = [...tools, ...WIKI_TOOL_SCHEMAS, ...SEARCH_TOOL_SCHEMAS];
+
+    workspace.updateTools(allTools);
+    this.toolRegistry.register(workspaceId, allTools);
 
     this.emitEvent(WorkspaceEvent.ToolsUpdated, workspaceId, workspace.instanceId, {
-      toolCount: tools.length,
+      toolCount: allTools.length,
     });
   }
 
@@ -237,7 +247,7 @@ export class WorkspaceManager extends EventEmitter {
       this.connectionIndex.delete(workspace.connectionId);
     }
     this.workspaces.delete(workspaceId);
-    this.store.delete(workspaceId);
+    this.store?.delete(workspaceId);
 
     this.emitEvent(WorkspaceEvent.Removed, workspaceId, workspace.instanceId);
     return true;
@@ -262,7 +272,7 @@ export class WorkspaceManager extends EventEmitter {
 
   /** 从持久化存储恢复工作区列表（启动时调用） */
   loadPersistedWorkspaces(): WorkspaceData[] {
-    const persisted = this.store.getAll()
+    const persisted = this.store?.getAll() ?? []
     for (const data of persisted) {
       // 只恢复离线状态的工作区
       if (!this.workspaces.has(data.id)) {
@@ -336,6 +346,10 @@ export function getWorkspaceManager(): WorkspaceManager {
     managerInstance = new WorkspaceManager()
   }
   return managerInstance
+}
+
+export function setWorkspaceManager(manager: WorkspaceManager): void {
+  managerInstance = manager
 }
 
 export function resetWorkspaceManager(): void {

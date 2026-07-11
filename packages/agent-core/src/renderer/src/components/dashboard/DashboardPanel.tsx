@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { useDashboardStore } from '../../stores/dashboardStore'
 import type { DashboardStats, DailyUsage, ActivityData, ProviderUsage, ModelUsage } from '../../lib/types'
 
@@ -30,7 +30,13 @@ const getActivityLevel = (value: number, max: number): string => {
 }
 
 const DashboardPanel: React.FC = () => {
-  const { stats, dailyUsage, activityData, loading } = useDashboardStore()
+  const { stats, dailyUsage, activityData, loading, fetchStats, fetchUsageHistory, fetchActivity } = useDashboardStore()
+
+  useEffect(() => {
+    fetchStats()
+    fetchUsageHistory(7)
+    fetchActivity()
+  }, [fetchStats, fetchUsageHistory, fetchActivity])
 
   const inner = (
     <>

@@ -38,7 +38,8 @@ export interface TcpServerOptions {
   maxConnections: number;
   heartbeatInterval: number;
   heartbeatTimeout: number;
-  authToken: string;
+  /** 允许的 auth_token 集合，为空时会创建默认集合 */
+  authTokens?: Set<string>;
 }
 
 /** 连接事件 */
@@ -85,7 +86,6 @@ export const DEFAULT_SERVER_OPTIONS: TcpServerOptions = {
   maxConnections: 10,
   heartbeatInterval: 10000,
   heartbeatTimeout: 30000,
-  authToken: DEFAULT_AUTH_TOKEN,
 };
 
 /** 错误码映射：自定义错误码 → 标准 JSON-RPC 格式 */

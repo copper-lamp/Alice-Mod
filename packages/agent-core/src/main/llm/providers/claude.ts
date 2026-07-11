@@ -49,7 +49,7 @@ export class ClaudeProvider extends BaseProvider {
     });
   }
 
-  async chat(
+  async doChat(
     messages: Message[],
     tools?: ToolDefinition[],
     options?: ChatOptions,

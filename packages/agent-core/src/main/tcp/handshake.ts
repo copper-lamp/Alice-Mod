@@ -7,8 +7,8 @@
  * 3. AC 校验 auth_token → 返回 version 确认或错误
  */
 
-import type { JsonRpcResponse } from '@alice-mod/shared';
-import { PROTOCOL_VERSION, ErrorCode as SharedErrorCode } from '@alice-mod/shared';
+import type { JsonRpcResponse } from '@mcagent/shared';
+import { PROTOCOL_VERSION, ErrorCode as SharedErrorCode } from '@mcagent/shared';
 import { createSuccessResponse, createErrorResponse } from './codec';
 
 /** 握手请求参数 */
@@ -32,10 +32,10 @@ export interface HandshakeResult {
 
 /** 握手处理器 */
 export class HandshakeHandler {
-  private readonly expectedAuthToken: string;
+  private readonly validTokens: Set<string>;
 
-  constructor(authToken: string) {
-    this.expectedAuthToken = authToken;
+  constructor(validTokens: string | Set<string>) {
+    this.validTokens = typeof validTokens === 'string' ? new Set([validTokens]) : validTokens;
   }
 
   /**
@@ -64,14 +64,14 @@ export class HandshakeHandler {
     }
 
     // 校验 auth_token
-    if (typeof p.auth_token !== 'string') {
+    if (typeof p.auth_token !== 'string' || p.auth_token.trim() === '') {
       return {
         valid: false,
-        response: createErrorResponse(null, SharedErrorCode.AuthFailed, 'Missing auth_token'),
+        response: createErrorResponse(null, SharedErrorCode.AuthFailed, 'Missing or empty auth_token'),
       };
     }
 
-    if (p.auth_token !== this.expectedAuthToken) {
+    if (!this.validTokens.has(p.auth_token)) {
       return {
         valid: false,
         response: createErrorResponse(null, SharedErrorCode.AuthFailed, 'Invalid auth_token'),

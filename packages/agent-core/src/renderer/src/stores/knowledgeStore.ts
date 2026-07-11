@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type KnowledgeTab = 'database' | 'map-index' | 'expert' | 'experience' | 'agent-memory'
+export type KnowledgeTab = 'database' | 'map-index' | 'expert' | 'experience' | 'skill' | 'agent-memory'
 
 interface KnowledgeState {
   activeTab: KnowledgeTab

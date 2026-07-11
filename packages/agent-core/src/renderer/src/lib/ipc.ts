@@ -148,18 +148,23 @@ export const modelApi = {
 
 /** IPC 调用封装 - 记忆系统 */
 export const memoryApi = {
-  list: (params: { type?: string; tags?: string[]; keywords?: string; limit?: number; offset?: number }) =>
-    window.electronAPI.invoke('memory:list', params) as Promise<{ memories: any[]; total: number; limit: number; offset: number }>,
+  list: (params: { type?: string; branch?: string; tags?: string[]; keywords?: string; limit?: number; offset?: number }) =>
+    window.electronAPI?.invoke('memory:list', params) as Promise<{ memories: any[]; total: number; limit: number; offset: number }>,
+
+  store: async (params: { type: string; branch?: string; content: Record<string, unknown>; tags?: string[]; importance?: number }) => {
+    if (!window.electronAPI) return { success: false, error: 'Electron API 不可用（浏览器预览模式）' }
+    return window.electronAPI.invoke('memory:store', params) as Promise<{ success: boolean; data?: { id: string; createdAt: number }; error?: string }>
+  },
 
   getById: (id: string) =>
-    window.electronAPI.invoke('memory:getById', { id }) as Promise<any | null>,
+    window.electronAPI?.invoke('memory:getById', { id }) as Promise<any | null>,
 
   update: (id: string, updates: Record<string, unknown>) =>
-    window.electronAPI.invoke('memory:update', { id, updates }) as Promise<{ success: boolean; error?: string }>,
+    window.electronAPI?.invoke('memory:update', { id, updates }) as Promise<{ success: boolean; error?: string }>,
 
   forget: (id: string) =>
-    window.electronAPI.invoke('memory:forget', { id }) as Promise<{ success: boolean; error?: string }>,
+    window.electronAPI?.invoke('memory:forget', { id }) as Promise<{ success: boolean; error?: string }>,
 
   similar: (query: string, type?: string, limit?: number) =>
-    window.electronAPI.invoke('memory:similar', { query, type, limit }) as Promise<{ memories: any[] }>
+    window.electronAPI?.invoke('memory:similar', { query, type, limit }) as Promise<{ memories: any[] }>
 }

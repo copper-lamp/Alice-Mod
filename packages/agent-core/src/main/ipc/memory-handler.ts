@@ -16,9 +16,37 @@ export function setMemoryManager(manager: MemoryManager): void {
 }
 
 export function registerMemoryHandlers(): void {
+  // 存储单条记忆
+  ipcMain.handle('memory:store', async (_event, params: {
+    type: string
+    branch?: string
+    content: Record<string, unknown>
+    tags?: string[]
+    importance?: number
+    workspaceId?: string
+  }) => {
+    if (!memoryManager) {
+      return { success: false, error: 'MemoryManager 未初始化' }
+    }
+    try {
+      const result = await memoryManager.store({
+        type: params.type as any,
+        branch: params.branch as any,
+        content: params.content,
+        tags: params.tags,
+        importance: params.importance,
+      }, params.workspaceId)
+      return { success: true, data: result }
+    } catch (err) {
+      console.error('[MemoryHandler] store error:', err)
+      return { success: false, error: (err as Error).message }
+    }
+  })
+
   // 获取记忆列表
   ipcMain.handle('memory:list', async (_event, params: {
     type?: string
+    branch?: string
     tags?: string[]
     keywords?: string
     limit?: number
@@ -30,6 +58,7 @@ export function registerMemoryHandlers(): void {
     try {
       const result = await memoryManager.list({
         type: params.type as any,
+        branch: params.branch as any,
         tags: params.tags,
         keywords: params.keywords ? [params.keywords] : undefined,
         limit: params.limit ?? 20,

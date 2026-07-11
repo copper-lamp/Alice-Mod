@@ -6,14 +6,14 @@ import DatabaseView from './DatabaseView'
 import MapIndexView from './MapIndexView'
 import ExpertView from './ExpertView'
 import ExperienceView from './ExperienceView'
-import AgentMemoryView from './AgentMemoryView'
+import SkillsView from './SkillsView'
 
 const tabs = [
   { key: 'database' as const, label: '资料库' },
   { key: 'map-index' as const, label: '地图索引' },
   { key: 'expert' as const, label: '专家' },
   { key: 'experience' as const, label: '经验' },
-  { key: 'agent-memory' as const, label: '智能体记忆' }
+  { key: 'skill' as const, label: '技能' },
 ]
 
 const KnowledgePanel: React.FC = () => {
@@ -55,8 +55,8 @@ const KnowledgePanel: React.FC = () => {
               <Tabs.Panel id="experience">
                 <ExperienceView />
               </Tabs.Panel>
-              <Tabs.Panel id="agent-memory">
-                <AgentMemoryView />
+              <Tabs.Panel id="skill">
+                <SkillsView />
               </Tabs.Panel>
             </div>
           </Tabs>

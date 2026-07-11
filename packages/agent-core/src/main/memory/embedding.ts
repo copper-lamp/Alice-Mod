@@ -83,29 +83,37 @@ class OpenAIEmbeddingProvider implements IEmbeddingModel {
   async embedBatch(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return []
 
-    const response = await fetch(`${this.baseUrl}/embeddings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        input: texts,
-        model: this.model,
-        dimensions: this.dimension,
-      }),
-    })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000) // 5s 超时
 
-    if (!response.ok) {
-      throw new Error(`OpenAI embedding API error: ${response.status} ${response.statusText}`)
+    try {
+      const response = await fetch(`${this.baseUrl}/embeddings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          input: texts,
+          model: this.model,
+          dimensions: this.dimension,
+        }),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        throw new Error(`OpenAI embedding API error: ${response.status} ${response.statusText}`)
+      }
+
+      const data = (await response.json()) as {
+        data: Array<{ embedding: number[] }>
+        usage: { total_tokens: number }
+      }
+
+      return data.data.map(item => item.embedding)
+    } finally {
+      clearTimeout(timeout)
     }
-
-    const data = (await response.json()) as {
-      data: Array<{ embedding: number[] }>
-      usage: { total_tokens: number }
-    }
-
-    return data.data.map(item => item.embedding)
   }
 
   getDimension(): number {

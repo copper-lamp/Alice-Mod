@@ -16,21 +16,24 @@ import type { ToolContext, PlayerAccess, WorldAccess, BotAccess, EventNotificati
 // ── PlayerAccess 实现 ──
 
 export class PlayerAccessImpl implements PlayerAccess {
-  getHealth(): number {
+  /** 取第一个在线玩家（含假人） */
+  private getFirstPlayer(): any {
     // @ts-ignore — LLSE 全局变量
-    const pl = mc.getPlayerList()[0];
+    return mc.getOnlinePlayers()[0];
+  }
+
+  getHealth(): number {
+    const pl = this.getFirstPlayer();
     return pl ? pl.health : 0;
   }
 
   getMaxHealth(): number {
-    // @ts-ignore
-    const pl = mc.getPlayerList()[0];
+    const pl = this.getFirstPlayer();
     return pl ? pl.maxHealth : 20;
   }
 
   getHunger(): number {
-    // @ts-ignore
-    const pl = mc.getPlayerList()[0];
+    const pl = this.getFirstPlayer();
     return pl ? pl.hunger : 20;
   }
 
@@ -39,8 +42,7 @@ export class PlayerAccessImpl implements PlayerAccess {
   }
 
   getPosition(): { x: number; y: number; z: number; dimension: string } {
-    // @ts-ignore
-    const pl = mc.getPlayerList()[0];
+    const pl = this.getFirstPlayer();
     if (!pl) return { x: 0, y: 64, z: 0, dimension: '主世界' };
     return {
       x: pl.pos.x,
@@ -51,27 +53,23 @@ export class PlayerAccessImpl implements PlayerAccess {
   }
 
   getRotation(): { yaw: number; pitch: number } {
-    // @ts-ignore
-    const pl = mc.getPlayerList()[0];
+    const pl = this.getFirstPlayer();
     if (!pl) return { yaw: 0, pitch: 0 };
     return { yaw: pl.direction.yaw, pitch: pl.direction.pitch };
   }
 
   getSelectedSlot(): number {
-    // @ts-ignore
-    const pl = mc.getPlayerList()[0];
+    const pl = this.getFirstPlayer();
     return pl ? pl.selectedSlot : 0;
   }
 
   getInventory(): any {
-    // @ts-ignore
-    const pl = mc.getPlayerList()[0];
+    const pl = this.getFirstPlayer();
     return pl ? pl.getInventory() : null;
   }
 
   getEquipment(): Record<string, any> {
-    // @ts-ignore
-    const pl = mc.getPlayerList()[0];
+    const pl = this.getFirstPlayer();
     if (!pl) return {};
     return {
       hand: pl.getHand()?.name || null,
@@ -114,7 +112,7 @@ export class WorldAccessImpl implements WorldAccess {
 
   getOnlinePlayers(): any[] {
     // @ts-ignore
-    return mc.getPlayerList();
+    return mc.getOnlinePlayers();
   }
 }
 

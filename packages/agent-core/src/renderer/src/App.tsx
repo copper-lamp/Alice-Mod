@@ -20,6 +20,9 @@ const App: React.FC = () => {
     // 启动时加载工作区列表
     refreshWorkspaces()
 
+    // 仅在 Electron 环境下注册 IPC 事件监听
+    if (!window.electronAPI) return
+
     // 监听工作区状态变化
     const unsubscribeState = window.electronAPI.on('workspace:state-changed', (event) => {
       handleStateChange(event as { id: string; state: string })

@@ -96,17 +96,17 @@ export class StatusReporter {
    */
   collect(): StatusReport {
     // @ts-ignore — LLSE 全局变量
-    const pl = mc.getPlayerList()[0];
+    const pl = mc.getOnlinePlayers()[0];
     const now = new Date().toISOString();
 
     return {
       timestamp: now,
       health: {
-        health: pl ? pl.health : 0,
-        max_health: pl ? pl.maxHealth : 20,
-        hunger: pl ? pl.hunger : 20,
-        saturation: 0,
-        air: pl ? pl.air : 300,
+        health: pl ? pl.getHealth() : 0,
+        max_health: pl ? pl.getMaxHealth() : 20,
+        hunger: pl ? pl.getHunger() : 20,
+        saturation: pl ? pl.getSaturation() : 0,
+        air: 300, // Player 接口未暴露 air 属性，使用默认值
       },
       position: {
         x: pl ? pl.pos.x : 0,

@@ -8,10 +8,22 @@ import { registerModelHandlers } from './model-handler'
 import { registerQQBotHandlers } from './qq-bot-handler'
 import { registerLogHandlers } from './log-handler'
 import { registerToolCallHandlers } from './tool-call-handler'
-import { registerMemoryHandlers } from './memory-handler'
+import { registerMemoryHandlers, setMemoryManager } from './memory-handler'
 import { registerWorkspaceHandlers } from './workspace-handler'
+import { registerWikiHandlers, setWikiClient, WikiClient } from '../wiki'
+import { registerSearchHandlers, setSearchClient, SearchClient } from '../search'
+import { registerDialogHandlers } from './dialog-handler'
 
+export { setMemoryManager }
 export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
+  // 初始化 Wiki 客户端
+  setWikiClient(new WikiClient())
+  registerWikiHandlers()
+
+  // 初始化搜索客户端
+  setSearchClient(new SearchClient())
+  registerSearchHandlers()
+
   registerChatHandlers()
   registerConfigHandlers()
   registerWindowHandlers(mainWindow)
@@ -22,5 +34,6 @@ export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerLogHandlers()
   registerToolCallHandlers()
   registerMemoryHandlers()
+  registerDialogHandlers()
   registerWorkspaceHandlers(mainWindow)
 }

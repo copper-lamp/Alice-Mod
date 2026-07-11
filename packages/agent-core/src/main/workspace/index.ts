@@ -9,5 +9,5 @@
 
 export { Workspace, WorkspaceState, type WorkspaceData, type WorkspaceSession, type WorkspaceSource } from './workspace';
 export { ToolRegistry } from './tool-registry';
-export { WorkspaceManager, WorkspaceEvent, type WorkspaceEventData, getWorkspaceManager, resetWorkspaceManager } from './workspace-manager';
+export { WorkspaceManager, WorkspaceEvent, type WorkspaceEventData, getWorkspaceManager, setWorkspaceManager, resetWorkspaceManager } from './workspace-manager';
 export { WorkspaceStore } from './workspace-store';

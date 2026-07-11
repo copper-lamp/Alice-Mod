@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Table, TextField, Input, Chip, Button, Select, ProgressBar, Modal, ModalHeader, ModalBody, ModalFooter } from '@heroui/react'
+import { Table, TextField, Input, Chip, Button, Select, ProgressBar, Modal, ModalHeader, ModalBody, ModalFooter, ModalDialog } from '@heroui/react'
 import { memoryApi } from '../../lib/ipc'
 
 interface MemoryItem {

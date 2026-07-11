@@ -44,7 +44,7 @@ class TestProvider extends BaseProvider {
     });
   }
 
-  async chat(messages: Message[], _tools?: ToolDefinition[], _options?: ChatOptions): Promise<LLMResponse> {
+  async doChat(messages: Message[], _tools?: ToolDefinition[], _options?: ChatOptions): Promise<LLMResponse> {
     return this.request('/chat', { messages });
   }
 
