@@ -93,6 +93,8 @@ export interface ISQLiteStore {
   getAllIds(): string[]
   getUnembedded(limit?: number): Memory[]
   markEmbedded(id: string, embeddingId: string): void
+  queryAll<T = Record<string, unknown>>(sql: string, params?: Record<string, unknown>): T[]
+  run(sql: string, params?: Record<string, unknown>): void
   close(): void
 }
 
@@ -477,6 +479,20 @@ export class SQLiteStore implements ISQLiteStore {
     }
     const rows = this.db.prepare<unknown[], MemoryMetaRow>(query).all()
     return rows.map(rowToMemory)
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // MapIndex 兼容接口
+  // ══════════════════════════════════════════════════════════════
+
+  queryAll<T = Record<string, unknown>>(sql: string, params?: Record<string, unknown>): T[] {
+    const stmt = this.db.prepare<Record<string, unknown>, T>(sql)
+    const bindings = (params && Object.keys(params).length > 0) ? params : ({} as Record<string, unknown>)
+    return stmt.all(bindings) as T[]
+  }
+
+  run(sql: string, params?: Record<string, unknown>): void {
+    this.db.prepare(sql).run(params ?? ({} as Record<string, unknown>))
   }
 
   // ══════════════════════════════════════════════════════════════

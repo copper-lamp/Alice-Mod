@@ -15,4 +15,8 @@ export { EmbeddingStrategy, createEmbeddingModel } from './embedding';
 export type { IEmbeddingModel } from './embedding';
 export { MemoryManager } from './memory-manager';
 export { CleanupEngine } from './cleanup-engine';
+export { MapIndex } from './map-index';
+export type { SQLiteExecutor } from './map-index';
+export { MapSync } from './map-sync';
+export { OverviewBuilder } from './overview-builder';
 export { MEMORY_TOOL_SCHEMAS } from './tools';

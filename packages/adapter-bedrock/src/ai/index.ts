@@ -18,6 +18,6 @@ export class AIEngine {
 
   async execute(task: string): Promise<void> {
     // TODO: Parse and dispatch task
-    console.debug('[AI] Executing:', task);
+    logger.debug('[AI] Executing:', task);
   }
 }

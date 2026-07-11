@@ -56,3 +56,59 @@ CREATE TABLE IF NOT EXISTS memory_access_log (
 
 CREATE INDEX IF NOT EXISTS idx_memory_access_log_memory_id ON memory_access_log(memory_id);
 CREATE INDEX IF NOT EXISTS idx_memory_access_log_accessed_at ON memory_access_log(accessed_at);
+
+-- ════════════════════════════════════════════════════════════════
+-- V12 新增：地图索引表
+-- ════════════════════════════════════════════════════════════════
+
+-- 4. 地图特征表
+CREATE TABLE IF NOT EXISTS map_features (
+  id TEXT PRIMARY KEY,
+  memory_id TEXT,
+  feature_type TEXT NOT NULL,
+  name TEXT,
+  x INTEGER NOT NULL,
+  y INTEGER NOT NULL DEFAULT 0,
+  z INTEGER NOT NULL,
+  dimension TEXT NOT NULL,
+  tags TEXT NOT NULL DEFAULT '[]',
+  metadata TEXT,
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  FOREIGN KEY (memory_id) REFERENCES memory_meta(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_map_features_dimension ON map_features(dimension);
+CREATE INDEX IF NOT EXISTS idx_map_features_type ON map_features(feature_type);
+CREATE INDEX IF NOT EXISTS idx_map_features_coords ON map_features(dimension, x, z);
+
+-- 5. 空间网格索引表
+CREATE TABLE IF NOT EXISTS map_spatial_grid (
+  chunk_x INTEGER NOT NULL,
+  chunk_z INTEGER NOT NULL,
+  dimension TEXT NOT NULL,
+  feature_id TEXT NOT NULL,
+  PRIMARY KEY (chunk_x, chunk_z, dimension, feature_id),
+  FOREIGN KEY (feature_id) REFERENCES map_features(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_map_spatial_grid_dim ON map_spatial_grid(dimension, chunk_x, chunk_z);
+
+-- 6. 命名区域表
+CREATE TABLE IF NOT EXISTS map_regions (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  region_type TEXT NOT NULL,
+  x1 INTEGER NOT NULL,
+  z1 INTEGER NOT NULL,
+  x2 INTEGER NOT NULL,
+  z2 INTEGER NOT NULL,
+  dimension TEXT NOT NULL,
+  description TEXT,
+  memory_id TEXT,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  FOREIGN KEY (memory_id) REFERENCES memory_meta(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_map_regions_dimension ON map_regions(dimension);
+CREATE INDEX IF NOT EXISTS idx_map_regions_name ON map_regions(name);

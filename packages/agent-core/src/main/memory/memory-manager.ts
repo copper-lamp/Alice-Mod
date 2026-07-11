@@ -12,6 +12,8 @@ import { SQLiteStore } from './sqlite-store'
 import { ChromaStore } from './chroma-store'
 import { EmbeddingStrategy, createEmbeddingModel } from './embedding'
 import type { IEmbeddingModel } from './embedding'
+import { MapIndex } from './map-index'
+import { MapSync } from './map-sync'
 import type {
   Memory, MemoryConfig, MemoryType, MemoryBranch,
   StoreParams, StoreResult, BatchStoreParams, BatchStoreResult,
@@ -29,6 +31,8 @@ export class MemoryManager {
   public readonly sqlite: SQLiteStore
   public readonly chroma: ChromaStore
   public readonly embedding: IEmbeddingModel
+  public readonly mapIndex: MapIndex
+  public readonly mapSync: MapSync
 
   private config: MemoryConfig
   private logger: { warn: (msg: string, err?: unknown) => void; info: (msg: string) => void; error: (msg: string, err?: unknown) => void }
@@ -39,6 +43,7 @@ export class MemoryManager {
       sqlite?: SQLiteStore
       chroma?: ChromaStore
       embedding?: IEmbeddingModel
+      mapIndex?: MapIndex
       logger?: { warn: (msg: string, err?: unknown) => void; info: (msg: string) => void; error: (msg: string, err?: unknown) => void }
     },
   ) {
@@ -53,6 +58,8 @@ export class MemoryManager {
     this.sqlite = deps?.sqlite ?? new SQLiteStore(config.sqlitePath)
     this.chroma = deps?.chroma ?? new ChromaStore(config.chroma)
     this.embedding = deps?.embedding ?? createEmbeddingModel(config.embedding)
+    this.mapIndex = deps?.mapIndex ?? new MapIndex(this.sqlite, this.logger)
+    this.mapSync = new MapSync(this.mapIndex)
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -65,6 +72,12 @@ export class MemoryManager {
       await this.chroma.init()
     } catch (err) {
       this.logger.warn('ChromaStore 初始化失败，语义检索将降级为 SQLite LIKE 搜索', err)
+    }
+    // V12: 全量加载地图索引到内存
+    try {
+      await this.mapIndex.load()
+    } catch (err) {
+      this.logger.warn('MapIndex 加载失败，地图查询将不可用', err)
     }
   }
 
@@ -98,6 +111,13 @@ export class MemoryManager {
 
     // 2. 尝试生成向量并写入 Chroma
     await this.tryEmbed(memory)
+
+    // 3. V12: MapSync 自动同步空间索引
+    try {
+      await this.mapSync.onMemoryStored(memory)
+    } catch (err) {
+      this.logger.warn(`MapSync 同步失败: ${memory.id}`, err)
+    }
 
     this.logger.info(`记忆存储成功: ${memory.id} (${memory.type})`)
     return { id: memory.id, createdAt: memory.createdAt }
@@ -267,6 +287,16 @@ export class MemoryManager {
       await this.tryEmbed(merged)
     }
 
+    // V12: MapSync 同步更新空间索引
+    const updatedMemory = this.sqlite.getById(id)
+    if (updatedMemory) {
+      try {
+        await this.mapSync.onMemoryUpdated(updatedMemory)
+      } catch (err) {
+        this.logger.warn(`MapSync 更新同步失败: ${id}`, err)
+      }
+    }
+
     this.logger.info(`记忆更新成功: ${id}`)
   }
 
@@ -281,6 +311,13 @@ export class MemoryManager {
       } catch (err) {
         this.logger.warn(`删除 Chroma 向量失败: ${existing.embeddingId}`, err)
       }
+    }
+
+    // V12: MapSync 同步删除空间索引（放在 SQLite 删除前，以便获取 memoryId）
+    try {
+      await this.mapSync.onMemoryForgotten(id)
+    } catch (err) {
+      this.logger.warn(`MapSync 删除同步失败: ${id}`, err)
     }
 
     // 删除 SQLite 记录

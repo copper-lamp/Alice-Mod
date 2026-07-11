@@ -1,0 +1,10 @@
+{
+    "entry": "LLSE-FakePlayer.js",
+    "name": "LLSE-FakePlayer",
+    "type": "lse-nodejs",
+    "dependencies": [
+        {
+            "name": "legacy-script-engine-nodejs"
+        }
+    ]
+}

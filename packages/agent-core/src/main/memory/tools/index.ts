@@ -20,9 +20,18 @@ import { MEMORY_RECALL_TOOL, memoryRecall } from './memory_recall';
 import { MEMORY_UPDATE_TOOL, MEMORY_FORGET_TOOL, memoryUpdate, memoryForget } from './memory_update';
 import { MEMORY_TAG_TOOL, MEMORY_UNTAG_TOOL, memoryTag, memoryUntag } from './memory_tag';
 import { MEMORY_STATS_TOOL, MEMORY_CLEANUP_TOOL, MEMORY_EXPORT_TOOL, MEMORY_IMPORT_TOOL, memoryStats, memoryCleanup, memoryExport, memoryImport } from './memory_manage';
+import { MAP_QUERY_NEARBY_TOOL, MAP_GET_OVERVIEW_TOOL, mapQueryNearby, mapGetOverview } from './map_tools';
 export type { ToolSchema, ToolResult };
-export { MEMORY_STORE_TOOL, MEMORY_BATCH_STORE_TOOL, MEMORY_RECALL_TOOL, MEMORY_UPDATE_TOOL, MEMORY_FORGET_TOOL, MEMORY_TAG_TOOL, MEMORY_UNTAG_TOOL, MEMORY_STATS_TOOL, MEMORY_CLEANUP_TOOL, MEMORY_EXPORT_TOOL, MEMORY_IMPORT_TOOL };
-export { memoryStore, memoryBatchStore, memoryRecall, memoryUpdate, memoryForget, memoryTag, memoryUntag, memoryStats, memoryCleanup, memoryExport, memoryImport };
+export {
+  MEMORY_STORE_TOOL, MEMORY_BATCH_STORE_TOOL, MEMORY_RECALL_TOOL, MEMORY_UPDATE_TOOL, MEMORY_FORGET_TOOL,
+  MEMORY_TAG_TOOL, MEMORY_UNTAG_TOOL, MEMORY_STATS_TOOL, MEMORY_CLEANUP_TOOL, MEMORY_EXPORT_TOOL, MEMORY_IMPORT_TOOL,
+  MAP_QUERY_NEARBY_TOOL, MAP_GET_OVERVIEW_TOOL,
+};
+export {
+  memoryStore, memoryBatchStore, memoryRecall, memoryUpdate, memoryForget,
+  memoryTag, memoryUntag, memoryStats, memoryCleanup, memoryExport, memoryImport,
+  mapQueryNearby, mapGetOverview,
+};
 
 /** 所有记忆工具的 Schema 列表（用于注册到 ToolRegistry） */
 export const MEMORY_TOOL_SCHEMAS: ToolSchema[] = [
@@ -37,4 +46,6 @@ export const MEMORY_TOOL_SCHEMAS: ToolSchema[] = [
   MEMORY_CLEANUP_TOOL,
   MEMORY_EXPORT_TOOL,
   MEMORY_IMPORT_TOOL,
+  MAP_QUERY_NEARBY_TOOL,
+  MAP_GET_OVERVIEW_TOOL,
 ];

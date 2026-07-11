@@ -1,6 +1,12 @@
 {
-  "name": "AliceMod-BE",
-  "version": "1.0.0",
-  "description": "Alice Mod 基岩版接入核心",
-  "entry": "dist/index.js"
+    "entry": "index.js",
+    "name": "Alices Mod",
+    "version": "1.0.0",
+    "description": "Alices Mod — 基于LL3的 AI 模块，用于在 Minecraft 中执行任务",
+    "type": "lse-nodejs",
+    "dependencies": [
+        {
+            "name": "legacy-script-engine-nodejs"
+        }
+    ]
 }

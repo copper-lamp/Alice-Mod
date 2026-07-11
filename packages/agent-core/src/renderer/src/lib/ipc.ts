@@ -121,3 +121,21 @@ export const modelApi = {
   update: (id: string, config: Partial<ModelConfigItem>) =>
     window.electronAPI.invoke('model:update', { id, config }) as Promise<{ success: boolean }>
 }
+
+/** IPC 调用封装 - 记忆系统 */
+export const memoryApi = {
+  list: (params: { type?: string; tags?: string[]; keywords?: string; limit?: number; offset?: number }) =>
+    window.electronAPI.invoke('memory:list', params) as Promise<{ memories: any[]; total: number; limit: number; offset: number }>,
+
+  getById: (id: string) =>
+    window.electronAPI.invoke('memory:getById', { id }) as Promise<any | null>,
+
+  update: (id: string, updates: Record<string, unknown>) =>
+    window.electronAPI.invoke('memory:update', { id, updates }) as Promise<{ success: boolean; error?: string }>,
+
+  forget: (id: string) =>
+    window.electronAPI.invoke('memory:forget', { id }) as Promise<{ success: boolean; error?: string }>,
+
+  similar: (query: string, type?: string, limit?: number) =>
+    window.electronAPI.invoke('memory:similar', { query, type, limit }) as Promise<{ memories: any[] }>
+}

@@ -14,6 +14,10 @@ export type MemoryType =
   | 'player_habit'
   /** 地图关键点 — 记住坐标和位置信息 */
   | 'map_point'
+  /** 地图区域 — 命名区域 */
+  | 'map_region'
+  /** 地图生物群系 — 生物群系记录 */
+  | 'map_biome'
   /** 任务经验 — 记住任务执行经验 */
   | 'task_experience'
   /** 社交关系 — 记住与其他玩家的关系 */
@@ -36,6 +40,8 @@ export type MemoryBranch =
 export const MEMORY_TYPES: readonly MemoryType[] = [
   'player_habit',
   'map_point',
+  'map_region',
+  'map_biome',
   'task_experience',
   'social',
   'skill',
@@ -207,6 +213,8 @@ export interface ListParams {
   branch?: MemoryBranch;
   /** 标签（可选） */
   tags?: string[];
+  /** 关键词匹配（可选，在 content_json 中模糊搜索） */
+  keywords?: string[];
   /** 工作区 ID（可选） */
   workspaceId?: string;
   /** 返回数量 */
@@ -432,3 +440,161 @@ export const DEFAULT_MEMORY_CONFIG: Partial<MemoryConfig> = {
   autoCleanup: DEFAULT_AUTO_CLEANUP_CONFIG,
   limits: DEFAULT_MEMORY_LIMITS,
 };
+
+// ════════════════════════════════════════════════════════════════
+// V12 新增类型：地图索引
+// ════════════════════════════════════════════════════════════════
+
+/** 地图特征类型 */
+export type FeatureType = 'point' | 'resource' | 'structure' | 'biome' | 'base' | 'waypoint';
+
+/** 地图维度 */
+export type Dimension = 'overworld' | 'nether' | 'the_end';
+
+/** 地图特征 */
+export interface MapFeature {
+  id: string;
+  memoryId?: string;
+  featureType: FeatureType;
+  name?: string;
+  x: number;
+  y: number;
+  z: number;
+  dimension: Dimension;
+  tags: string[];
+  metadata?: Record<string, unknown>;
+  updatedAt: number;
+}
+
+/** 命名区域类型 */
+export type RegionType = 'base' | 'mine' | 'farm' | 'village' | 'exploration' | 'custom';
+
+/** 命名区域 */
+export interface MapRegion {
+  id: string;
+  name: string;
+  regionType: RegionType;
+  x1: number;
+  z1: number;
+  x2: number;
+  z2: number;
+  dimension: string;
+  description?: string;
+  memoryId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** 邻近查询参数 */
+export interface NearbyQueryParams {
+  x: number;
+  z: number;
+  radius: number;
+  dimension: Dimension;
+  type?: FeatureType;
+  limit?: number;
+}
+
+/** 邻近查询结果条目 */
+export interface NearbyQueryFeature {
+  id: string;
+  name?: string;
+  featureType: FeatureType;
+  x: number;
+  y: number;
+  z: number;
+  tags: string[];
+  distance: number;
+}
+
+/** 邻近查询结果 */
+export interface NearbyQueryResult {
+  features: NearbyQueryFeature[];
+  count: number;
+  center: { x: number; z: number };
+  radius: number;
+}
+
+/** 矩形区域查询参数 */
+export interface AreaQueryParams {
+  x1: number;
+  z1: number;
+  x2: number;
+  z2: number;
+  dimension: Dimension;
+  type?: FeatureType;
+  limit?: number;
+  offset?: number;
+}
+
+/** 矩形区域查询结果 */
+export interface AreaQueryResult {
+  features: MapFeature[];
+  count: number;
+  total: number;
+  bounds: { x1: number; z1: number; x2: number; z2: number };
+}
+
+/** 区域概览参数 */
+export interface OverviewParams {
+  x: number;
+  z: number;
+  radius: number;
+  dimension: Dimension;
+}
+
+/** 区域概览结果中的区域信息 */
+export interface OverviewRegion {
+  id: string;
+  name: string;
+  regionType: RegionType;
+  x1: number;
+  z1: number;
+  x2: number;
+  z2: number;
+}
+
+/** 区域概览结果中的关键点 */
+export interface OverviewHighlight {
+  name?: string;
+  featureType: FeatureType;
+  x: number;
+  z: number;
+}
+
+/** 区域概览结果 */
+export interface OverviewResult {
+  summary: string;
+  featureStats: Record<string, number>;
+  regions: OverviewRegion[];
+  highlights: OverviewHighlight[];
+  bounds: { x1: number; z1: number; x2: number; z2: number };
+}
+
+/** 地图索引统计 */
+export interface MapIndexStats {
+  totalFeatures: number;
+  byDimension: Partial<Record<Dimension, number>>;
+  byType: Partial<Record<FeatureType, number>>;
+  totalRegions: number;
+  totalChunks: number;
+  memorySizeBytes: number;
+}
+
+/** 所有 FeatureType 的列表 */
+export const FEATURE_TYPES: readonly FeatureType[] = [
+  'point', 'resource', 'structure', 'biome', 'base', 'waypoint',
+];
+
+/** 所有 Dimension 的列表 */
+export const DIMENSIONS: readonly Dimension[] = [
+  'overworld', 'nether', 'the_end',
+];
+
+/** 所有 RegionType 的列表 */
+export const REGION_TYPES: readonly RegionType[] = [
+  'base', 'mine', 'farm', 'village', 'exploration', 'custom',
+];
+
+/** 地图类型记忆列表（自动同步空间索引） */
+export const MAP_MEMORY_TYPES = new Set(['map_point', 'map_region', 'map_biome']);

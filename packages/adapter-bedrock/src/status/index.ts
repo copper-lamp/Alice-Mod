@@ -27,14 +27,14 @@ export class StatusReporter {
 
   private collect(): StatusPayload {
     return {
-      uptime: process.uptime(),
+      uptime: Date.now() / 1000,
       botsOnline: 0,
-      memoryUsage: process.memoryUsage().heapUsed,
+      memoryUsage: 0,
     };
   }
 
   private report(payload: StatusPayload): void {
     // TODO: Send status to host via TCP
-    console.debug('[Status]', payload);
+    logger.debug('[Status]', JSON.stringify(payload));
   }
 }
