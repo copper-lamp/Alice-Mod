@@ -16,6 +16,7 @@
     "@heroui/styles": "3.0.0-rc.1",
     "@mcagent/shared": "workspace:*",
     "better-sqlite3": "^12.11.1",
+    "chromadb": "^3.5.0",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

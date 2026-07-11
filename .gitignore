@@ -6,7 +6,7 @@ dist/
 build/
 out/
 .github/workflows/
-
+.codegraph/
 # IDE
 .vscode/
 .trae/
