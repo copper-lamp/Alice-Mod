@@ -1,14 +1,12 @@
-// 寻路系统占位
+/**
+ * 寻路模块导出
+ */
 
-export interface PathPoint {
-  x: number;
-  y: number;
-  z: number;
-}
-
-export class PathfindingSystem {
-  async findPath(from: PathPoint, to: PathPoint): Promise<PathPoint[]> {
-    // TODO: Implement A* or other pathfinding algorithm
-    return [from, to];
-  }
-}
+export * from './types.js';
+export { PathfindingEngine, pathfindingEngine } from './engine.js';
+export { PathCache } from './cache.js';
+export { MovementRouter, movementRouter } from './router.js';
+export { GroundPathPlanner, groundPathPlanner } from './ground-planner.js';
+export { FlightSegmentPlanner, flightSegmentPlanner } from './flight-planner.js';
+export { BlockInteractionPlanner, blockInteractionPlanner } from './block-interaction-planner.js';
+export * from './conditions/index.js';

@@ -6,11 +6,13 @@
     "build": "tsc && node scripts/copy-to-bds.js",
     "dev": "tsc && node scripts/copy-to-bds.js && tsc --watch",
     "typecheck": "tsc --noEmit",
-    "test": "echo 'No tests yet'",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "copy-bds": "node scripts/copy-to-bds.js"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^4.0.0"
   }
 }

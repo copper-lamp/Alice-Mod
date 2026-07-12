@@ -292,6 +292,11 @@ interface Player {
   simulateNavigateTo(pos: any): any;
   simulateLookAt(target: any): boolean;
 
+  // 骑乘
+  isRiding(): boolean;
+  ride(entity: Entity): boolean;
+  dismount(): boolean;
+
   // 视角
   getEntityFromViewVector(): Entity | null;
   getBlockFromViewVector(): Block | null;
