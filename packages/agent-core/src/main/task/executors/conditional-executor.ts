@@ -171,8 +171,8 @@ export class ConditionalTaskExecutor {
 
       try {
         // 简单表达式求值（true/false 字符串）
-        if (expression === 'true' || expression === true) return true
-        if (expression === 'false' || expression === false) return false
+        if (expression === 'true') return true
+        if (expression === 'false') return false
         // 更复杂的表达式由外部注入
         await context.log('', `表达式求值（外部实现）: ${expression}`)
         return false

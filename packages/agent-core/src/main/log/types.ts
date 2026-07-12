@@ -5,7 +5,7 @@ export type LogLevel = 'debug' | 'info' | 'warning' | 'error'
 export type LogModule =
   | 'TCP' | 'LLM' | 'FCP' | 'WORKSPACE' | 'MEMORY'
   | 'TASK' | 'QQ' | 'INSTANCE' | 'PROMPT'
-  | 'PIPELINE' | 'SYSTEM' | 'GENERAL'
+  | 'PIPELINE' | 'SYSTEM' | 'GENERAL' | 'TRIGGER'
 
 /** 日志条目 */
 export interface LogEntry {

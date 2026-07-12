@@ -146,6 +146,7 @@ export class DatabaseManager implements IDatabaseManager {
       { version: 1, module: 'map', description: '地图表：map_features, map_spatial_grid, map_regions' },
       { version: 1, module: 'task', description: '任务表：task_meta, task_deps, task_schedule' },
       { version: 1, module: 'qq', description: 'QQ 表：qq_bot_config, qq_msg_history' },
+      { version: 1, module: 'trigger', description: '事件触发器表：event_triggers, trigger_logs, trigger_schedule' },
       { version: 1, module: 'future', description: '预留表：knowledge_base, skill_registry' },
     ]
 
@@ -474,7 +475,63 @@ export class DatabaseManager implements IDatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_qq_msg_timestamp ON qq_msg_history(timestamp);
 
       -- ════════════════════════════════════════════════════════════
-      -- 9. 预留扩展表（V15+）
+      -- 9. 事件触发器
+      -- ════════════════════════════════════════════════════════════
+
+      CREATE TABLE IF NOT EXISTS event_triggers (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL DEFAULT '',
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        source TEXT NOT NULL CHECK(source IN ('cron', 'game_chat', 'plugin_event', 'qq')),
+        priority INTEGER NOT NULL DEFAULT 5,
+        rule_json TEXT NOT NULL,
+        action_json TEXT NOT NULL,
+        cooldown_seconds INTEGER NOT NULL DEFAULT 0,
+        max_trigger_count INTEGER,
+        trigger_count INTEGER NOT NULL DEFAULT 0,
+        last_triggered_at INTEGER,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_event_triggers_workspace ON event_triggers(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_event_triggers_source ON event_triggers(source);
+      CREATE INDEX IF NOT EXISTS idx_event_triggers_enabled ON event_triggers(enabled);
+
+      CREATE TABLE IF NOT EXISTS trigger_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trigger_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        event_payload TEXT,
+        action_json TEXT NOT NULL,
+        success INTEGER NOT NULL DEFAULT 1,
+        error TEXT,
+        triggered_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+        FOREIGN KEY (trigger_id) REFERENCES event_triggers(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_trigger_logs_trigger ON trigger_logs(trigger_id);
+      CREATE INDEX IF NOT EXISTS idx_trigger_logs_event_type ON trigger_logs(event_type);
+      CREATE INDEX IF NOT EXISTS idx_trigger_logs_triggered_at ON trigger_logs(triggered_at);
+
+      CREATE TABLE IF NOT EXISTS trigger_schedule (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trigger_id TEXT NOT NULL UNIQUE,
+        schedule_type TEXT NOT NULL CHECK(schedule_type IN ('cron', 'at', 'interval')),
+        cron_expression TEXT,
+        scheduled_at INTEGER,
+        interval_seconds INTEGER,
+        last_scheduled_at INTEGER,
+        next_scheduled_at INTEGER,
+        FOREIGN KEY (trigger_id) REFERENCES event_triggers(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_trigger_schedule_next ON trigger_schedule(next_scheduled_at);
+
+      -- ════════════════════════════════════════════════════════════
+      -- 10. 预留扩展表（V15+）
       -- ════════════════════════════════════════════════════════════
       CREATE TABLE IF NOT EXISTS knowledge_base (
         id TEXT PRIMARY KEY,

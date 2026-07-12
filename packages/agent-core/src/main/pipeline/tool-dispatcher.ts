@@ -153,6 +153,48 @@ export class DefaultToolDispatcher implements IToolDispatcher {
   }
 
   /**
+   * 调用单个工具（供触发器等模块使用）
+   */
+  async callTool(workspaceId: string, toolName: string, parameters: Record<string, unknown>, timeoutMs = 30000): Promise<unknown> {
+    const workspace = this.workspaceManager.getWorkspace(workspaceId);
+    if (!workspace) {
+      throw new Error(`工作区 ${workspaceId} 不存在`);
+    }
+    if (!workspace.isOnline || !workspace.connectionId) {
+      throw new Error(`工作区 ${workspaceId} 不在线`);
+    }
+
+    const connectionId = workspace.connectionId;
+    const connection = this.tcpServer.getConnection(connectionId);
+    if (!connection) {
+      throw new Error(`连接 ${connectionId} 不存在`);
+    }
+
+    this.ensureListening(connection, connectionId);
+
+    const requestId = crypto.randomUUID();
+    const request: JsonRpcRequest = {
+      jsonrpc: '2.0',
+      id: requestId,
+      method: 'call_tool',
+      params: {
+        tool_name: toolName,
+        parameters,
+        timeout_ms: timeoutMs,
+      },
+    };
+
+    const resultPromise = this.responseMatcher.register(connectionId, requestId, toolName, timeoutMs);
+    connection.sendJson(request);
+    const result = await resultPromise;
+
+    if (!result.success) {
+      throw new Error(result.error || `工具 ${toolName} 执行失败`);
+    }
+    return result.data;
+  }
+
+  /**
    * 注册自定义分发策略
    */
   registerStrategy(name: string, strategy: DispatchStrategy): void {
@@ -293,4 +335,18 @@ export class DefaultToolDispatcher implements IToolDispatcher {
 
     this.listeningConnections.add(connectionId);
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 全局单例
+// ════════════════════════════════════════════════════════════════
+
+let toolDispatcherInstance: DefaultToolDispatcher | null = null;
+
+export function setToolDispatcher(dispatcher: DefaultToolDispatcher): void {
+  toolDispatcherInstance = dispatcher;
+}
+
+export function getToolDispatcher(): DefaultToolDispatcher | null {
+  return toolDispatcherInstance;
 }

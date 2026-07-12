@@ -186,6 +186,71 @@ export class OneBotClient {
     return result.data;
   }
 
+  // ════════════════════════════════════════════════════════════════
+  // 群管理 API（V14 新增）
+  // ════════════════════════════════════════════════════════════════
+
+  async setGroupKick(groupId: string, userId: string, rejectAddRequest = false): Promise<SendResult> {
+    try {
+      await this.callApi('set_group_kick', {
+        group_id: parseInt(groupId),
+        user_id: parseInt(userId),
+        reject_add_request: rejectAddRequest,
+      });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '踢人失败' };
+    }
+  }
+
+  async setGroupBan(groupId: string, userId: string, duration: number): Promise<SendResult> {
+    try {
+      await this.callApi('set_group_ban', {
+        group_id: parseInt(groupId),
+        user_id: parseInt(userId),
+        duration,
+      });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '禁言失败' };
+    }
+  }
+
+  async setGroupCard(groupId: string, userId: string, card: string): Promise<SendResult> {
+    try {
+      await this.callApi('set_group_card', {
+        group_id: parseInt(groupId),
+        user_id: parseInt(userId),
+        card,
+      });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '设置群名片失败' };
+    }
+  }
+
+  async setGroupAddRequest(flag: string, approve: boolean, reason?: string): Promise<SendResult> {
+    try {
+      await this.callApi('set_group_add_request', {
+        flag,
+        approve,
+        reason: reason ?? '',
+      });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '处理入群申请失败' };
+    }
+  }
+
+  async deleteMsg(messageId: string): Promise<SendResult> {
+    try {
+      await this.callApi('delete_msg', { message_id: parseInt(messageId) });
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '撤回消息失败' };
+    }
+  }
+
   private async callApi(action: string, params: any): Promise<any> {
     if (!this.ws || this.status !== 'connected') {
       throw new Error('OneBot 未连接');

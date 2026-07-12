@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Table, TextField, Input, Chip, Button, Select, ProgressBar, Modal, ModalHeader, ModalBody, ModalFooter, ModalDialog } from '@heroui/react'
+import { Table, Button, Chip, ProgressBar, Modal, useOverlayState } from '@heroui/react'
 import { memoryApi } from '../../lib/ipc'
 
 interface MemoryItem {
@@ -75,6 +75,9 @@ const AgentMemoryView: React.FC = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
+  const detailState = useOverlayState()
+  const deleteState = useOverlayState()
+
   // ── 加载数据 ──
   const loadMemories = useCallback(async () => {
     setLoading(true)
@@ -133,11 +136,13 @@ const AgentMemoryView: React.FC = () => {
       editTags: memory.tags.join(', '),
       editImportance: memory.importance,
     })
-  }, [])
+    detailState.open()
+  }, [detailState])
 
   const closeDetail = useCallback(() => {
     setDetailModal(null)
-  }, [])
+    detailState.close()
+  }, [detailState])
 
   const saveDetail = useCallback(async () => {
     if (!detailModal?.memory) return
@@ -183,6 +188,7 @@ const AgentMemoryView: React.FC = () => {
       if (result.success) {
         showNotification('success', '记忆删除成功')
         setDeleteConfirm(null)
+        deleteState.close()
         loadMemories()
       } else {
         showNotification('error', result.error || '删除失败')
@@ -192,7 +198,7 @@ const AgentMemoryView: React.FC = () => {
     } finally {
       setSaving(false)
     }
-  }, [loadMemories, showNotification])
+  }, [loadMemories, showNotification, deleteState])
 
   // ── 格式化时间 ──
   const formatTime = (ts: number) => {
@@ -230,63 +236,55 @@ const AgentMemoryView: React.FC = () => {
 
       {/* 筛选面板 */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <Select
+        <select
           aria-label="记忆类型"
-          selectedKey={filterType}
-          onSelectionChange={(key) => setFilterType(key as string)}
-          className="w-36"
-          size="sm"
+          value={filterType}
+          onChange={(e) => setFilterType(e.target.value)}
+          className="w-36 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-blue-300"
         >
           {MEMORY_TYPES.map(t => (
-            <Select.Item key={t.value} id={t.value}>{t.label}</Select.Item>
+            <option key={t.value} value={t.value}>{t.label}</option>
           ))}
-        </Select>
+        </select>
 
-        <TextField
+        <input
+          type="text"
           aria-label="关键词搜索"
           placeholder="关键词..."
           value={filterKeywords}
-          onChange={setFilterKeywords}
-          className="w-44"
-          size="sm"
-        >
-          <Input />
-        </TextField>
+          onChange={(e) => setFilterKeywords(e.target.value)}
+          className="w-44 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-blue-300"
+        />
 
-        <TextField
+        <input
+          type="text"
           aria-label="标签筛选"
           placeholder="标签（逗号分隔）"
           value={filterTags}
-          onChange={setFilterTags}
-          className="w-44"
-          size="sm"
-        >
-          <Input />
-        </TextField>
+          onChange={(e) => setFilterTags(e.target.value)}
+          className="w-44 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-blue-300"
+        />
 
         {/* 语义搜索 */}
-        <TextField
+        <input
+          type="text"
           aria-label="语义搜索"
           placeholder="语义搜索..."
           value={semanticQuery}
-          onChange={setSemanticQuery}
-          className="w-56"
-          size="sm"
-        >
-          <Input />
-        </TextField>
+          onChange={(e) => setSemanticQuery(e.target.value)}
+          className="w-56 px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-blue-300"
+        />
 
         <Button
           size="sm"
-          color={semanticMode ? 'primary' : 'default'}
-          variant="flat"
-          onClick={() => setSemanticMode(!semanticMode)}
+          className="text-xs"
           style={{ color: semanticMode ? '#fff' : undefined, backgroundColor: semanticMode ? '#0070f0' : undefined }}
+          onPress={() => setSemanticMode(!semanticMode)}
         >
           {semanticMode ? '语义搜索' : '条件搜索'}
         </Button>
 
-        <Button size="sm" color="primary" variant="flat" onClick={loadMemories} style={{ color: '#fff', backgroundColor: '#0070f0' }}>
+        <Button size="sm" className="text-xs" onPress={loadMemories} style={{ color: '#fff', backgroundColor: '#0070f0' }}>
           搜索
         </Button>
       </div>
@@ -294,7 +292,7 @@ const AgentMemoryView: React.FC = () => {
       {/* 加载状态 */}
       {loading && (
         <div className="flex items-center justify-center py-8">
-          <ProgressBar isIndeterminate size="sm" className="max-w-md" />
+          <ProgressBar isIndeterminate className="max-w-md" />
         </div>
       )}
 
@@ -303,7 +301,7 @@ const AgentMemoryView: React.FC = () => {
         <div className="flex items-center justify-center py-8">
           <div className="text-center">
             <p className="text-sm text-red-500 mb-2">{error}</p>
-            <Button size="sm" variant="flat" onClick={loadMemories}>重试</Button>
+            <Button size="sm" className="text-xs" onPress={loadMemories}>重试</Button>
           </div>
         </div>
       )}
@@ -334,12 +332,12 @@ const AgentMemoryView: React.FC = () => {
                             </span>
                           </Table.Cell>
                           <Table.Cell>
-                            <Chip variant="flat" size="sm" className="text-xs">
+                            <Chip className="text-xs">
                               {typeLabel(memory.type)}
                             </Chip>
                           </Table.Cell>
                           <Table.Cell>
-                            <Chip color={importanceColor(memory.importance)} variant="flat" size="sm">
+                            <Chip color={importanceColor(memory.importance)} className="text-xs">
                               {memory.importance}
                             </Chip>
                           </Table.Cell>
@@ -360,10 +358,10 @@ const AgentMemoryView: React.FC = () => {
                           </Table.Cell>
                           <Table.Cell>
                             <div className="flex items-center gap-1">
-                              <Button size="sm" variant="flat" className="text-xs min-w-0 px-2 h-6" onClick={() => openDetail(memory)}>
+                              <Button size="sm" className="text-xs min-w-0 px-2 h-6" onPress={() => openDetail(memory)}>
                                 查看
                               </Button>
-                              <Button size="sm" variant="flat" className="text-xs min-w-0 px-2 h-6 text-red-500" onClick={() => setDeleteConfirm(memory.id)}>
+                              <Button size="sm" className="text-xs min-w-0 px-2 h-6 text-red-500" onPress={() => { setDeleteConfirm(memory.id); deleteState.open() }}>
                                 删除
                               </Button>
                             </div>
@@ -397,18 +395,16 @@ const AgentMemoryView: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
-                  variant="flat"
-                  disabled={offset === 0}
-                  onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+                  isDisabled={offset === 0}
+                  onPress={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
                   className="text-xs"
                 >
                   上一页
                 </Button>
                 <Button
                   size="sm"
-                  variant="flat"
-                  disabled={offset + PAGE_SIZE >= total}
-                  onClick={() => setOffset(offset + PAGE_SIZE)}
+                  isDisabled={offset + PAGE_SIZE >= total}
+                  onPress={() => setOffset(offset + PAGE_SIZE)}
                   className="text-xs"
                 >
                   下一页
@@ -420,115 +416,133 @@ const AgentMemoryView: React.FC = () => {
       )}
 
       {/* 详情弹窗 */}
-      <Modal isOpen={detailModal !== null} onClose={closeDetail} size="lg">
-        <ModalDialog>
-          <ModalHeader>
-            记忆详情
-          </ModalHeader>
-          <ModalBody>
-            {detailModal && (
-              <div className="space-y-4">
-                {/* 元数据 */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="text-gray-400">ID: </span>
-                    <span className="text-gray-600 font-mono text-xs">{detailModal.memory!.id}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">类型: </span>
-                    <span className="text-gray-600">{typeLabel(detailModal.memory!.type)}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">分支: </span>
-                    <span className="text-gray-600">{detailModal.memory!.branch}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">访问次数: </span>
-                    <span className="text-gray-600">{detailModal.memory!.accessCount}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">创建时间: </span>
-                    <span className="text-gray-600">{formatTime(detailModal.memory!.createdAt)}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">更新时间: </span>
-                    <span className="text-gray-600">{formatTime(detailModal.memory!.updatedAt)}</span>
-                  </div>
-                </div>
+      {detailModal && (
+        <Modal state={detailState}>
+          <div />
+          <Modal.Backdrop>
+            <Modal.Container size="lg">
+              <Modal.Dialog className="sm:max-w-[600px]">
+                {() => (
+                  <>
+                    <Modal.Header>
+                      <Modal.Heading>记忆详情</Modal.Heading>
+                    </Modal.Header>
+                    <Modal.Body>
+                      <div className="space-y-4">
+                        {/* 元数据 */}
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <span className="text-gray-400">ID: </span>
+                            <span className="text-gray-600 font-mono text-xs">{detailModal.memory!.id}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">类型: </span>
+                            <span className="text-gray-600">{typeLabel(detailModal.memory!.type)}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">分支: </span>
+                            <span className="text-gray-600">{detailModal.memory!.branch}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">访问次数: </span>
+                            <span className="text-gray-600">{detailModal.memory!.accessCount}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">创建时间: </span>
+                            <span className="text-gray-600">{formatTime(detailModal.memory!.createdAt)}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">更新时间: </span>
+                            <span className="text-gray-600">{formatTime(detailModal.memory!.updatedAt)}</span>
+                          </div>
+                        </div>
 
-                {/* 内容 JSON 编辑 */}
-                <div>
-                  <label className="block text-sm text-gray-500 mb-1">内容（JSON）</label>
-                  <textarea
-                    className="w-full h-32 p-2 text-xs font-mono border border-gray-200 rounded-lg resize-none focus:outline-none focus:border-blue-300"
-                    value={detailModal.editContent}
-                    onChange={(e) => setDetailModal({ ...detailModal, editContent: e.target.value })}
-                  />
-                </div>
+                        {/* 内容 JSON 编辑 */}
+                        <div>
+                          <label className="block text-sm text-gray-500 mb-1">内容（JSON）</label>
+                          <textarea
+                            className="w-full h-32 p-2 text-xs font-mono border border-gray-200 rounded-lg resize-none focus:outline-none focus:border-blue-300"
+                            value={detailModal.editContent}
+                            onChange={(e) => setDetailModal({ ...detailModal, editContent: e.target.value })}
+                          />
+                        </div>
 
-                {/* 标签编辑 */}
-                <div>
-                  <label className="block text-sm text-gray-500 mb-1">标签（逗号分隔）</label>
-                  <TextField
-                    aria-label="标签"
-                    value={detailModal.editTags}
-                    onChange={(tags) => setDetailModal({ ...detailModal, editTags: tags })}
-                    size="sm"
-                  >
-                    <Input />
-                  </TextField>
-                </div>
+                        {/* 标签编辑 */}
+                        <div>
+                          <label className="block text-sm text-gray-500 mb-1">标签（逗号分隔）</label>
+                          <input
+                            type="text"
+                            aria-label="标签"
+                            value={detailModal.editTags}
+                            onChange={(e) => setDetailModal({ ...detailModal, editTags: e.target.value })}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-blue-300"
+                          />
+                        </div>
 
-                {/* 重要度编辑 */}
-                <div>
-                  <label className="block text-sm text-gray-500 mb-1">重要度（1-10）</label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="range"
-                      min={1}
-                      max={10}
-                      value={detailModal.editImportance}
-                      onChange={(e) => setDetailModal({ ...detailModal, editImportance: parseInt(e.target.value) })}
-                      className="flex-1"
-                    />
-                    <span className="text-sm font-mono text-gray-600 w-6 text-center">{detailModal.editImportance}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" size="sm" onClick={closeDetail}>取消</Button>
-            <Button color="primary" size="sm" onClick={saveDetail} disabled={saving} style={{ color: '#fff', backgroundColor: '#0070f0' }}>
-              {saving ? '保存中...' : '保存'}
-            </Button>
-          </ModalFooter>
-        </ModalDialog>
-      </Modal>
+                        {/* 重要度编辑 */}
+                        <div>
+                          <label className="block text-sm text-gray-500 mb-1">重要度（1-10）</label>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="range"
+                              min={1}
+                              max={10}
+                              value={detailModal.editImportance}
+                              onChange={(e) => setDetailModal({ ...detailModal, editImportance: parseInt(e.target.value) })}
+                              className="flex-1"
+                            />
+                            <span className="text-sm font-mono text-gray-600 w-6 text-center">{detailModal.editImportance}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </Modal.Body>
+                    <Modal.Footer>
+                      <Button size="sm" variant="secondary" onPress={closeDetail}>取消</Button>
+                      <Button size="sm" onPress={saveDetail} isDisabled={saving} style={{ color: '#fff', backgroundColor: '#0070f0' }}>
+                        {saving ? '保存中...' : '保存'}
+                      </Button>
+                    </Modal.Footer>
+                  </>
+                )}
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
+      )}
 
       {/* 删除确认弹窗 */}
-      <Modal isOpen={deleteConfirm !== null} onClose={() => setDeleteConfirm(null)} size="sm">
-        <ModalDialog>
-          <ModalHeader>
-            确认删除
-          </ModalHeader>
-          <ModalBody>
-            <p className="text-sm text-gray-600">确定要删除这条记忆吗？删除后不可恢复，Chroma 向量和空间索引也会同步清理。</p>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="flat" size="sm" onClick={() => setDeleteConfirm(null)}>取消</Button>
-            <Button
-              color="danger"
-              size="sm"
-              onClick={() => deleteConfirm && confirmDelete(deleteConfirm)}
-              disabled={saving}
-              style={{ color: '#fff', backgroundColor: '#e53935' }}
-            >
-              {saving ? '删除中...' : '确认删除'}
-            </Button>
-          </ModalFooter>
-        </ModalDialog>
-      </Modal>
+      {deleteConfirm && (
+        <Modal state={deleteState}>
+          <div />
+          <Modal.Backdrop>
+            <Modal.Container size="sm">
+              <Modal.Dialog className="sm:max-w-[360px]">
+                {() => (
+                  <>
+                    <Modal.Header>
+                      <Modal.Heading>确认删除</Modal.Heading>
+                    </Modal.Header>
+                    <Modal.Body>
+                      <p className="text-sm text-gray-600">确定要删除这条记忆吗？删除后不可恢复，Chroma 向量和空间索引也会同步清理。</p>
+                    </Modal.Body>
+                    <Modal.Footer>
+                      <Button size="sm" variant="secondary" onPress={() => { setDeleteConfirm(null); deleteState.close() }}>取消</Button>
+                      <Button
+                        size="sm"
+                        onPress={() => deleteConfirm && confirmDelete(deleteConfirm)}
+                        isDisabled={saving}
+                        style={{ color: '#fff', backgroundColor: '#e53935' }}
+                      >
+                        {saving ? '删除中...' : '确认删除'}
+                      </Button>
+                    </Modal.Footer>
+                  </>
+                )}
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
+      )}
     </div>
   )
 }

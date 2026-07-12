@@ -12,7 +12,7 @@ import type { Socket } from 'node:net';
 import type { JsonRpcRequest, JsonRpcNotification } from '@mcagent/shared';
 
 import { TcpConnection, ConnectionEvent, type MessageHandler } from './connection';
-import { TcpEventType, type TcpServerOptions, type TcpEventData, type TcpClientInfo } from './types';
+import { TcpEventType, type TcpServerOptions, type TcpEventData, type TcpClientInfo, DEFAULT_AUTH_TOKEN } from './types';
 
 /** 服务端事件 */
 export enum ServerEvent {

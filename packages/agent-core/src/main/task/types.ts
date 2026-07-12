@@ -111,6 +111,9 @@ export interface Task {
   error?: string;
   retryCount: number;
 
+  // 依赖
+  dependencies?: string[];
+
   // 时间戳
   createdAt: number;
   startedAt?: number;

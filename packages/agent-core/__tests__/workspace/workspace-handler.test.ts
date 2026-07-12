@@ -430,7 +430,7 @@ describe('workspace workflow integration', () => {
 
     const saved = manager.get('8d7cade2-b46e-4188-9602-936044927c77')
     expect(saved).toBeDefined()
-    expect(saved!.name).toBe('McAgent')
+    expect(saved!.name).toBe('Alice Mod')
     expect(saved!.edition).toBe('bedrock')
     expect(saved!.host).toBe('127.0.0.1')
     expect(saved!.port).toBe(27541)

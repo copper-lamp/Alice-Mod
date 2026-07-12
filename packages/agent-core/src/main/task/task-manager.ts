@@ -350,7 +350,7 @@ export class TaskManager {
       { ...bindings, limit, offset },
     )
 
-    const tasks = rows.map(rowToTask)
+    const tasks = rows.map((row) => rowToTask(row))
     return { tasks, total, limit, offset }
   }
 
@@ -809,7 +809,7 @@ export class TaskManager {
       bindings,
     )
 
-    const data = rows.map(rowToTask)
+    const data = rows.map((row) => rowToTask(row))
     return JSON.stringify(data, null, 2)
   }
 

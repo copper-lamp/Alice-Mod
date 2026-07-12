@@ -15,6 +15,11 @@ export function setMemoryManager(manager: MemoryManager): void {
   memoryManager = manager
 }
 
+/** 获取当前 MemoryManager 实例 */
+export function getMemoryManager(): MemoryManager | null {
+  return memoryManager
+}
+
 export function registerMemoryHandlers(): void {
   // 存储单条记忆
   ipcMain.handle('memory:store', async (_event, params: {

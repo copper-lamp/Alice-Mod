@@ -11,6 +11,13 @@ import { getWorkspaceManager } from './workspace'
 import { DefaultLLMObserver, SqliteObserverStore, setLLMObserver } from './llm'
 import { TcpServer, ServerEvent } from './tcp'
 import { MemoryManager, DEFAULT_MEMORY_CONFIG } from './memory'
+import type { MemoryBranch } from './memory/types'
+import { TaskManager } from './task'
+import { SQLiteStore } from './memory/sqlite-store'
+import { TriggerModule, setTriggerModule } from './trigger'
+import { initQQBotIntegration } from './qq-bot/integration'
+import { DefaultToolDispatcher, setToolDispatcher } from './pipeline/tool-dispatcher'
+import type { JsonRpcRequest, JsonRpcResponse, ToolSchema, JsonRpcNotification } from '@mcagent/shared'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -35,12 +42,23 @@ async function initializeServices(): Promise<void> {
   await dbManager.init(dbPath)
   console.info('主进程', '数据库初始化完成')
 
-  // 1.5 初始化 LLM 调用观测器（持久化到 SQLite）
-  const observer = new DefaultLLMObserver(new SqliteObserverStore())
-  setLLMObserver(observer)
-  console.info('主进程', 'LLM 调用观测器初始化完成')
+  // 2. 初始化日志系统（依赖 DatabaseManager 的 SQLite 连接）
+  const logger = initLogger()
+  logger.info('SYSTEM', '日志系统初始化完成')
 
-  // 1.6 初始化记忆系统（内存管理 + 持久化）
+  // 3. 设置 IPC Handler 的数据库引用
+  const logDb = getLogDb()
+  if (logDb) {
+    setLogDb(logDb)
+  }
+
+  // 4. 初始化任务系统（V13）
+  const taskSqlite = new SQLiteStore(dbPath)
+  const taskManager = new TaskManager({}, { sqlite: taskSqlite })
+  taskManager.init()
+  logger.info('SYSTEM', '任务系统初始化完成')
+
+  // 5. 初始化记忆系统（内存管理 + 持久化）
   let memoryManager: MemoryManager | null = null
   try {
     const sqliteDir = path.dirname(path.join(userDataPath, 'alice-mod-memory.db'))
@@ -60,31 +78,26 @@ async function initializeServices(): Promise<void> {
     })
     await memoryManager.init()
     setMemoryManager(memoryManager)
-    console.info('主进程', '记忆系统初始化完成')
+    logger.info('SYSTEM', '记忆系统初始化完成')
   } catch (err) {
-    console.warn('主进程', `记忆系统初始化失败: ${(err as Error).message}`)
+    logger.warn('SYSTEM', `记忆系统初始化失败: ${(err as Error).message}`)
   }
 
-  // 2. 初始化日志系统
-  const logger = initLogger()
-  logger.info('SYSTEM', '日志系统初始化完成')
+  // 6. 初始化 LLM 调用观测器（持久化到 SQLite）
+  const observer = new DefaultLLMObserver(new SqliteObserverStore())
+  setLLMObserver(observer)
+  logger.info('SYSTEM', 'LLM 调用观测器初始化完成')
 
-  // 3. 设置 IPC Handler 的数据库引用
-  const logDb = getLogDb()
-  if (logDb) {
-    setLogDb(logDb)
-  }
-
-  // 4. 恢复持久化的工作区列表
+  // 7. 恢复持久化的工作区列表
   const workspaceManager = getWorkspaceManager()
   const restored = workspaceManager.loadPersistedWorkspaces()
   logger.info('SYSTEM', `已恢复 ${restored.length} 个持久化工作区`)
 
-  // 5. 初始化工具调用事件收集器
+  // 8. 初始化工具调用事件收集器
   const collector = new PipelineEventCollector()
   setToolCallCollector(collector)
 
-  // 6. 启动 TCP 服务端，监听 Adapter Core 连接
+  // 9. 启动 TCP 服务端，监听 Adapter Core 连接
   // 从 BE 生成的实例入口文件读取 auth_token 用于握手认证
   // 依次尝试多个可能的路径
   let authTokens = new Set<string>()
@@ -125,6 +138,27 @@ async function initializeServices(): Promise<void> {
     authTokens,
   })
 
+  // 10. 初始化工具调度器（依赖 TCP 服务端 + 工作区管理器）
+  const toolDispatcher = new DefaultToolDispatcher(workspaceManager, tcpServerInstance)
+  setToolDispatcher(toolDispatcher)
+  logger.info('SYSTEM', 'ToolDispatcher 初始化完成')
+
+  // 11. 设置 TCP 消息路由：工具注册 / 游戏聊天 / 插件事件
+  tcpServerInstance.setMessageHandlerFactory((connectionId) => ({
+    onNotification: (_clientId: string, notification: JsonRpcNotification) => {
+      handleTcpNotification(workspaceManager, notification, connectionId, logger)
+    },
+    onRequest: async (_clientId: string, request: JsonRpcRequest): Promise<JsonRpcResponse | null> => {
+      // 非 handshake/pong 的请求暂时不处理，返回方法未找到
+      if (request.method === 'handshake' || request.method === 'pong') return null
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        error: { code: -32601, message: `Method not found: ${request.method}` },
+      }
+    },
+  }))
+
   tcpServerInstance.on('listening', (info: { host: string; port: number }) => {
     logger.info('SYSTEM', `TCP 服务端已启动，监听 ${info.host}:${info.port}`)
     console.info('主进程', `TCP 服务端已启动，监听 ${info.host}:${info.port}`)
@@ -135,7 +169,7 @@ async function initializeServices(): Promise<void> {
     console.error('主进程', `TCP 服务端错误: ${err.message}`)
   })
 
-  // 连接事件：日志输出 + 系统通知
+  // 连接事件：日志输出 + 工作区状态同步 + 系统通知
   tcpServerInstance.on(ServerEvent.ConnectionOpened, ({ clientId }) => {
     logger.info('TCP', `新连接接入，ID: ${clientId}`)
   })
@@ -147,6 +181,7 @@ async function initializeServices(): Promise<void> {
       const conn = tcpServerInstance!.getConnection(clientId)
       const instanceId = conn?.instanceId ?? 'unknown'
       const address = conn?.address ?? 'unknown'
+      workspaceManager.setOnline(instanceId, clientId)
       logger.info('TCP', `实例 ${instanceId} (${address}) 握手成功，已连接`)
       console.info('主进程', `✅ 实例 ${instanceId} 连接成功`)
 
@@ -161,6 +196,7 @@ async function initializeServices(): Promise<void> {
   })
 
   tcpServerInstance.on(ServerEvent.ConnectionClosed, ({ clientId }) => {
+    workspaceManager.setOffline(clientId)
     logger.warn('TCP', `连接 ${clientId} 已断开`)
   })
 
@@ -170,6 +206,133 @@ async function initializeServices(): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err)
     logger.error('SYSTEM', `TCP 服务端启动失败: ${msg}`)
     console.error('主进程', `TCP 服务端启动失败: ${msg}`)
+  }
+
+  // 12. 初始化事件触发器模块（V14）
+  const triggerModule = new TriggerModule(
+    {
+      db: dbManager.getDb(),
+      actionDeps: {
+        taskManager,
+        callTool: async (workspaceId, toolName, params) => {
+          const dispatcher = toolDispatcher
+          if (!dispatcher) {
+            throw new Error('ToolDispatcher 尚未初始化')
+          }
+          return dispatcher.callTool(workspaceId, toolName, params)
+        },
+        sendQQ: async (target, content, messageType) => {
+          const { sendQQMessage } = await import('./qq-bot/integration')
+          return sendQQMessage(target, content, messageType)
+        },
+        storeMemory: async (workspaceId, memoryParams) => {
+          const { getMemoryManager } = await import('./ipc/memory-handler')
+          const mm = getMemoryManager()
+          if (!mm) {
+            logger.warn('TRIGGER', '记忆系统尚未初始化，无法存储事件记忆')
+            return
+          }
+          try {
+            await mm.store(
+              {
+                type: memoryParams.memoryType as any,
+                branch: (memoryParams.branch ?? 'experience') as MemoryBranch,
+                content: { text: memoryParams.content },
+                importance: memoryParams.importance,
+                tags: memoryParams.tags,
+              },
+              workspaceId,
+            )
+          } catch (err) {
+            logger.warn('TRIGGER', `存储事件记忆失败: ${(err as Error).message}`, { error: (err as Error).message })
+          }
+        },
+      },
+      logger: {
+        info: (msg) => logger.info('TRIGGER', msg),
+        warn: (msg, meta) => logger.warn('TRIGGER', msg, meta),
+        error: (msg, meta) => logger.error('TRIGGER', msg, meta),
+      },
+    },
+    {
+      defaultCooldownSeconds: 5,
+      maxLogsPerTrigger: 1000,
+      logRetentionDays: 30,
+    },
+  )
+  setTriggerModule(triggerModule)
+  await triggerModule.start()
+  logger.info('SYSTEM', '事件触发器模块初始化完成')
+
+  // 13. 初始化 QQ 机器人集成（可选模块，失败不阻塞主流程）
+  try {
+    const qqIntegration = initQQBotIntegration({ taskManager })
+    qqIntegration.bindEventBus(triggerModule.getEventBus())
+    // TODO: 从配置中读取 QQ 配置并启动
+    // await qqIntegration.start()
+    logger.info('SYSTEM', 'QQ 机器人集成初始化完成')
+  } catch (err) {
+    logger.warn('SYSTEM', `QQ 机器人集成初始化失败: ${(err as Error).message}`)
+  }
+}
+
+/**
+ * 处理 TCP 通知消息路由
+ */
+function handleTcpNotification(
+  workspaceManager: ReturnType<typeof getWorkspaceManager>,
+  notification: JsonRpcNotification,
+  connectionId: string,
+  logger: ReturnType<typeof getLogger>,
+): void {
+  const workspace = workspaceManager.getWorkspaceByConnectionId(connectionId)
+  const workspaceId = workspace?.id ?? ''
+
+  switch (notification.method) {
+    case 'register_tools': {
+      const params = notification.params as { tools?: ToolSchema[]; instance_id?: string } | undefined
+      if (params?.tools && workspace) {
+        workspaceManager.registerTools(workspace.id, params.tools)
+        logger.info('TCP', `工作区 ${workspace.id} 注册 ${params.tools.length} 个工具`)
+      }
+      return
+    }
+
+    case 'game_chat': {
+      const params = notification.params as Record<string, unknown> | undefined
+      if (!params) return
+      try {
+        const { getTriggerModule } = require('./trigger')
+        const triggerModule = getTriggerModule() as TriggerModule
+        triggerModule.handleRawEvent('game_chat', { ...params, workspaceId })
+      } catch (err) {
+        logger.warn('TCP', `转发 game_chat 事件失败: ${(err as Error).message}`)
+      }
+      return
+    }
+
+    case 'event': {
+      const params = notification.params as Record<string, unknown> | undefined
+      if (!params) return
+      try {
+        const { getTriggerModule } = require('./trigger')
+        const triggerModule = getTriggerModule() as TriggerModule
+        triggerModule.handleRawEvent('plugin_event', {
+          workspaceId,
+          eventType: params.event_type,
+          data: params.data,
+          entityId: params.entity_id,
+          position: params.position,
+        })
+      } catch (err) {
+        logger.warn('TCP', `转发 event 通知失败: ${(err as Error).message}`)
+      }
+      return
+    }
+
+    default:
+      // 其他通知可扩展
+      break
   }
 }
 

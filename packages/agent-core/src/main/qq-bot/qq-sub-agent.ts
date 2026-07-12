@@ -17,7 +17,7 @@
 
 import type { IModelRouter, LLMProvider, Message, LLMResponse, ToolDefinition, RouterContext } from '../llm/types';
 import type { AgentProfile, ConversationMessage } from '../prompt/types';
-import type {
+import {
   QQMessage,
   QQReply,
   QQSubAgentConfig,
@@ -26,9 +26,14 @@ import type {
   SubAgentStatus,
   GameActionRequest,
   GameActionResult,
+  QQPermission,
 } from './types';
 import { DEFAULT_SUB_AGENT_CONFIG } from './types';
 import { mainAgentTaskQueue } from './main-agent-queue';
+import type { OneBotClient } from './onebot-client';
+import { QQ_GROUP_MANAGE_TOOL_SCHEMA, qqGroupManage, type QQGroupManageParams } from './tools/qq_group_manage';
+import { QQ_NOTIFY_TOOL_SCHEMA, qqNotify, type QQNotifyParams } from './tools/qq_notify';
+import { PermissionManager } from './permission';
 
 // ════════════════════════════════════════════════════════════════
 // 1. QQ Sub-Agent Profile 定义
@@ -154,6 +159,8 @@ const REQUEST_GAME_ACTION_TOOL: ToolDefinition = {
 const SUB_AGENT_TOOLS: ToolDefinition[] = [
   QQ_SEND_TOOL,
   QQ_INFO_TOOL,
+  QQ_GROUP_MANAGE_TOOL_SCHEMA,
+  QQ_NOTIFY_TOOL_SCHEMA,
   REQUEST_GAME_ACTION_TOOL,
 ];
 
@@ -219,6 +226,12 @@ export class QQSubAgent {
   // 事件处理
   private eventHandlers: Set<QQSubAgentEventHandler> = new Set();
 
+  // QQ 客户端引用（用于执行需要 OneBot API 的工具）
+  private client: OneBotClient | null = null;
+  private permissionManager: PermissionManager | null = null;
+  // 当前正在处理的消息（工具执行时用于权限、上下文判断）
+  private currentMsg: QQMessage | null = null;
+
   constructor(
     modelRouter: IModelRouter,
     getProvider: (id: string) => LLMProvider | undefined,
@@ -243,6 +256,16 @@ export class QQSubAgent {
         ...(profile?.preferences ?? {}),
       },
     };
+  }
+
+  /** 设置 OneBot 客户端 */
+  setClient(client: OneBotClient): void {
+    this.client = client;
+  }
+
+  /** 设置权限管理器（用于群管理工具的权限校验） */
+  setPermissionManager(pm: PermissionManager): void {
+    this.permissionManager = pm;
   }
 
   // ════════════════════════════════════════════════════════════
@@ -426,6 +449,54 @@ export class QQSubAgent {
         return { success: true, result: { status: 'query_dispatched' } };
       }
 
+      case 'qq_group_manage': {
+        if (!this.client) {
+          return { success: false, result: {}, error: 'OneBot 客户端未初始化' };
+        }
+
+        const userId = this.currentMsg?.userId;
+        const groupId = this.currentMsg?.groupId ?? null;
+        if (!userId) {
+          return { success: false, result: {}, error: '无法识别当前用户' };
+        }
+
+        if (this.permissionManager && !this.permissionManager.checkPermission(userId, groupId, QQPermission.ADMIN)) {
+          return { success: false, result: {}, error: '权限不足，仅管理员可执行群管理操作' };
+        }
+
+        const result = await qqGroupManage(this.client, args as unknown as QQGroupManageParams);
+        return {
+          success: result.success,
+          result: result.success ? { message_id: result.messageId } : {},
+          error: result.error,
+        };
+      }
+
+      case 'qq_notify': {
+        if (!this.client) {
+          return { success: false, result: {}, error: 'OneBot 客户端未初始化' };
+        }
+
+        const { group_id, content, template } = args as unknown as QQNotifyParams;
+        const variables: Record<string, string> = {};
+        if (this.currentMsg) {
+          variables.user_id = this.currentMsg.userId;
+          variables.user_name = this.currentMsg.userName;
+          variables.group_id = this.currentMsg.groupId ?? '';
+        }
+
+        const result = await qqNotify(
+          this.client,
+          { group_id: String(group_id), content: String(content), template: template ? String(template) : undefined },
+          variables,
+        );
+        return {
+          success: result.success,
+          result: result.success ? { message_id: result.messageId } : {},
+          error: result.error,
+        };
+      }
+
       case 'request_game_action': {
         const description = String(args.description ?? '');
         const priority = (args.priority as 'normal' | 'high') || 'normal';
@@ -562,6 +633,7 @@ export class QQSubAgent {
     if (!this.config.enabled) return;
 
     this.setStatus('thinking');
+    this.currentMsg = msg;
 
     try {
       // 1. 记录用户消息到对话历史
@@ -610,6 +682,8 @@ export class QQSubAgent {
 
       this.emit({ type: 'error', error: errorMsg });
       this.setStatus('error');
+    } finally {
+      this.currentMsg = null;
     }
   }
 
