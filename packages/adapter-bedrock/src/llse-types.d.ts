@@ -282,6 +282,7 @@ interface Player {
 
   // GUI
   sendForm(form: SimpleForm, callback: (player: Player, id: number | null) => void): void;
+  sendForm(form: CustomForm, callback: (player: Player, data: any[]) => void): void;
 
   // 模拟玩家（SimulatedPlayer）方法
   isSimulatedPlayer(): boolean;

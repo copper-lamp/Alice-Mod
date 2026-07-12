@@ -10,6 +10,7 @@ import type { Vec3 } from '../pathfinding/types.js';
 import { aiEngine } from '../index.js';
 import { BotManager } from '../../bot/BotManager.js';
 import { configManager } from '../../config/index.js';
+import { waitFor } from '../../utils/helpers.js';
 import { FoodSelector, getFoodInfo, isFood } from './FoodSelector.js';
 import { BedFinder, isBed } from './BedFinder.js';
 import { ItemUser } from './ItemUser.js';
@@ -241,20 +242,3 @@ export class SurvivalEngine {
   }
 }
 
-function waitFor(condition: () => boolean, timeoutMs: number, intervalMs: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const start = Date.now();
-    const check = () => {
-      if (condition()) {
-        resolve(true);
-        return;
-      }
-      if (Date.now() - start > timeoutMs) {
-        resolve(false);
-        return;
-      }
-      setTimeout(check, intervalMs);
-    };
-    check();
-  });
-}

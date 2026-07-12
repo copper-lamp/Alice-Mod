@@ -49,23 +49,38 @@ export class ToolRegistry {
     }
 
     const normalizedToolsDir = toolsDir.endsWith('/') ? toolsDir : `${toolsDir}/`;
+    logger.info(`[ToolRegistry] 开始扫描工具目录: ${normalizedToolsDir}`);
     const toolDirs = this.discoverToolDirs(normalizedToolsDir);
+    logger.info(`[ToolRegistry] 发现工具目录数: ${toolDirs.length}`);
 
     for (const toolDir of toolDirs) {
       const indexPath = `${toolDir}/index.js`;
+      logger.info(`[ToolRegistry] 检查工具入口: ${indexPath}, 存在=${File.exists(indexPath)}`);
       if (!File.exists(indexPath)) continue;
 
       const relativeName = toolDir.replace(normalizedToolsDir, '');
       try {
+        // 使用相对于 tool-registry.js 的路径加载，避免 LLSE Node.js 中
+        // 以插件根目录为基准解析动态路径导致 MODULE_NOT_FOUND 的问题
+        const requirePath = `../tools/${relativeName}/index.js`;
+        logger.info(`[ToolRegistry] 加载模块: ${requirePath}`);
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const mod = require(indexPath);
+        const mod = require(requirePath);
 
-        // 支持默认导出或具名导出 IToolModule
-        const toolModule: IToolModule | undefined = mod.default || mod;
+        // 支持默认导出或具名导出 IToolModule 类
+        const ToolClass: new () => IToolModule | undefined = mod.default || mod;
 
-        if (!toolModule || typeof toolModule.metadata !== 'function' ||
+        if (!ToolClass || typeof ToolClass !== 'function') {
+          logger.warn(`[ToolRegistry] 跳过无效工具模块（非类/函数）: ${relativeName}`);
+          continue;
+        }
+
+        // 实例化工具类。metadata 和 execute 都是实例方法，定义在 prototype 上
+        const toolModule = new ToolClass();
+
+        if (typeof toolModule.metadata !== 'function' ||
             typeof toolModule.execute !== 'function') {
-          logger.warn(`[ToolRegistry] 跳过无效工具模块: ${relativeName}`);
+          logger.warn(`[ToolRegistry] 跳过无效工具模块（缺少 metadata/execute）: ${relativeName}`);
           continue;
         }
 
@@ -87,16 +102,26 @@ export class ToolRegistry {
    */
   private discoverToolDirs(toolsDir: string): string[] {
     const result: string[] = [];
-    if (!File.exists(toolsDir) || !File.checkIsDir(toolsDir)) return result;
+    if (!File.exists(toolsDir) || !File.checkIsDir(toolsDir)) {
+      logger.warn(`[ToolRegistry] 工具目录不存在或不是目录: ${toolsDir}`);
+      return result;
+    }
 
     const categories = File.getFilesList(toolsDir);
+    logger.info(`[ToolRegistry] 分类目录原始列表: ${JSON.stringify(categories)}`);
+
     for (const category of categories) {
-      const categoryPath = `${toolsDir}${category}`;
-      if (!File.checkIsDir(categoryPath)) continue;
+      const categoryPath = this.resolveChildPath(toolsDir, category);
+      if (!File.checkIsDir(categoryPath)) {
+        logger.warn(`[ToolRegistry] 跳过非目录项: ${categoryPath}`);
+        continue;
+      }
 
       const tools = File.getFilesList(categoryPath);
+      logger.info(`[ToolRegistry] 分类 ${category} 下原始列表: ${JSON.stringify(tools)}`);
+
       for (const tool of tools) {
-        const toolPath = `${categoryPath}/${tool}`;
+        const toolPath = this.resolveChildPath(categoryPath, tool);
         if (File.checkIsDir(toolPath)) {
           result.push(toolPath);
         }
@@ -104,6 +129,19 @@ export class ToolRegistry {
     }
 
     return result;
+  }
+
+  /**
+   * 拼接子路径，兼容 File.getFilesList 返回完整路径或反斜杠的情况
+   */
+  private resolveChildPath(parent: string, child: string): string {
+    const normalizedParent = parent.replace(/\\/g, '/');
+    const normalizedChild = child.replace(/\\/g, '/');
+    if (normalizedChild.startsWith(normalizedParent)) {
+      return normalizedChild;
+    }
+    const sep = normalizedParent.endsWith('/') ? '' : '/';
+    return `${normalizedParent}${sep}${normalizedChild}`;
   }
 
   /**

@@ -15,5 +15,13 @@
     "max_area_operation_blocks": 256,
     "tool_durability_threshold": 5,
     "allow_alternative_materials": true
+  },
+  "gui_test": {
+    "enabled": true,
+    "require_op": true,
+    "allowed_players": [],
+    "max_report_entries": 100,
+    "default_target_bot": "",
+    "smoke_cases": {}
   }
 }

@@ -92,12 +92,13 @@ export class AreaPlanner {
     const queue: Vec3[] = [];
     const visited = new Set<string>();
     const pending: Array<{ pos: Vec3; dist: number }> = [{ pos: from, dist: 0 }];
+    let pendingHead = 0;
 
     const key = (p: Vec3) => `${p.x},${p.y},${p.z}`;
     visited.add(key(from));
 
-    while (pending.length > 0) {
-      const { pos, dist } = pending.shift()!;
+    while (pendingHead < pending.length) {
+      const { pos, dist } = pending[pendingHead++];
 
       if (dist > radius) continue;
       if (queue.length >= maxBlocks) break;

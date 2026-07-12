@@ -13,6 +13,8 @@ import { ToolContextImpl } from './registry/tool-context.js';
 import { StatusReporter } from './status/status-reporter.js';
 import { InstanceFileHelper } from './entry/instance-file.js';
 import { TOOLS_DIR } from './utils/constants.js';
+import { configManager } from './config/index.js';
+import { InGameToolTester } from './test/InGameToolTester.js';
 
 const _VER: [number, number, number] = [1, 0, 0];
 const _NAME = 'Alice Mod BE';
@@ -33,6 +35,14 @@ let statusReporter: StatusReporter;
 function initPlugin(): void {
   logger.setTitle('Alice Mod');
   logger.info(`=== ${_NAME} v${_VER.join('.')} 启动 ===`);
+
+  // 注册全局异常捕获，避免 LLSE Node.js 因未捕获异常直接退出
+  process.on('uncaughtException', (err) => {
+    logger.error(`[Alice Mod] 未捕获异常: ${err.stack || err.message || err}`);
+  });
+  process.on('unhandledRejection', (reason) => {
+    logger.error(`[Alice Mod] 未处理的 Promise 拒绝: ${reason}`);
+  });
 
   // 注册插件
   ll.registerPlugin(_NAME, 'Alice Mod BE', _VER);
@@ -87,7 +97,11 @@ function initPlugin(): void {
 
   // 注册事件
   registerEvents(BotManager);
-  registerCommands(BotManager, BotTestSuite);
+
+  // V6-T: 初始化游戏内 GUI 测试工具
+  const guiTester = new InGameToolTester(toolManager, configManager.guiTest);
+
+  registerCommands(BotManager, BotTestSuite, guiTester);
 
   logger.info(`${_NAME} 启动完成，等待服务器就绪...`);
 }
@@ -239,47 +253,62 @@ function registerEvents(BotManager: any): void {
   // V14: 低血量 / 低饥饿值周期性检测
   const thresholdState: Record<string, { healthLow: boolean; hungerLow: boolean }> = {};
   setInterval(() => {
-    if (!_initialized || !tcpClient.isConnected()) return;
+    try {
+      if (!_initialized || !tcpClient.isConnected()) return;
 
-    for (const bot of BotManager.getAll()) {
-      if (!bot.isOnline()) {
-        delete thresholdState[bot.name];
-        continue;
+      for (const bot of BotManager.getAll()) {
+        try {
+          if (!bot.isOnline()) {
+            delete thresholdState[bot.name];
+            continue;
+          }
+
+          const pl = bot.getPlayer();
+          if (!pl) continue;
+
+          // SimulatedPlayer 在某些 LLSE 版本中可能缺少 Player API，防御式调用
+          if (typeof pl.getHealth !== 'function' ||
+              typeof pl.getHunger !== 'function' ||
+              typeof pl.getMaxHealth !== 'function') {
+            continue;
+          }
+
+          const health = pl.getHealth();
+          const hunger = pl.getHunger();
+          const maxHealth = pl.getMaxHealth();
+          const healthThreshold = Math.max(3, Math.floor(maxHealth * 0.3));
+          const hungerThreshold = 6;
+
+          const state = thresholdState[bot.name] || { healthLow: false, hungerLow: false };
+          const healthLow = health <= healthThreshold;
+          const hungerLow = hunger <= hungerThreshold;
+
+          if (healthLow && !state.healthLow) {
+            pushEvent('health_low', {
+              player_name: bot.name,
+              bot_name: bot.name,
+              health,
+              max_health: maxHealth,
+              threshold: healthThreshold,
+            });
+          }
+
+          if (hungerLow && !state.hungerLow) {
+            pushEvent('hunger_low', {
+              player_name: bot.name,
+              bot_name: bot.name,
+              hunger,
+              threshold: hungerThreshold,
+            });
+          }
+
+          thresholdState[bot.name] = { healthLow, hungerLow };
+        } catch (botErr) {
+          logger.error(`[Alice Mod] 阈值检测 bot ${bot?.name} 失败: ${botErr}`);
+        }
       }
-
-      const pl = bot.getPlayer();
-      if (!pl) continue;
-
-      const health = pl.getHealth();
-      const hunger = pl.getHunger();
-      const maxHealth = pl.getMaxHealth();
-      const healthThreshold = Math.max(3, Math.floor(maxHealth * 0.3));
-      const hungerThreshold = 6;
-
-      const state = thresholdState[bot.name] || { healthLow: false, hungerLow: false };
-      const healthLow = health <= healthThreshold;
-      const hungerLow = hunger <= hungerThreshold;
-
-      if (healthLow && !state.healthLow) {
-        pushEvent('health_low', {
-          player_name: bot.name,
-          bot_name: bot.name,
-          health,
-          max_health: maxHealth,
-          threshold: healthThreshold,
-        });
-      }
-
-      if (hungerLow && !state.hungerLow) {
-        pushEvent('hunger_low', {
-          player_name: bot.name,
-          bot_name: bot.name,
-          hunger,
-          threshold: hungerThreshold,
-        });
-      }
-
-      thresholdState[bot.name] = { healthLow, hungerLow };
+    } catch (err) {
+      logger.error(`[Alice Mod] 低血量/饥饿阈值检测失败: ${err}`);
     }
   }, 2000);
 
@@ -461,19 +490,13 @@ function getEventSeverity(eventType: string): string {
 // 命令注册
 // ============================================================
 
-function registerCommands(BotManager: any, BotTestSuite: any): void {
+function registerCommands(BotManager: any, BotTestSuite: any, guiTester: InGameToolTester): void {
   try {
-    const cmd = mc.newCommand('mcagent', 'McAgent 插件控制', 0, 0x80);
+    const cmd = mc.newCommand('mcagent', 'McAgent 插件控制', PermType.GameMasters, 0x80);
 
-    // /mcagent test
-    cmd.setEnum('TestAction', ['test']);
-    cmd.mandatory('action', 5, 'TestAction', 'TestAction', 1);
-    cmd.overload(['TestAction']);
-
-    // /mcagent info / status
-    cmd.setEnum('InfoAction', ['info', 'status']);
-    cmd.mandatory('action', 5, 'InfoAction', 'InfoAction', 1);
-    cmd.overload(['InfoAction']);
+    // /mcagent <action: string>
+    cmd.optional('action', ParamType.String);
+    cmd.overload(['action']);
 
     // /mcagent (无参数)
     cmd.overload([]);
@@ -481,14 +504,34 @@ function registerCommands(BotManager: any, BotTestSuite: any): void {
     cmd.setCallback((_cmd: any, _ori: any, out: any, res: any) => {
       try {
         const action = res.action ? String(res.action).toLowerCase() : 'info';
+        logger.info(`[Alice Mod] /mcagent 命令被调用, action=${action}, origin.player=${!!_ori.player}`);
 
         if (action === 'test') {
+          if (_ori.player) {
+            try {
+              guiTester.onCommand(_ori.player);
+            } catch (guiErr) {
+              out.error(`打开测试菜单失败: ${guiErr}`);
+              logger.error('[Alice Mod] guiTester.onCommand 异常', guiErr);
+            }
+          } else {
+            out.error('GUI 模式仅限玩家使用');
+          }
+          return;
+        }
+
+        if (action === 'legacytest') {
           if (_ori.player && BotTestSuite) {
-            BotTestSuite.showMainMenu(_ori.player);
+            try {
+              BotTestSuite.showMainMenu(_ori.player);
+            } catch (legacyErr) {
+              out.error(`打开旧版菜单失败: ${legacyErr}`);
+              logger.error('[Alice Mod] BotTestSuite.showMainMenu 异常', legacyErr);
+            }
           } else if (!_ori.player) {
             out.error('GUI 模式仅限玩家使用');
           } else {
-            out.error('测试模块未加载');
+            out.error('旧版测试模块未加载');
           }
           return;
         }
@@ -506,12 +549,13 @@ function registerCommands(BotManager: any, BotTestSuite: any): void {
           `§e状态: ${_initialized ? '§a已就绪' : '§c未就绪'}\n` +
           info + '\n' +
           '\n§a可用命令:\n' +
-          '  /mcagent       §7- 查看插件信息\n' +
-          '  /mcagent test  §7- 打开测试菜单\n' +
-          '  /mcagent info  §7- 查看插件信息'
+          '  /mcagent            §7- 查看插件信息\n' +
+          '  /mcagent test       §7- 打开工具测试菜单\n' +
+          '  /mcagent legacytest §7- 打开旧版测试菜单\n' +
+          '  /mcagent info       §7- 查看插件信息'
         );
       } catch (e) {
-        out.error('指令执行出错');
+        out.error(`指令执行出错: ${e}`);
         logger.error('指令回调异常', e);
       }
     });

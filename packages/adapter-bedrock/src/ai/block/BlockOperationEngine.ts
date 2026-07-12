@@ -16,11 +16,11 @@ import type {
 import { ToolSelector } from './ToolSelector.js';
 import { BlockValidator } from './BlockValidator.js';
 import { AreaPlanner } from './AreaPlanner.js';
-import { InventoryEngine } from '../inventory/InventoryEngine.js';
+import { InventoryEngine, normalizeName } from '../inventory/InventoryEngine.js';
 import { aiEngine } from '../index.js';
 import { configManager } from '../../config/index.js';
 import { BotManager } from '../../bot/BotManager.js';
-import { normalizeName } from '../inventory/InventoryEngine.js';
+import { waitFor } from '../../utils/helpers.js';
 
 /** 操作超时时间（毫秒） */
 const OPERATION_TIMEOUT_MS = 120000;
@@ -102,7 +102,7 @@ export class BlockOperationEngine {
     this.player.simulateDestroyBlock(pos);
 
     // 6. 等待方块破坏（轮询校验）
-    const broken = await this.waitFor(() => this.blockValidator.confirmBroken(pos, this.world), 15000, 100);
+    const broken = await waitFor(() => this.blockValidator.confirmBroken(pos, this.world), 15000, 100);
 
     // 7. 保存背包
     BotManager.saveInventory(this.botName);
@@ -359,27 +359,6 @@ export class BlockOperationEngine {
     } catch (e) {
       // 忽略看向失败
     }
-  }
-
-  /**
-   * 等待条件成立，带超时
-   */
-  private waitFor(predicate: () => boolean, timeoutMs: number, intervalMs: number): Promise<boolean> {
-    return new Promise((resolve) => {
-      const start = Date.now();
-      const check = () => {
-        if (predicate()) {
-          resolve(true);
-          return;
-        }
-        if (Date.now() - start > timeoutMs) {
-          resolve(false);
-          return;
-        }
-        setTimeout(check, intervalMs);
-      };
-      check();
-    });
   }
 
   /**

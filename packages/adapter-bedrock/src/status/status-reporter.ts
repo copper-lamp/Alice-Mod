@@ -83,7 +83,11 @@ export class StatusReporter {
   start(): void {
     if (this.timer !== null) return;
     this.enabled = true;
-    this.timer = setInterval(() => this.tick(), this.intervalMs);
+    this.timer = setInterval(() => {
+      this.tick().catch((err) => {
+        logger.error(`[StatusReporter] 未捕获的上报错误: ${err}`);
+      });
+    }, this.intervalMs);
     logger.info(`[StatusReporter] 已启动 (间隔 ${this.intervalMs}ms)`);
   }
 
@@ -142,31 +146,47 @@ export class StatusReporter {
       timestamp: now,
       bot_id: botId,
       health: {
-        health: pl ? pl.getHealth() : 0,
-        max_health: pl ? pl.getMaxHealth() : 20,
-        hunger: pl ? pl.getHunger() : 20,
-        saturation: pl ? pl.getSaturation() : 0,
-        air: pl && typeof pl.getAir === 'function' ? pl.getAir() : 300,
+        health: typeof pl?.getHealth === 'function' ? pl.getHealth() : 0,
+        max_health: typeof pl?.getMaxHealth === 'function' ? pl.getMaxHealth() : 20,
+        hunger: typeof pl?.getHunger === 'function' ? pl.getHunger() : 20,
+        saturation: typeof pl?.getSaturation === 'function' ? pl.getSaturation() : 0,
+        air: typeof pl?.getAir === 'function' ? pl.getAir() : 300,
       },
       position: {
-        x: pl ? pl.pos.x : 0,
-        y: pl ? pl.pos.y : 64,
-        z: pl ? pl.pos.z : 0,
-        dimension: pl ? getDimensionName(pl.pos.dimid) : 'overworld',
-        yaw: pl ? pl.direction.yaw : 0,
-        pitch: pl ? pl.direction.pitch : 0,
+        x: pl?.pos?.x ?? 0,
+        y: pl?.pos?.y ?? 64,
+        z: pl?.pos?.z ?? 0,
+        dimension: pl?.pos ? getDimensionName(pl.pos.dimid) : 'overworld',
+        yaw: pl?.direction?.yaw ?? 0,
+        pitch: pl?.direction?.pitch ?? 0,
       },
-      equipment: pl
-        ? {
-            hand: pl.getHand()?.name || null,
-            offhand: pl.getOffHand()?.name || null,
-            helmet: pl.getArmor()?.getItem(0)?.name || null,
-            chestplate: pl.getArmor()?.getItem(1)?.name || null,
-            leggings: pl.getArmor()?.getItem(2)?.name || null,
-            boots: pl.getArmor()?.getItem(3)?.name || null,
-          }
-        : {},
+      equipment: this.collectEquipment(pl),
       inventory_summary: this.collectInventorySummary(pl),
+    };
+  }
+
+  /**
+   * 采集装备信息，兼容 SimulatedPlayer 可能缺少 API 的情况
+   */
+  private collectEquipment(pl: any): StatusReport['equipment'] {
+    if (!pl) return {};
+
+    const armor = typeof pl.getArmor === 'function' ? pl.getArmor() : null;
+    const getArmorItem = (slot: number) => {
+      try {
+        return armor?.getItem(slot)?.name || null;
+      } catch {
+        return null;
+      }
+    };
+
+    return {
+      hand: typeof pl.getHand === 'function' ? pl.getHand()?.name || null : null,
+      offhand: typeof pl.getOffHand === 'function' ? pl.getOffHand()?.name || null : null,
+      helmet: getArmorItem(0),
+      chestplate: getArmorItem(1),
+      leggings: getArmorItem(2),
+      boots: getArmorItem(3),
     };
   }
 
@@ -174,13 +194,13 @@ export class StatusReporter {
    * 采集背包摘要
    */
   private collectInventorySummary(pl: any): StatusReport['inventory_summary'] {
-    if (!pl) {
+    if (!pl || typeof pl.getInventory !== 'function') {
       return { used_slots: 0, total_slots: 36, items: [] };
     }
 
     try {
       const inventory = pl.getInventory();
-      const totalSlots = inventory.size;
+      const totalSlots = inventory?.size ?? 36;
       const items: Array<{ name: string; count: number }> = [];
       let usedSlots = 0;
 

@@ -92,3 +92,28 @@ export function getGameModeName(mode: number): string {
   if (name == null) return '默认模式';
   return name;
 }
+
+/**
+ * 等待条件成立，带超时
+ */
+export function waitFor(
+  predicate: () => boolean,
+  timeoutMs: number,
+  intervalMs: number,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const check = () => {
+      if (predicate()) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        resolve(false);
+        return;
+      }
+      setTimeout(check, intervalMs);
+    };
+    check();
+  });
+}
