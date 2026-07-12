@@ -14,21 +14,19 @@
  *   事件会先后触发。用 _handlingError 标志防止重复处理。
  */
 
-import { JsonRpcCodec, JSONRPC_ERROR_CODES } from './json-rpc.js';
+import { JsonRpcCodec } from './json-rpc.js';
 import type {
   JsonRpcMessage,
   JsonRpcRequest,
   JsonRpcResponse,
-  JsonRpcNotification,
 } from './json-rpc.js';
 import { FrameAccumulator } from './message-frame.js';
 import { buildHelloParams, isHandshakeAccepted, HANDSHAKE_METHOD } from './handshake.js';
-import type { HelloParams, HelloResult } from './handshake.js';
+import type { HelloResult } from './handshake.js';
 import { buildPongResponse, isPingNotification } from './heartbeat.js';
 import { ReconnectScheduler } from './reconnect.js';
+import * as net from 'net';
 // logger 为 LLSE 全局变量，无需导入
-// @ts-ignore — Node.js net 模块
-const net = require('net');
 
 // ── 连接状态 ──
 

@@ -17,9 +17,41 @@ export interface WalkResult {
 
 // ── BotManager 类 ──
 
+export type BotEventType = 'online' | 'offline' | 'death' | 'created' | 'removed';
+
+export interface BotEvent {
+  type: BotEventType;
+  botName: string;
+  timestamp: number;
+}
+
+export type BotEventListener = (event: BotEvent) => void;
+
 export class BotManager {
   private static instances: Record<string, BotInstance> = {};
   private static tickInstances: Record<string, BotInstance> = {};
+  private static eventListeners: BotEventListener[] = [];
+
+  // ── 事件监听 ──
+
+  static onEvent(listener: BotEventListener): void {
+    BotManager.eventListeners.push(listener);
+  }
+
+  static offEvent(listener: BotEventListener): void {
+    BotManager.eventListeners = BotManager.eventListeners.filter((l) => l !== listener);
+  }
+
+  private static emitEvent(type: BotEventType, botName: string): void {
+    const event: BotEvent = { type, botName, timestamp: Date.now() };
+    for (const listener of BotManager.eventListeners) {
+      try {
+        listener(event);
+      } catch (err) {
+        logger.error(`[BotManager] 事件监听异常: ${err}`);
+      }
+    }
+  }
 
   // ── 初始化 ──
 
@@ -49,6 +81,7 @@ export class BotManager {
     bot.setOwner(owner);
     BotManager.instances[name] = bot;
     BotManager.saveData(name);
+    BotManager.emitEvent('created', name);
     return SUCCESS;
   }
 
@@ -69,6 +102,7 @@ export class BotManager {
 
     BotManager.deleteData(name);
     BotManager.deleteInventory(name);
+    BotManager.emitEvent('removed', name);
     return SUCCESS;
   }
 
@@ -108,6 +142,7 @@ export class BotManager {
 
     BotManager.saveData(name, false);
     BotManager.loadInventory(name);
+    BotManager.emitEvent('online', name);
     return SUCCESS;
   }
 
@@ -130,6 +165,7 @@ export class BotManager {
     if (!bot.offline()) return `假人 ${name} 下线失败`;
 
     BotManager.saveData(name, false);
+    BotManager.emitEvent('offline', name);
     return SUCCESS;
   }
 
@@ -476,6 +512,8 @@ export class BotManager {
     const bot = BotManager.get(name);
     if (!bot) return;
     if (!bot.isOnline()) return;
+
+    BotManager.emitEvent('death', name);
 
     // 死亡频率检测
     if (bot.increaseDeathCount()) {

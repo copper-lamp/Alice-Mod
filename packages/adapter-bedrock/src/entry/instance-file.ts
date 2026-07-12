@@ -7,8 +7,7 @@
  */
 
 // logger 为 LLSE 全局变量，无需导入
-const crypto = require('crypto');
-const path = require('path');
+import * as crypto from 'crypto';
 
 // ── 目录路径 ──
 

@@ -180,7 +180,7 @@ export class PathfindingEngine implements IPathfindingEngine {
       to,
       {
         getBlock: (x, y, z) => {
-          try { // @ts-ignore
+          try {
             return mc.getBlock(x, y, z, ctx.playerDimid);
           } catch (e) { return null; }
         },

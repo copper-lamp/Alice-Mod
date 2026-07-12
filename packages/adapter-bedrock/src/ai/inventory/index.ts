@@ -1,26 +1,20 @@
-// 背包操作引擎占位
+/**
+ * 背包操作引擎统一入口
+ *
+ * 导出 InventoryEngine、ContainerAPI 与相关类型，供 V5/V6/V7 等模块复用。
+ */
 
-export interface ItemStack {
-  id: string;
-  count: number;
-  slot?: number;
-}
-
-export class InventoryEngine {
-  async list(): Promise<ItemStack[]> {
-    return [];
-  }
-
-  async select(slot: number): Promise<void> {
-    // TODO: Select hotbar slot
-  }
-
-  async craft(recipe: string): Promise<boolean> {
-    // TODO: Craft item
-    return false;
-  }
-
-  async drop(item: string, count: number): Promise<void> {
-    // TODO: Drop item
-  }
-}
+export { InventoryEngine, normalizeName, matchName } from './InventoryEngine.js';
+export { ContainerAPI } from './ContainerAPI.js';
+export type {
+  ArmorSlot,
+  DropResult,
+  EquipResult,
+  InventorySource,
+  ItemSlot,
+  ItemStack,
+  TransferResult,
+  ContainerSlotCandidate,
+  StackSizeConfig,
+} from './types.js';
+export { getMaxStackSize } from './stack-size.js';

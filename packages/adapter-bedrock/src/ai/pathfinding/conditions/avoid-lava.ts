@@ -17,7 +17,6 @@ const DANGER_BLOCKS = new Set([
 export class AvoidLavaCondition implements IPathCondition {
   evaluate(_ctx: PathContext, point: Vec3): ConditionEvaluation {
     try {
-      // @ts-ignore
       const block = mc.getBlock(Math.floor(point.x), Math.floor(point.y), Math.floor(point.z), 0);
       if (!block) return { pass: true };
 
@@ -27,7 +26,6 @@ export class AvoidLavaCondition implements IPathCondition {
       }
 
       // 脚下也是危险方块
-      // @ts-ignore
       const below = mc.getBlock(Math.floor(point.x), Math.floor(point.y - 1), Math.floor(point.z), 0);
       if (below) {
         const belowName = String(below.name || below.type || '').toLowerCase();

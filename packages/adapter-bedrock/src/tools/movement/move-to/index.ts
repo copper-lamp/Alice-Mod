@@ -92,7 +92,7 @@ export default class MoveToTool implements IToolModule {
         const blockPos: Vec3 = { x: Number(target.x), y: Number(target.y), z: Number(target.z) };
         targetPos = this.applyDistance(blockPos, playerPos, distance);
       } else if (target_type === 'entity') {
-        // @ts-ignore
+        // @ts-expect-error — LLSE mc 类型声明中无 getEntity，但运行时可用
         const entity = mc.getEntity(target.entity_id);
         if (!entity) {
           return {

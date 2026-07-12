@@ -44,5 +44,14 @@ const manifestDst = path.join(BDS_PLUGIN_DIR, 'manifest.json');
 fs.copyFileSync(manifestSrc, manifestDst);
 console.log(`[copy-to-bds] 已复制: manifest.json`);
 
+// 复制 config.json 到 BDS 根目录（运行时从此处加载）
+const configSrc = path.join(PACKAGE_DIR, 'config.json');
+const BDS_ROOT_DIR = path.resolve(__dirname, '..', '..', '..', 'bds26.10');
+const configDst = path.join(BDS_ROOT_DIR, 'config.json');
+if (fs.existsSync(configSrc)) {
+  fs.copyFileSync(configSrc, configDst);
+  console.log(`[copy-to-bds] 已复制: config.json → ${configDst}`);
+}
+
 const elapsed = Date.now() - start;
 console.log(`[copy-to-bds] 完成 (${elapsed}ms)`);

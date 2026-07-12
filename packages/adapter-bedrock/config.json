@@ -1,0 +1,19 @@
+{
+  "host": "127.0.0.1",
+  "port": 27541,
+  "debug": false,
+  "survival": {
+    "eat": {
+      "max_search_radius": 0
+    },
+    "sleep": {
+      "max_bed_search_radius": 32,
+      "max_wait_ms": 60000
+    }
+  },
+  "block": {
+    "max_area_operation_blocks": 256,
+    "tool_durability_threshold": 5,
+    "allow_alternative_materials": true
+  }
+}

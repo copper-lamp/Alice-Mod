@@ -73,7 +73,6 @@ export class FlightSegmentPlanner implements IFlightSegmentPlanner {
     for (let dy = 0; dy >= -10; dy--) {
       const y = Math.floor(to.y + dy);
       try {
-        // @ts-ignore
         const block = mc.getBlock(Math.floor(to.x), y, Math.floor(to.z), dimid);
         if (!block) continue;
         const name = String(block.name || block.type || '').toLowerCase();

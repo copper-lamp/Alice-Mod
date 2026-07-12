@@ -3,6 +3,7 @@
  *
  * 周期性采集假人状态（生命、位置、装备、背包摘要），
  * 每 2s 通过 TCP 发送 status_report 通知到 Agent Core。
+ * 支持多假人独立上报，按 BotManager 维护的在线假人列表采集。
  */
 
 // logger 为 LLSE 全局变量，无需导入
@@ -11,6 +12,7 @@
 
 export interface StatusReport {
   timestamp: string;
+  bot_id: string;
   health: {
     health: number;
     max_health: number;
@@ -39,11 +41,24 @@ export interface StatusReport {
 const DEFAULT_INTERVAL_MS = 2000;
 const WARN_THRESHOLD_MS = 100;
 
+// ── 维度名称映射 ──
+
+const DIMENSION_NAMES: Record<number, string> = {
+  0: 'overworld',
+  1: 'nether',
+  2: 'end',
+};
+
+function getDimensionName(dimid: number): string {
+  return DIMENSION_NAMES[dimid] ?? String(dimid);
+}
+
 // ── StatusReporter ──
 
 export class StatusReporter {
   private sendNotification: (method: string, params: any) => void;
   private isConnected: () => boolean;
+  private getBots: (() => any[]) | null;
   private intervalMs: number;
   private timer: ReturnType<typeof setInterval> | null = null;
   private enabled: boolean = false;
@@ -51,10 +66,12 @@ export class StatusReporter {
   constructor(options: {
     sendNotification: (method: string, params: any) => void;
     isConnected: () => boolean;
+    getBots?: () => any[];
     intervalMs?: number;
   }) {
     this.sendNotification = options.sendNotification;
     this.isConnected = options.isConnected;
+    this.getBots = options.getBots || null;
     this.intervalMs = options.intervalMs || DEFAULT_INTERVAL_MS;
   }
 
@@ -92,38 +109,63 @@ export class StatusReporter {
   // ── 数据采集 ──
 
   /**
-   * 采集当前状态数据
+   * 采集所有在线假人的状态数据
    */
-  collect(): StatusReport {
-    // @ts-ignore — LLSE 全局变量
+  collect(): StatusReport[] {
+    // 已接入 BotManager：仅按在线假人采集，无在线假人时返回空数组
+    if (this.getBots) {
+      return this.getBots()
+        .filter((b) => b.isOnline())
+        .map((bot) => this.collectForBot(bot));
+    }
+
+    // 降级：未接入 BotManager 时取首个在线玩家
     const pl = mc.getOnlinePlayers()[0];
+    return pl ? [this.buildReport(pl, pl.realName)] : [];
+  }
+
+  /**
+   * 为单个假人采集状态
+   */
+  private collectForBot(bot: any): StatusReport {
+    const pl = bot.getPlayer ? bot.getPlayer() : null;
+    return this.buildReport(pl, bot.name);
+  }
+
+  /**
+   * 构造状态报文
+   */
+  private buildReport(pl: any, botId: string): StatusReport {
     const now = new Date().toISOString();
 
     return {
       timestamp: now,
+      bot_id: botId,
       health: {
         health: pl ? pl.getHealth() : 0,
         max_health: pl ? pl.getMaxHealth() : 20,
         hunger: pl ? pl.getHunger() : 20,
         saturation: pl ? pl.getSaturation() : 0,
-        air: 300, // Player 接口未暴露 air 属性，使用默认值
+        air: pl && typeof pl.getAir === 'function' ? pl.getAir() : 300,
       },
       position: {
         x: pl ? pl.pos.x : 0,
         y: pl ? pl.pos.y : 64,
         z: pl ? pl.pos.z : 0,
-        dimension: pl ? String(pl.pos.dimid) : '0',
+        dimension: pl ? getDimensionName(pl.pos.dimid) : 'overworld',
         yaw: pl ? pl.direction.yaw : 0,
         pitch: pl ? pl.direction.pitch : 0,
       },
-      equipment: pl ? {
-        hand: pl.getHand()?.name || null,
-        offhand: pl.getOffHand()?.name || null,
-        helmet: pl.getArmor()?.getItem(0)?.name || null,
-        chestplate: pl.getArmor()?.getItem(1)?.name || null,
-        leggings: pl.getArmor()?.getItem(2)?.name || null,
-        boots: pl.getArmor()?.getItem(3)?.name || null,
-      } : {},
+      equipment: pl
+        ? {
+            hand: pl.getHand()?.name || null,
+            offhand: pl.getOffHand()?.name || null,
+            helmet: pl.getArmor()?.getItem(0)?.name || null,
+            chestplate: pl.getArmor()?.getItem(1)?.name || null,
+            leggings: pl.getArmor()?.getItem(2)?.name || null,
+            boots: pl.getArmor()?.getItem(3)?.name || null,
+          }
+        : {},
       inventory_summary: this.collectInventorySummary(pl),
     };
   }
@@ -136,24 +178,29 @@ export class StatusReporter {
       return { used_slots: 0, total_slots: 36, items: [] };
     }
 
-    const inventory = pl.getInventory();
-    const totalSlots = inventory.size;
-    const items: Array<{ name: string; count: number }> = [];
-    let usedSlots = 0;
+    try {
+      const inventory = pl.getInventory();
+      const totalSlots = inventory.size;
+      const items: Array<{ name: string; count: number }> = [];
+      let usedSlots = 0;
 
-    for (let i = 0; i < totalSlots; i++) {
-      const item = inventory.getItem(i);
-      if (item && !item.isNull()) {
-        usedSlots++;
-        items.push({ name: item.name, count: item.count });
+      for (let i = 0; i < totalSlots; i++) {
+        const item = inventory.getItem(i);
+        if (item && !item.isNull()) {
+          usedSlots++;
+          items.push({ name: item.name, count: item.count });
+        }
       }
-    }
 
-    return {
-      used_slots: usedSlots,
-      total_slots: totalSlots,
-      items,
-    };
+      return {
+        used_slots: usedSlots,
+        total_slots: totalSlots,
+        items,
+      };
+    } catch (err) {
+      logger.error(`[StatusReporter] 采集背包摘要失败: ${err}`);
+      return { used_slots: 0, total_slots: 36, items: [] };
+    }
   }
 
   // ── 上报 ──
@@ -165,9 +212,11 @@ export class StatusReporter {
     if (!this.isConnected()) return;
 
     const startTime = Date.now();
-    const report = this.collect();
+    const reports = this.collect();
 
-    this.sendNotification('status_report', report);
+    for (const report of reports) {
+      this.sendNotification('status_report', report);
+    }
 
     const elapsed = Date.now() - startTime;
     if (elapsed > WARN_THRESHOLD_MS) {

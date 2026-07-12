@@ -22,10 +22,15 @@ export class ToolRegistry {
    * 扫描 tools/ 目录下的所有工具模块并注册
    * 目录结构约定：
    *   tools/
-   *   ├── movement/         # 移动工具目录
-   *   │   ├── index.js      # 工具实现（默认导出 IToolModule 实例）
-   *   │   └── manifest.json # 工具元数据（可选）
+   *   ├── movement/         # 工具分类目录
+   *   │   ├── move-to/      # 具体工具目录
+   *   │   │   └── index.js  # 工具实现（默认导出 IToolModule 实例）
+   *   │   └── ride/
    *   ├── inventory/
+   *   │   ├── drop-item/
+   *   │   ├── equip-item/
+   *   │   ├── take-from-container/
+   *   │   └── put-to-container/
    *   ├── combat/
    *   ├── block/
    *   ├── interaction/
@@ -43,44 +48,62 @@ export class ToolRegistry {
       return 0;
     }
 
-    const entries = File.getFilesList(toolsDir);
-
-    // 规范化目录路径，确保末尾有且仅有一个分隔符
     const normalizedToolsDir = toolsDir.endsWith('/') ? toolsDir : `${toolsDir}/`;
+    const toolDirs = this.discoverToolDirs(normalizedToolsDir);
 
-    for (const entry of entries) {
-      const fullPath = `${normalizedToolsDir}${entry}`;
+    for (const toolDir of toolDirs) {
+      const indexPath = `${toolDir}/index.js`;
+      if (!File.exists(indexPath)) continue;
 
-      // 跳过文件，只处理子目录
-      if (File.checkIsDir(fullPath)) {
-        const indexPath = fullPath + '/index.js';
-        if (File.exists(indexPath)) {
-          try {
-            const mod = require(indexPath);
+      const relativeName = toolDir.replace(normalizedToolsDir, '');
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const mod = require(indexPath);
 
-            // 支持默认导出或具名导出 IToolModule
-            const toolModule: IToolModule | undefined =
-              mod.default || mod;
+        // 支持默认导出或具名导出 IToolModule
+        const toolModule: IToolModule | undefined = mod.default || mod;
 
-            if (!toolModule || typeof toolModule.metadata !== 'function' ||
-                typeof toolModule.execute !== 'function') {
-              logger.warn(`[ToolRegistry] 跳过无效工具模块: ${entry}`);
-              continue;
-            }
-
-            const metadata = toolModule.metadata();
-            this.register(metadata.name, metadata, toolModule);
-            count++;
-            logger.info(`[ToolRegistry] 已注册工具: ${metadata.name} (${entry})`);
-          } catch (err) {
-            logger.error(`[ToolRegistry] 加载工具模块失败: ${entry}`, err);
-          }
+        if (!toolModule || typeof toolModule.metadata !== 'function' ||
+            typeof toolModule.execute !== 'function') {
+          logger.warn(`[ToolRegistry] 跳过无效工具模块: ${relativeName}`);
+          continue;
         }
+
+        const metadata = toolModule.metadata();
+        this.register(metadata.name, metadata, toolModule);
+        count++;
+        logger.info(`[ToolRegistry] 已注册工具: ${metadata.name} (${relativeName})`);
+      } catch (err) {
+        logger.error(`[ToolRegistry] 加载工具模块失败: ${relativeName}`, err);
       }
     }
 
     logger.info(`[ToolRegistry] 扫描完成，共注册 ${count} 个工具`);
     return count;
+  }
+
+  /**
+   * 发现所有工具目录（支持 tools/{category}/{tool}/index.js 结构）
+   */
+  private discoverToolDirs(toolsDir: string): string[] {
+    const result: string[] = [];
+    if (!File.exists(toolsDir) || !File.checkIsDir(toolsDir)) return result;
+
+    const categories = File.getFilesList(toolsDir);
+    for (const category of categories) {
+      const categoryPath = `${toolsDir}${category}`;
+      if (!File.checkIsDir(categoryPath)) continue;
+
+      const tools = File.getFilesList(categoryPath);
+      for (const tool of tools) {
+        const toolPath = `${categoryPath}/${tool}`;
+        if (File.checkIsDir(toolPath)) {
+          result.push(toolPath);
+        }
+      }
+    }
+
+    return result;
   }
 
   /**

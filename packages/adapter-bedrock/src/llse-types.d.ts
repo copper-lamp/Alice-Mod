@@ -89,6 +89,7 @@ declare namespace mc {
   function spawnEntity(type: string, count: number, pos: IntPos | FloatPos): Entity | null;
 
   function getBlock(pos: IntPos): Block;
+  function getBlock(x: number, y: number, z: number, dimid: number): Block;
   function explode(pos: FloatPos | IntPos, radius: number, fire: boolean, destroy: boolean): boolean;
   function rand(min: number, max: number): number;
 
@@ -98,6 +99,8 @@ declare namespace mc {
   function setTime(time: number): void;
   function getWeather(): 'clear' | 'rain' | 'thunder';
   function setWeather(weather: 'clear' | 'rain' | 'thunder'): void;
+  function isRaining(): boolean;
+  function isThundering(): boolean;
   function getServerProtocolVersion(): number;
   function getServerIp(): string;
   function getServerPort(): number;
@@ -249,6 +252,10 @@ interface Player {
   pos: FloatPos;
   direction: { yaw: number; pitch: number };
   gameMode: number;
+  health: number;
+  maxHealth: number;
+  hunger: number;
+  saturation: number;
   feetPos: FloatPos;
 
   // 常规方法
@@ -303,10 +310,12 @@ interface Player {
 
   // 背包
   getHand(): Item;
-  getOffHand(): Item;
+  getOffHand(): Item & Container;
   getInventory(): Container;
   getArmor(): Container;
   refreshItems(): void;
+  selectedSlot: number;
+  setSelectedSlot?(slot: number): boolean;
 
   // NBT
   getNbt(): NbtCompound;
@@ -347,6 +356,7 @@ interface Block {
   type: string;
   id: number;
   data: number;
+  pos: IntPos;
   getPos(): IntPos;
   getBlockData(): string;
   setBlockData(data: string): boolean;
@@ -364,7 +374,7 @@ interface Container {
   size: number;
   getSize(): number;
   getSlot(slot: number): Item | null;
-  setSlot(slot: number, item: Item): boolean;
+  setItem(slot: number, item: Item | null): boolean;
   addItem(item: Item): boolean;
   removeItem(slot: number, count: number): boolean;
   getAllItems(): Item[];
@@ -391,4 +401,6 @@ interface Item {
   setLore(lores: string[]): boolean;
   getLore(): string[];
   setItemName(name: string): boolean;
+  getDamage(): number;
+  getMaxDamage(): number;
 }

@@ -25,19 +25,16 @@ export class AIEngine {
    * 移动假人到目标位置
    */
   async moveTo(botName: string | undefined, target: Vec3, options: PathOptions = {}): Promise<MoveResult> {
+    // 兼容直接传入 player 对象的测试/工具场景：如果 botName 不是 BotManager 中已注册假人，
+    // 但存在在线玩家同名，则直接使用该玩家对象构造上下文
     const bot = this.resolveBot(botName);
-    if (!bot) {
-      return {
-        success: false,
-        finalPos: { x: 0, y: 0, z: 0 },
-        distanceMoved: 0,
-        durationMs: 0,
-        hungerCost: 0,
-        reason: 'cancelled',
-      };
+    let pl: any = bot ? bot.getPlayer() : null;
+
+    if (!pl && botName) {
+      const online = mc.getOnlinePlayers ? mc.getOnlinePlayers() : [];
+      pl = online.find((p: any) => p.name === botName || p.realName === botName) || null;
     }
 
-    const pl = bot.getPlayer();
     if (!pl) {
       return {
         success: false,
@@ -83,7 +80,7 @@ export class AIEngine {
     }
 
     try {
-      // @ts-ignore
+      // @ts-expect-error — LLSE mc 类型声明中无 getEntity，但运行时可用
       const entity = mc.getEntity(entityId);
       if (!entity) {
         return { success: false, reason: 'entity_not_found' };
@@ -184,7 +181,7 @@ export class AIEngine {
 
     const hostileEntities: import('./pathfinding/types.js').EntityRef[] = [];
     try {
-      // @ts-ignore
+      // @ts-expect-error — LLSE mc 类型声明中无 getEntities，但运行时可用
       const entities = mc.getEntities();
       for (const e of entities) {
         const type = String(e.type || e.name || '').toLowerCase();

@@ -99,7 +99,6 @@ export class BlockInteractionPlanner implements IBlockInteractionPlanner {
 
   private isSolidBlock(x: number, y: number, z: number, dimid: number): boolean {
     try {
-      // @ts-ignore
       const block = mc.getBlock(Math.floor(x), Math.floor(y), Math.floor(z), dimid);
       if (!block) return false;
       const name = String(block.name || block.type || '').toLowerCase();
@@ -111,7 +110,6 @@ export class BlockInteractionPlanner implements IBlockInteractionPlanner {
 
   private getBlockName(x: number, y: number, z: number, dimid: number): string | null {
     try {
-      // @ts-ignore
       const block = mc.getBlock(Math.floor(x), Math.floor(y), Math.floor(z), dimid);
       if (!block) return null;
       return String(block.name || block.type || '').toLowerCase();

@@ -22,8 +22,8 @@ export interface ToolMetadata {
   name: string;
   description: string;
   category: ToolCategory;
-  input_schema: Record<string, any>;
-  output_schema?: Record<string, any>;
+  input_schema: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
   execution?: {
     timeout_default_ms?: number;
     timeout_max_ms?: number;
@@ -42,25 +42,58 @@ export interface PlayerAccess {
   getPosition(): { x: number; y: number; z: number; dimension: string };
   getRotation(): { yaw: number; pitch: number };
   getSelectedSlot(): number;
-  getInventory(): any;
-  getEquipment(): Record<string, any>;
+  setSelectedSlot(slot: number): boolean;
+  getInventory(): Container | null;
+  getEquipment(): Record<string, string | null>;
 }
 
 export interface WorldAccess {
-  getBlock(x: number, y: number, z: number): any;
+  getBlock(x: number, y: number, z: number): Block | null;
   getTime(): number;
   getWeather(): string;
-  getEntities(options?: any): any[];
-  getOnlinePlayers(): any[];
+  getEntities(options?: Record<string, unknown>): Entity[];
+  getOnlinePlayers(): Player[];
+}
+
+export interface BotConfig {
+  name: string;
+  pos: {
+    x: number;
+    y: number;
+    z: number;
+    dimid: number;
+  };
+  owner?: string;
+}
+
+/** 假人手柄最小抽象，供工具层使用 */
+export interface BotHandle {
+  name: string;
+  isOnline: boolean | (() => boolean);
+  getPlayer?: () => Player;
+  getInfo?: () => Record<string, unknown>;
 }
 
 export interface BotAccess {
-  // 假人管理接口（V10 实现）
+  /** 获取当前工具执行关联的假人 */
+  getActiveBot(): BotHandle | null;
+  /** 设置当前工具执行关联的假人 */
+  setActiveBot(name: string): boolean;
+  /** 列出所有假人信息 */
+  listBots(): BotHandle[];
+  /** 创建假人，失败返回错误原因字符串 */
+  createBot(config: BotConfig): BotHandle | string;
+  /** 销毁假人 */
+  destroyBot(name: string): boolean;
+  /** 按名称获取假人 */
+  getBot(name: string): BotHandle | null;
+  /** 按名称获取假人的游戏内 Player 对象 */
+  getBotPlayer(name: string): Player | null;
 }
 
 export interface EventNotification {
   type: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
   timestamp: string;
 }
 
@@ -82,7 +115,7 @@ export interface ToolContext {
 
 export interface ToolResult {
   success: boolean;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   error?: string;
   duration_ms: number;
 }
@@ -95,6 +128,7 @@ export interface IToolModule {
 
   /** 执行工具逻辑 */
   execute(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     params: Record<string, any>,
     ctx: ToolContext,
   ): Promise<ToolResult>;

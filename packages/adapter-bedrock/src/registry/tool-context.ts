@@ -10,39 +10,48 @@
  * - 耗时统计
  */
 
-import type { ToolContext, PlayerAccess, WorldAccess, BotAccess, EventNotification } from './tool-module.types.js';
+import type { ToolContext, PlayerAccess, WorldAccess, BotAccess, BotConfig, EventNotification } from './tool-module.types.js';
+import { BotManager } from '../bot/BotManager.js';
+import { SUCCESS } from '../utils/constants.js';
 // logger 为 LLSE 全局变量，无需导入
 
 // ── PlayerAccess 实现 ──
 
 export class PlayerAccessImpl implements PlayerAccess {
-  /** 取第一个在线玩家（含假人） */
-  private getFirstPlayer(): any {
-    // @ts-ignore — LLSE 全局变量
-    return mc.getOnlinePlayers()[0];
+  private getPlayerFn: () => Player | null;
+
+  constructor(getPlayerFn?: () => Player | null) {
+    this.getPlayerFn = getPlayerFn || (() => {
+      return mc.getOnlinePlayers()[0] ?? null;
+    });
+  }
+
+  private getPlayer(): Player | null {
+    return this.getPlayerFn();
   }
 
   getHealth(): number {
-    const pl = this.getFirstPlayer();
+    const pl = this.getPlayer();
     return pl ? pl.health : 0;
   }
 
   getMaxHealth(): number {
-    const pl = this.getFirstPlayer();
+    const pl = this.getPlayer();
     return pl ? pl.maxHealth : 20;
   }
 
   getHunger(): number {
-    const pl = this.getFirstPlayer();
+    const pl = this.getPlayer();
     return pl ? pl.hunger : 20;
   }
 
   getSaturation(): number {
-    return 0; // LLSE 未直接暴露
+    const pl = this.getPlayer();
+    return pl ? pl.saturation : 0;
   }
 
   getPosition(): { x: number; y: number; z: number; dimension: string } {
-    const pl = this.getFirstPlayer();
+    const pl = this.getPlayer();
     if (!pl) return { x: 0, y: 64, z: 0, dimension: '主世界' };
     return {
       x: pl.pos.x,
@@ -53,23 +62,38 @@ export class PlayerAccessImpl implements PlayerAccess {
   }
 
   getRotation(): { yaw: number; pitch: number } {
-    const pl = this.getFirstPlayer();
+    const pl = this.getPlayer();
     if (!pl) return { yaw: 0, pitch: 0 };
     return { yaw: pl.direction.yaw, pitch: pl.direction.pitch };
   }
 
   getSelectedSlot(): number {
-    const pl = this.getFirstPlayer();
+    const pl = this.getPlayer();
     return pl ? pl.selectedSlot : 0;
   }
 
-  getInventory(): any {
-    const pl = this.getFirstPlayer();
+  setSelectedSlot(slot: number): boolean {
+    const pl = this.getPlayer();
+    if (!pl) return false;
+    try {
+      if (typeof pl.setSelectedSlot === 'function') {
+        pl.setSelectedSlot(slot);
+        return true;
+      }
+      pl.selectedSlot = slot;
+      return (pl.selectedSlot ?? 0) === slot;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  getInventory(): Container | null {
+    const pl = this.getPlayer();
     return pl ? pl.getInventory() : null;
   }
 
-  getEquipment(): Record<string, any> {
-    const pl = this.getFirstPlayer();
+  getEquipment(): Record<string, string | null> {
+    const pl = this.getPlayer();
     if (!pl) return {};
     return {
       hand: pl.getHand()?.name || null,
@@ -85,41 +109,80 @@ export class PlayerAccessImpl implements PlayerAccess {
 // ── WorldAccess 实现 ──
 
 export class WorldAccessImpl implements WorldAccess {
-  getBlock(x: number, y: number, z: number): any {
-    // @ts-ignore
+  getBlock(x: number, y: number, z: number): Block | null {
     return mc.getBlock(x, y, z, 0);
   }
 
   getTime(): number {
-    // @ts-ignore
     return mc.getTime();
   }
 
   getWeather(): string {
-    // @ts-ignore
     const isRaining = mc.isRaining();
-    // @ts-ignore
     const isThunder = mc.isThundering();
     if (isThunder) return 'thunder';
     if (isRaining) return 'rain';
     return 'clear';
   }
 
-  getEntities(options?: any): any[] {
-    // @ts-ignore
+  getEntities(options?: Record<string, unknown>): Entity[] {
+    // @ts-expect-error — LLSE mc 类型声明中无 getEntities，但运行时可用
     return mc.getEntities(options);
   }
 
-  getOnlinePlayers(): any[] {
-    // @ts-ignore
+  getOnlinePlayers(): Player[] {
     return mc.getOnlinePlayers();
   }
 }
 
-// ── BotAccess 占位实现 ──
+// ── BotAccess 实现 ──
 
 export class BotAccessImpl implements BotAccess {
-  // V10 实现
+  private activeBotName: string | null = null;
+
+  getActiveBot(): BotHandle | null {
+    if (!this.activeBotName) return null;
+    return BotManager.get(this.activeBotName) as unknown as BotHandle | null;
+  }
+
+  setActiveBot(name: string): boolean {
+    const bot = BotManager.get(name);
+    if (!bot) return false;
+    this.activeBotName = name;
+    return true;
+  }
+
+  listBots(): BotHandle[] {
+    return BotManager.getAll().map((b) => b as unknown as BotHandle);
+  }
+
+  createBot(config: BotConfig): BotHandle | string {
+    const result = BotManager.create(config.name, config.pos, config.owner) as string;
+    if (result !== SUCCESS) return result;
+    return BotManager.get(config.name)! as unknown as BotHandle;
+  }
+
+  destroyBot(name: string): boolean {
+    const result = BotManager.remove(name);
+    return result === SUCCESS;
+  }
+
+  getBot(name: string): BotHandle | null {
+    return BotManager.get(name) as unknown as BotHandle | null;
+  }
+
+  getBotPlayer(name: string): Player | null {
+    const bot = BotManager.get(name);
+    return bot ? (bot.getPlayer() as Player) : null;
+  }
+}
+
+// 内部使用的假人手柄最小类型
+interface BotHandle {
+  name: string;
+  isOnline: boolean | (() => boolean);
+  getPlayer?: () => Player;
+  getInfo?: () => Record<string, unknown>;
 }
 
 // ── ToolContext 实现 ──
@@ -136,11 +199,19 @@ export class ToolContextImpl implements ToolContext {
     player?: PlayerAccess;
     world?: WorldAccess;
     bot?: BotAccess;
+    activeBotName?: string;
     sendEvent?: (event: EventNotification) => void;
   }) {
-    this.player = options.player || new PlayerAccessImpl();
-    this.world = options.world || new WorldAccessImpl();
     this.bot = options.bot || new BotAccessImpl();
+    if (options.activeBotName) {
+      this.bot.setActiveBot(options.activeBotName);
+    }
+    this.player = options.player || new PlayerAccessImpl(() => {
+      const activeBot = this.bot.getActiveBot();
+      if (activeBot && typeof activeBot.getPlayer === 'function') return activeBot.getPlayer();
+      return mc.getOnlinePlayers()[0] ?? null;
+    });
+    this.world = options.world || new WorldAccessImpl();
     this.sendEventFn = options.sendEvent || (() => {});
     this.startTime = Date.now();
   }

@@ -1,19 +1,9 @@
-// 生存操作引擎占位
+/**
+ * 生存操作引擎统一入口
+ */
 
-export class SurvivalEngine {
-  async eat(): Promise<void> {
-    // TODO: Auto-eat when hungry
-  }
-
-  async sleep(): Promise<void> {
-    // TODO: Find bed and sleep
-  }
-
-  async collect(blockType: string, count: number): Promise<void> {
-    // TODO: Mine / collect resources
-  }
-
-  async place(blockType: string, x: number, y: number, z: number): Promise<void> {
-    // TODO: Place block
-  }
-}
+export { SurvivalEngine } from './SurvivalEngine.js';
+export { FoodSelector, isFood, getFoodInfo, scoreFood } from './FoodSelector.js';
+export { BedFinder, isBed } from './BedFinder.js';
+export { ItemUser } from './ItemUser.js';
+export type * from './types.js';

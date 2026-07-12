@@ -109,12 +109,10 @@ export class MovementConfigManager {
    */
   loadFromFile(): void {
     try {
-      // @ts-ignore — LLSE 全局 File
       if (typeof File === 'undefined' || !File.exists('./plugins/Alices Mod/config.json')) {
         this.fileConfig = {};
         return;
       }
-      // @ts-ignore
       const content = File.readFrom('./plugins/Alices Mod/config.json');
       if (!content) return;
       const parsed = JSON.parse(content);

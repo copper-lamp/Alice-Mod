@@ -30,8 +30,7 @@ export function buildPongResponse(): string {
  */
 function getServerTick(): number {
   try {
-    // @ts-ignore — LLSE mc 类型声明中无 getCurrentTick，但运行时可用
-    const mcAny = mc as any;
+    const mcAny = mc as unknown as { getCurrentTick?: () => number };
     if (typeof mcAny !== 'undefined' && typeof mcAny.getCurrentTick === 'function') {
       return mcAny.getCurrentTick();
     }

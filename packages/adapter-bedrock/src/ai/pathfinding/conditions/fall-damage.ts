@@ -11,7 +11,6 @@ export class FallDamageCondition implements IPathCondition {
   evaluate(_ctx: PathContext, point: Vec3): ConditionEvaluation {
     try {
       // 检查当前点下方是否有支撑
-      // @ts-ignore
       const below = mc.getBlock(Math.floor(point.x), Math.floor(point.y - 1), Math.floor(point.z), 0);
       if (!below) {
         return { pass: false, costMultiplier: 3.0, reason: '下方无支撑' };

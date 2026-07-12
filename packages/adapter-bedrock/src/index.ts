@@ -68,14 +68,7 @@ function initPlugin(): void {
     handleStateChange(state);
   });
 
-  // 6. 初始化状态上报（暂不启动）
-  statusReporter = new StatusReporter({
-    sendNotification: (method, params) => tcpClient.sendNotification(method, params),
-    isConnected: () => tcpClient.isConnected(),
-    intervalMs: 2000,
-  });
-
-  // 7. 加载传统模块
+  // 6. 加载传统模块
   const BotManager = loadModule('./bot/BotManager.js', 'BotManager');
   if (!BotManager) return;
 
@@ -84,6 +77,14 @@ function initPlugin(): void {
   BotManager.init();
   _initialized = true;
 
+  // 7. 初始化状态上报（暂不启动），注入 BotManager 在线假人列表
+  statusReporter = new StatusReporter({
+    sendNotification: (method, params) => tcpClient.sendNotification(method, params),
+    isConnected: () => tcpClient.isConnected(),
+    getBots: () => BotManager.getAll(),
+    intervalMs: 2000,
+  });
+
   // 注册事件
   registerEvents(BotManager);
   registerCommands(BotManager, BotTestSuite);
@@ -91,8 +92,10 @@ function initPlugin(): void {
   logger.info(`${_NAME} 启动完成，等待服务器就绪...`);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function loadModule(path: string, name: string): any {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const mod = require(path);
     logger.debug(`模块已加载: ${name}`);
     return mod[name];
@@ -107,6 +110,28 @@ function loadModule(path: string, name: string): any {
 // ============================================================
 
 function registerEvents(BotManager: any): void {
+  // 假人状态变更事件监听（online / offline / death / created / removed）
+  BotManager.onEvent((event: { type: string; botName: string; timestamp: number }) => {
+    if (!tcpClient.isConnected()) return;
+
+    const eventTypeMap: Record<string, string> = {
+      online: 'bot_online',
+      offline: 'bot_offline',
+      death: 'death',
+      created: 'bot_created',
+      removed: 'bot_removed',
+    };
+
+    const eventType = eventTypeMap[event.type];
+    if (!eventType) return;
+
+    pushEvent(eventType, {
+      player_name: event.botName,
+      bot_name: event.botName,
+      timestamp: new Date(event.timestamp).toISOString(),
+    });
+  });
+
   // 服务器启动完成 — 连接 TCP + 加载数据 + 自动上线
   mc.listen('onServerStarted', () => {
     logger.info('服务器已就绪，开始初始化...');
@@ -195,6 +220,69 @@ function registerEvents(BotManager: any): void {
     }
   });
 
+  // V14: 实体攻击事件 — 假人被攻击时推送
+  safeListen('onMobHurt', (mob: any, source: any, damage: number) => {
+    if (!_initialized || !tcpClient.isConnected()) return;
+    if (!mob || !mob.isSimulatedPlayer || !mob.isSimulatedPlayer()) return;
+
+    const bot = BotManager.get(mob.realName);
+    if (!bot) return;
+
+    pushEvent('entity_attack', {
+      player_name: mob.realName,
+      bot_name: mob.realName,
+      attacker: source ? String(source) : 'unknown',
+      damage: typeof damage === 'number' ? damage : 0,
+    });
+  });
+
+  // V14: 低血量 / 低饥饿值周期性检测
+  const thresholdState: Record<string, { healthLow: boolean; hungerLow: boolean }> = {};
+  setInterval(() => {
+    if (!_initialized || !tcpClient.isConnected()) return;
+
+    for (const bot of BotManager.getAll()) {
+      if (!bot.isOnline()) {
+        delete thresholdState[bot.name];
+        continue;
+      }
+
+      const pl = bot.getPlayer();
+      if (!pl) continue;
+
+      const health = pl.getHealth();
+      const hunger = pl.getHunger();
+      const maxHealth = pl.getMaxHealth();
+      const healthThreshold = Math.max(3, Math.floor(maxHealth * 0.3));
+      const hungerThreshold = 6;
+
+      const state = thresholdState[bot.name] || { healthLow: false, hungerLow: false };
+      const healthLow = health <= healthThreshold;
+      const hungerLow = hunger <= hungerThreshold;
+
+      if (healthLow && !state.healthLow) {
+        pushEvent('health_low', {
+          player_name: bot.name,
+          bot_name: bot.name,
+          health,
+          max_health: maxHealth,
+          threshold: healthThreshold,
+        });
+      }
+
+      if (hungerLow && !state.hungerLow) {
+        pushEvent('hunger_low', {
+          player_name: bot.name,
+          bot_name: bot.name,
+          hunger,
+          threshold: hungerThreshold,
+        });
+      }
+
+      thresholdState[bot.name] = { healthLow, hungerLow };
+    }
+  }, 2000);
+
   // 注意：onServerStop 事件在部分 LSE 版本中不可用，跳过清理注册
   // （BDS 关闭时会自动释放资源）
 }
@@ -241,12 +329,13 @@ function handleMessage(msg: JsonRpcMessage): void {
 
 // 单个工具调用处理
 async function handleToolCall(request: JsonRpcRequest): Promise<void> {
-  const { tool_name, parameters } = request.params || {};
+  const { tool_name, parameters, bot_id } = request.params || {};
 
   const ctx = new ToolContextImpl({
+    activeBotName: bot_id,
     sendEvent: (event) => tcpClient.sendNotification('event', {
       event_type: event.type,
-      severity: 'info',
+      severity: getEventSeverity(event.type),
       timestamp: event.timestamp || new Date().toISOString(),
       data: event.data,
     }),
@@ -263,12 +352,13 @@ async function handleToolCallBatch(request: JsonRpcRequest): Promise<void> {
   const results: any[] = [];
 
   for (const call of calls) {
-    const { tool_name, parameters } = call;
+    const { tool_name, parameters, bot_id } = call;
 
     const ctx = new ToolContextImpl({
+      activeBotName: bot_id,
       sendEvent: (event) => tcpClient.sendNotification('event', {
         event_type: event.type,
-        severity: 'info',
+        severity: getEventSeverity(event.type),
         timestamp: event.timestamp || new Date().toISOString(),
         data: event.data,
       }),
@@ -347,10 +437,9 @@ function getEventSeverity(eventType: string): string {
   switch (eventType) {
     case 'entity_attack':
     case 'health_low':
+    case 'hunger_low':
     case 'death':
     case 'tool_broken':
-      return 'warning';
-    case 'hunger_low':
       return 'warning';
     case 'inventory_full':
     case 'player_chat':
@@ -358,6 +447,10 @@ function getEventSeverity(eventType: string): string {
     case 'player_leave':
     case 'environment_change':
     case 'task_completed':
+    case 'bot_online':
+    case 'bot_offline':
+    case 'bot_created':
+    case 'bot_removed':
       return 'info';
     default:
       return 'info';

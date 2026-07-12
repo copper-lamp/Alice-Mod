@@ -88,7 +88,6 @@ export class MovementRouter {
    */
   private isClimbable(pos: Vec3, _ctx: PathContext): boolean {
     try {
-      // @ts-ignore
       const block = mc.getBlock(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z), 0);
       if (!block) return false;
       const name = String(block.name || block.type || '');
@@ -103,7 +102,6 @@ export class MovementRouter {
    */
   private isWater(pos: Vec3, _ctx: PathContext): boolean {
     try {
-      // @ts-ignore
       const block = mc.getBlock(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z), 0);
       if (!block) return false;
       const name = String(block.name || block.type || '');

@@ -22,7 +22,6 @@ export class FallRiskCondition implements IExecutionCondition {
       const fy = Math.floor(pos.y);
 
       for (let dy = 0; dy >= -FALL_DAMAGE_THRESHOLD - 2; dy--) {
-        // @ts-ignore
         const block = mc.getBlock(fx, fy + dy, fz, 0);
         if (block) {
           const name = String(block.name || block.type || '').toLowerCase();
