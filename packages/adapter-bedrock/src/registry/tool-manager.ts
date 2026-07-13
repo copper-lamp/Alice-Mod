@@ -32,6 +32,7 @@ export class ToolManager {
   ): Promise<ToolResult> {
     const tool = this.registry.get(name);
     if (!tool) {
+      logger.error(`[ToolManager] 工具未找到: ${name}`);
       return {
         success: false,
         error: `工具未找到: ${name}`,
@@ -43,6 +44,7 @@ export class ToolManager {
       ?? tool.metadata.execution?.timeout_default_ms
       ?? 30000;
 
+    logger.info(`[ToolManager] 开始执行工具 ${name}, 参数=${JSON.stringify(params)}, 超时=${timeout}ms`);
     const startTime = Date.now();
 
     try {
@@ -51,15 +53,26 @@ export class ToolManager {
         createTimeout(timeout, name),
       ]);
 
+      const duration = Date.now() - startTime;
+      if (result.success) {
+        logger.info(`[ToolManager] 工具 ${name} 执行成功, 耗时=${duration}ms`);
+      } else {
+        logger.warn(`[ToolManager] 工具 ${name} 执行失败, 耗时=${duration}ms, 错误=${result.error || 'unknown'}`);
+      }
+
       return {
         ...result,
-        duration_ms: Date.now() - startTime,
+        duration_ms: duration,
       };
     } catch (err) {
+      const duration = Date.now() - startTime;
+      const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : '';
+      logger.error(`[ToolManager] 工具 ${name} 执行异常, 耗时=${duration}ms, 错误=${message}\n${stack || ''}`);
       return {
         success: false,
-        error: err instanceof Error ? err.message : String(err),
-        duration_ms: Date.now() - startTime,
+        error: message,
+        duration_ms: duration,
       };
     }
   }

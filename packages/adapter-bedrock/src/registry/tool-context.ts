@@ -125,9 +125,21 @@ export class WorldAccessImpl implements WorldAccess {
     return 'clear';
   }
 
-  getEntities(options?: Record<string, unknown>): Entity[] {
-    // @ts-expect-error — LLSE mc 类型声明中无 getEntities，但运行时可用
-    return mc.getEntities(options);
+  getEntities(_options?: Record<string, unknown>): Entity[] {
+    if (typeof (mc as any).getEntities !== 'function') return [];
+    try {
+      const res = (mc as any).getEntities();
+      if (Array.isArray(res)) return res;
+    } catch (e) {
+      // ignore
+    }
+    try {
+      const res = (mc as any).getEntities({});
+      if (Array.isArray(res)) return res;
+    } catch (e) {
+      // ignore
+    }
+    return [];
   }
 
   getOnlinePlayers(): Player[] {

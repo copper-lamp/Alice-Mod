@@ -256,12 +256,16 @@ export class ActionController implements IActionController {
   selectItem(name: string): boolean {
     if (!this.ensurePlayer()) return false;
     try {
+      const normalized = this.normalizeItemName(name);
       const inv = this.player.getInventory();
       const size = inv.size ?? 36;
       for (let i = 0; i < size; i++) {
         const item = inv.getItem(i);
-        if (item && !item.isNull() && item.name === name) {
-          return this.selectSlot(i);
+        if (item && !item.isNull()) {
+          const itemId = this.normalizeItemName(item.type || item.name);
+          if (itemId === normalized) {
+            return this.selectSlot(i);
+          }
         }
       }
       return false;
@@ -269,6 +273,13 @@ export class ActionController implements IActionController {
       logger.warn('[ActionController] selectItem 失败', e);
       return false;
     }
+  }
+
+  private normalizeItemName(name: string): string {
+    return String(name)
+      .trim()
+      .toLowerCase()
+      .replace(/^minecraft:/, '');
   }
 
   private ensurePlayer(): boolean {

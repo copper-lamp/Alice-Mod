@@ -20,6 +20,12 @@ export interface MainMenuAction {
   category?: string;
 }
 
+/** 工具选择动作 */
+export interface ToolSelectAction {
+  type: 'parametric' | 'quick';
+  toolName: string;
+}
+
 /** 冒烟测试用例 */
 export interface SmokeTestCase {
   tool: string;

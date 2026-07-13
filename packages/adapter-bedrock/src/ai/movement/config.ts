@@ -145,6 +145,7 @@ export class MovementConfigManager {
       preferredBlock: options.preferredBlock ?? blockInteraction.preferredBlock ?? DEFAULT_CONFIG.blockInteraction.preferredBlock,
       maxRange: options.maxRange ?? file.maxRange ?? DEFAULT_CONFIG.maxRange,
       pathfinding: options.pathfinding ?? 'astar',
+      allowTeleportFallback: options.allowTeleportFallback ?? false,
     };
   }
 

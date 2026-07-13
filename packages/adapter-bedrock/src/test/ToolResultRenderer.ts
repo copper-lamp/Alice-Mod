@@ -15,6 +15,8 @@ export class ToolResultRenderer {
     result: ToolResult,
     onBack?: (player: Player) => void,
   ): void {
+    this.sendChatSummary(player, toolName, result);
+
     const form = mc.newSimpleForm();
     form.setTitle(`§l测试结果: ${toolName}`);
 
@@ -39,6 +41,18 @@ export class ToolResultRenderer {
         onBack(pl);
       }
     });
+  }
+
+  /**
+   * 将测试结果摘要输出到玩家聊天框，方便连续测试时快速查看
+   */
+  static sendChatSummary(player: Player, toolName: string, result: ToolResult): void {
+    const icon = result.success ? '§a✓' : '§c✗';
+    let text = `${icon} §f${toolName} §7${result.duration_ms}ms`;
+    if (result.error) {
+      text += ` §c${result.error}`;
+    }
+    player.sendText(text);
   }
 
   /**

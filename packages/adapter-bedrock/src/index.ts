@@ -15,6 +15,7 @@ import { InstanceFileHelper } from './entry/instance-file.js';
 import { TOOLS_DIR } from './utils/constants.js';
 import { configManager } from './config/index.js';
 import { InGameToolTester } from './test/InGameToolTester.js';
+import { DefaultParamProvider } from './test/DefaultParamProvider.js';
 
 const _VER: [number, number, number] = [1, 0, 0];
 const _NAME = 'Alice Mod BE';
@@ -179,6 +180,13 @@ function registerEvents(BotManager: any): void {
     try { BotManager.initialAutoOnline(); } catch (e) { logger.warn('自动上线失败', e); }
 
     logger.info(`${_NAME} 已就绪`);
+
+    // 自动冒烟测试（调试期间启用）
+    setTimeout(() => {
+      runAutoSmokeTest(BotManager, toolManager).catch((err) => {
+        logger.error('[AutoSmokeTest] 启动失败', err);
+      });
+    }, 12000);
   });
 
   // Tick — 驱动假人同步
@@ -487,6 +495,108 @@ function getEventSeverity(eventType: string): string {
 }
 
 // ============================================================
+// 临时自动冒烟测试（调试专用）
+// ============================================================
+
+const AUTO_TEST_BOT = '__TEST_Bot';
+const AUTO_TEST_POS = { x: -89, y: 64, z: -106, dimid: 0 };
+const AUTO_TEST_TOOLS = [
+  'move_to', 'sleep', 'mine_block', 'place_block',
+];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runAutoSmokeTest(BotManager: any, toolMgr: ToolManager): Promise<void> {
+  logger.info('[AutoSmokeTest] 开始自动冒烟测试');
+  try {
+    // 0. 清理历史测试假人数据，避免脏状态影响测试
+    const existing = BotManager.get(AUTO_TEST_BOT);
+    if (existing && existing.isOnline && existing.isOnline()) {
+      existing.offline(false);
+      await sleep(500);
+    }
+    try { BotManager.deleteData(AUTO_TEST_BOT); } catch (e) { /* ignore */ }
+    try { BotManager.deleteInventory(AUTO_TEST_BOT); } catch (e) { /* ignore */ }
+    await sleep(200);
+
+    // 1. 创建假人
+    if (!BotManager.get(AUTO_TEST_BOT)) {
+      const createResult = BotManager.create(AUTO_TEST_BOT, AUTO_TEST_POS);
+      if (createResult && createResult !== 'SUCCESS') {
+        logger.error(`[AutoSmokeTest] 创建假人失败: ${createResult}`);
+        return;
+      }
+      logger.info(`[AutoSmokeTest] 已创建假人 ${AUTO_TEST_BOT}`);
+    }
+
+    // 2. 上线假人
+    const onlineResult = BotManager.online(AUTO_TEST_BOT, false);
+    if (onlineResult && onlineResult !== 'SUCCESS') {
+      logger.error(`[AutoSmokeTest] 上线假人失败: ${onlineResult}`);
+      return;
+    }
+    logger.info(`[AutoSmokeTest] 假人 ${AUTO_TEST_BOT} 已上线`);
+
+    await sleep(2000);
+
+    // 3. 将假人传送到指定测试坐标
+    const tpResult = BotManager.teleportToPos(AUTO_TEST_BOT, AUTO_TEST_POS);
+    if (tpResult && tpResult !== 'SUCCESS') {
+      logger.error(`[AutoSmokeTest] 传送假人失败: ${tpResult}`);
+      return;
+    }
+    logger.info(`[AutoSmokeTest] 假人已传送至 ${JSON.stringify(AUTO_TEST_POS)}`);
+
+    await sleep(2000);
+
+    const bot = BotManager.get(AUTO_TEST_BOT);
+    const botPlayer = bot?.getPlayer ? bot.getPlayer() : null;
+    if (!botPlayer) {
+      logger.error('[AutoSmokeTest] 无法获取假人 Player 对象');
+      return;
+    }
+
+    // 3. 准备测试环境
+    const { TestEnvironmentPreparer } = await import('./test/TestEnvironmentPreparer.js');
+    await TestEnvironmentPreparer.prepare(AUTO_TEST_BOT, botPlayer);
+    await sleep(1000);
+
+    // 4. 依次执行冒烟工具
+    for (const toolName of AUTO_TEST_TOOLS) {
+      const tool = toolMgr.getRegistry().get(toolName);
+      if (!tool) {
+        logger.warn(`[AutoSmokeTest] 工具未注册: ${toolName}`);
+        continue;
+      }
+      const params = DefaultParamProvider.generate(botPlayer, tool.metadata);
+      const ctx = new ToolContextImpl({ activeBotName: AUTO_TEST_BOT });
+      try {
+        const result = await toolMgr.executeTool(toolName, params, ctx);
+        logger.info(`[AutoSmokeTest] ${toolName}: success=${result.success}, duration=${result.duration_ms}ms, error=${result.error || 'none'}`);
+      } catch (err) {
+        logger.error(`[AutoSmokeTest] ${toolName} 异常: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      await sleep(500);
+    }
+
+    logger.info('[AutoSmokeTest] 冒烟测试执行完毕');
+  } catch (err) {
+    logger.error(`[AutoSmokeTest] 自动测试异常: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    await sleep(2000);
+    const api = mc as any;
+    if (typeof api.runcmdEx === 'function') {
+      api.runcmdEx('stop');
+    } else if (typeof api.runcmd === 'function') {
+      api.runcmd('stop');
+    }
+    logger.info('[AutoSmokeTest] 已发送 stop 命令');
+  }
+}
+
+// ============================================================
 // 命令注册
 // ============================================================
 
@@ -494,8 +604,10 @@ function registerCommands(BotManager: any, BotTestSuite: any, guiTester: InGameT
   try {
     const cmd = mc.newCommand('mcagent', 'McAgent 插件控制', PermType.GameMasters, 0x80);
 
-    // /mcagent <action: string>
+    // /mcagent <action: string> [tool: string]
     cmd.optional('action', ParamType.String);
+    cmd.optional('tool', ParamType.String);
+    cmd.overload(['action', 'tool']);
     cmd.overload(['action']);
 
     // /mcagent (无参数)
@@ -504,7 +616,8 @@ function registerCommands(BotManager: any, BotTestSuite: any, guiTester: InGameT
     cmd.setCallback((_cmd: any, _ori: any, out: any, res: any) => {
       try {
         const action = res.action ? String(res.action).toLowerCase() : 'info';
-        logger.info(`[Alice Mod] /mcagent 命令被调用, action=${action}, origin.player=${!!_ori.player}`);
+        const toolArg = res.tool ? String(res.tool) : '';
+        logger.info(`[Alice Mod] /mcagent 命令被调用, action=${action}, tool=${toolArg}, origin.player=${!!_ori.player}`);
 
         if (action === 'test') {
           if (_ori.player) {
@@ -513,6 +626,24 @@ function registerCommands(BotManager: any, BotTestSuite: any, guiTester: InGameT
             } catch (guiErr) {
               out.error(`打开测试菜单失败: ${guiErr}`);
               logger.error('[Alice Mod] guiTester.onCommand 异常', guiErr);
+            }
+          } else {
+            out.error('GUI 模式仅限玩家使用');
+          }
+          return;
+        }
+
+        if (action === 'quicktest') {
+          if (_ori.player) {
+            if (!toolArg) {
+              out.error('用法: /mcagent quicktest <tool_name>');
+              return;
+            }
+            try {
+              guiTester.quickTestCommand(_ori.player, toolArg);
+            } catch (qtErr) {
+              out.error(`快速测试失败: ${qtErr}`);
+              logger.error('[Alice Mod] guiTester.quickTestCommand 异常', qtErr);
             }
           } else {
             out.error('GUI 模式仅限玩家使用');
@@ -549,10 +680,11 @@ function registerCommands(BotManager: any, BotTestSuite: any, guiTester: InGameT
           `§e状态: ${_initialized ? '§a已就绪' : '§c未就绪'}\n` +
           info + '\n' +
           '\n§a可用命令:\n' +
-          '  /mcagent            §7- 查看插件信息\n' +
-          '  /mcagent test       §7- 打开工具测试菜单\n' +
-          '  /mcagent legacytest §7- 打开旧版测试菜单\n' +
-          '  /mcagent info       §7- 查看插件信息'
+          '  /mcagent                         §7- 查看插件信息\n' +
+          '  /mcagent test                    §7- 打开工具测试菜单\n' +
+          '  /mcagent quicktest <tool_name>   §7- 使用推荐参数快速测试工具\n' +
+          '  /mcagent legacytest              §7- 打开旧版测试菜单\n' +
+          '  /mcagent info                    §7- 查看插件信息'
         );
       } catch (e) {
         out.error(`指令执行出错: ${e}`);

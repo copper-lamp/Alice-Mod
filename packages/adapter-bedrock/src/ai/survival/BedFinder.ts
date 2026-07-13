@@ -81,7 +81,7 @@ export class BedFinder {
           const z = baseZ + dz;
 
           const block = this.world.getBlock(x, y, z);
-          if (!block || !isBed(block.name)) continue;
+          if (!block || !isBed(block.type || block.name)) continue;
 
           const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
           if (!best || distance < best.distance) {
@@ -112,7 +112,7 @@ export class BedFinder {
     }
 
     const block = this.world.getBlock(bedPos.x, bedPos.y, bedPos.z);
-    if (!block || !isBed(block.name) || isBedOccupied(block)) {
+    if (!block || !isBed(block.type || block.name) || isBedOccupied(block)) {
       return { ok: false, reason: 'BED_UNAVAILABLE' };
     }
 
@@ -121,7 +121,7 @@ export class BedFinder {
 
   private hasMonstersNearby(bedPos: Vec3, radius = 8): boolean {
     try {
-      const entities = this.world.getEntities();
+      const entities = this.safeGetEntities();
       for (const e of entities) {
         const type = String(e.type || e.name || '').toLowerCase();
         if (!HOSTILE_MOBS.some((h) => type.includes(h))) continue;
@@ -140,6 +140,45 @@ export class BedFinder {
       // 忽略实体读取失败
     }
     return false;
+  }
+
+  /**
+   * 安全调用 world.getEntities / mc.getEntities，兼容不同 LLSE 版本。
+   */
+  private safeGetEntities(): any[] {
+    try {
+      if (this.world && typeof this.world.getEntities === 'function') {
+        try {
+          const res = this.world.getEntities();
+          if (Array.isArray(res)) return res;
+        } catch (e) {
+          // ignore
+        }
+        try {
+          const res = this.world.getEntities({});
+          if (Array.isArray(res)) return res;
+        } catch (e) {
+          // ignore
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    if (typeof (mc as any).getEntities !== 'function') return [];
+    try {
+      const res = (mc as any).getEntities();
+      if (Array.isArray(res)) return res;
+    } catch (e) {
+      // ignore
+    }
+    try {
+      const res = (mc as any).getEntities({});
+      if (Array.isArray(res)) return res;
+    } catch (e) {
+      // ignore
+    }
+    return [];
   }
 
   private safeGetTime(): number {

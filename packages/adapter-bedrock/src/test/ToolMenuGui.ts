@@ -3,7 +3,7 @@
  */
 
 import type { ToolCategory } from '../registry/tool-module.types.js';
-import type { MainMenuAction } from './types.js';
+import type { MainMenuAction, ToolSelectAction } from './types.js';
 
 const CATEGORY_LABELS: Record<ToolCategory | string, string> = {
   movement: '§a移动工具\nmove_to / ride / dismount',
@@ -93,12 +93,12 @@ export class ToolMenuGui {
     player: Player,
     category: string,
     tools: Array<{ name: string; description: string }>,
-    onSelect: (toolName: string) => void,
+    onSelect: (action: ToolSelectAction) => void,
     onBack: () => void,
   ): void {
     const form = mc.newSimpleForm();
     form.setTitle(`§l${CATEGORY_LABELS[category] || category}`);
-    form.setContent('§7选择一个工具进行测试');
+    form.setContent('§7选择一个工具，快速测试将使用推荐默认值直接执行');
 
     for (const tool of tools) {
       form.addButton(`§f${tool.name}\n§7${tool.description}`);
@@ -113,8 +113,31 @@ export class ToolMenuGui {
       }
       const selected = tools[id];
       if (selected) {
-        onSelect(selected.name);
+        this.showToolActionMenu(_pl, selected, (action) => onSelect(action));
       }
+    });
+  }
+
+  /**
+   * 工具动作选择菜单：参数化测试 / 快速测试
+   */
+  private static showToolActionMenu(
+    player: Player,
+    tool: { name: string; description: string },
+    onSelect: (action: ToolSelectAction) => void,
+  ): void {
+    const form = mc.newSimpleForm();
+    form.setTitle(`§l${tool.name}`);
+    form.setContent(`§7${tool.description}\n\n§a快速测试§7: 使用推荐默认值直接执行\n§b参数化测试§7: 手动填写参数`);
+
+    form.addButton('§a⚡ 快速测试（推荐）');
+    form.addButton('§b⚙ 参数化测试');
+    form.addButton('§7⇠ 返回列表');
+
+    player.sendForm(form, (_pl, id) => {
+      if (id == null) return;
+      if (id === 2) return;
+      onSelect({ type: id === 0 ? 'quick' : 'parametric', toolName: tool.name });
     });
   }
 

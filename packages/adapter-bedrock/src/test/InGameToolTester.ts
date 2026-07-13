@@ -12,32 +12,35 @@ import { ToolMenuGui } from './ToolMenuGui.js';
 import { ToolParamFormBuilder } from './ToolParamFormBuilder.js';
 import { ToolResultRenderer } from './ToolResultRenderer.js';
 import { ToolTestReport } from './ToolTestReport.js';
+import { DefaultParamProvider } from './DefaultParamProvider.js';
+import { TestEnvironmentPreparer } from './TestEnvironmentPreparer.js';
 import type {
   GuiTestConfig,
   MainMenuAction,
   PlayerSession,
   SmokeTestCase,
+  ToolSelectAction,
 } from './types.js';
 
 const SUPPORTED_CATEGORIES = new Set(['movement', 'inventory', 'survival', 'block']);
 
-/** 默认冒烟测试用例 */
-const DEFAULT_SMOKE_CASES: Record<string, SmokeTestCase> = {
-  move_to: { tool: 'move_to', params: { target_type: 'coordinate', target: { x: '{bot.x}', y: '{bot.y}', z: '{bot.z}' } } },
-  ride: { tool: 'ride', params: { target_type: 'nearby_rideable' } },
-  dismount: { tool: 'dismount', params: {} },
-  drop_item: { tool: 'drop_item', params: { slot: 0, count: 1 } },
-  take_from_container: { tool: 'take_from_container', params: { direction: 'front', take_all: true } },
-  put_to_container: { tool: 'put_to_container', params: { direction: 'front', slot: 0, count: 1 } },
-  equip_item: { tool: 'equip_item', params: { slot: 0, destination: 'head' } },
-  eat: { tool: 'eat', params: { food_name: '' } },
-  sleep: { tool: 'sleep', params: { force_wake: false } },
-  use_item: { tool: 'use_item', params: { slot: 0 } },
-  mine_block: { tool: 'mine_block', params: { x: '{view.x}', y: '{view.y}', z: '{view.z}' } },
-  place_block: { tool: 'place_block', params: { block_name: 'dirt', x: '{feet.x}', y: '{feet.y}', z: '{feet.z}' } },
-  use_block: { tool: 'use_block', params: { x: '{view.x}', y: '{view.y}', z: '{view.z}' } },
-  area_operation: { tool: 'area_operation', params: { action: 'clear', from: '{feet.x},{feet.y},{feet.z}', to: '{feet.x+2},{feet.y+2},{feet.z+2}' } },
-};
+/** 默认冒烟测试工具列表（参数由 DefaultParamProvider 基于假人环境生成） */
+const DEFAULT_SMOKE_TOOLS = [
+  'move_to',
+  'ride',
+  'dismount',
+  'drop_item',
+  'take_from_container',
+  'put_to_container',
+  'equip_item',
+  'eat',
+  'sleep',
+  'use_item',
+  'mine_block',
+  'place_block',
+  'use_block',
+  'area_operation',
+];
 
 export class InGameToolTester {
   private sessions = new Map<string, PlayerSession>();
@@ -136,9 +139,73 @@ export class InGameToolTester {
       player,
       category,
       tools,
-      (toolName) => this.showToolForm(player, toolName),
+      (action) => this.handleToolSelectAction(player, action),
       () => this.showMainMenu(player),
     );
+  }
+
+  /**
+   * 处理工具选择动作
+   */
+  private async handleToolSelectAction(player: Player, action: ToolSelectAction): Promise<void> {
+    if (action.type === 'quick') {
+      await this.quickTest(player, action.toolName);
+    } else {
+      this.showToolForm(player, action.toolName);
+    }
+  }
+
+  /**
+   * 快速测试：使用推荐默认值直接执行
+   */
+  private async quickTest(player: Player, toolName: string): Promise<void> {
+    const tool = this.toolManager.getRegistry().get(toolName);
+    if (!tool) {
+      ToolResultRenderer.renderError(player, `工具 ${toolName} 未找到`, (pl) => this.showMainMenu(pl));
+      return;
+    }
+
+    const session = this.getSession(player);
+    const botPlayer = BotManager.get(session.activeBot)?.getPlayer();
+    if (!botPlayer) {
+      ToolResultRenderer.renderError(player, `假人 ${session.activeBot} 不在线`, (pl) => this.showMainMenu(pl));
+      return;
+    }
+
+    // 单项测试不准备环境，完全依赖当前世界状态
+    let params: Record<string, unknown>;
+    if (toolName === 'move_to') {
+      // 快速测试 move_to：寻路到发起测试的玩家所在位置，禁用传送兜底
+      const feet = this.getPlayerFeet(player);
+      params = {
+        target_type: 'coordinate',
+        target: feet,
+        options: { timeout: 30000, allowSprint: true, allowSwim: true, allowGlide: true, allowTeleportFallback: false },
+      };
+    } else {
+      params = DefaultParamProvider.generate(botPlayer, tool.metadata);
+    }
+    logger.info(`[InGameToolTester] 快速测试 ${toolName}, params=${JSON.stringify(params)}`);
+    this.executeTool(player, toolName, params);
+  }
+
+  /**
+   * 聊天命令：快速测试指定工具
+   */
+  quickTestCommand(player: Player, toolName: string): void {
+    if (!this.checkPermission(player)) {
+      player.sendText('§c需要 OP 权限或白名单才能使用测试工具');
+      return;
+    }
+
+    const onlineBots = this.getOnlineBots();
+    if (onlineBots.length === 0) {
+      player.sendText('§c没有在线假人');
+      return;
+    }
+
+    this.ensureSession(player, onlineBots);
+    this.quickTest(player, toolName);
   }
 
   /**
@@ -197,9 +264,11 @@ export class InGameToolTester {
   ): Promise<void> {
     const session = this.getSession(player);
     const ctx = new ToolContextImpl({ activeBotName: session.activeBot });
+    logger.info(`[InGameToolTester] doExecute: tool=${toolName}, bot=${session.activeBot}, params=${JSON.stringify(params)}`);
 
     try {
       const result = await this.toolManager.executeTool(toolName, params, ctx);
+      logger.info(`[InGameToolTester] doExecute 完成: tool=${toolName}, success=${result.success}, error=${result.error || 'none'}`);
       ToolResultRenderer.render(player, toolName, result, (pl) => this.showMainMenu(pl));
       this.report.append({
         id: `${Date.now()}_${toolName}_${player.realName}`,
@@ -213,6 +282,8 @@ export class InGameToolTester {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : '';
+      logger.error(`[InGameToolTester] doExecute 异常: tool=${toolName}, error=${message}\n${stack || ''}`);
       ToolResultRenderer.renderError(player, message, (pl) => this.showMainMenu(pl));
     }
   }
@@ -242,6 +313,16 @@ export class InGameToolTester {
   }
 
   private async doSmokeTest(player: Player): Promise<void> {
+    const session = this.getSession(player);
+    const botPlayer = BotManager.get(session.activeBot)?.getPlayer();
+    if (!botPlayer) {
+      ToolResultRenderer.renderError(player, `目标假人 ${session.activeBot} 不在线`, (pl) => this.showMainMenu(pl));
+      return;
+    }
+
+    player.sendText('§e[测试] 正在准备测试环境...');
+    await TestEnvironmentPreparer.prepare(session.activeBot, botPlayer);
+
     const cases = this.buildSmokeCases(player);
     const results: { tool: string; result: ToolResult }[] = [];
 
@@ -250,7 +331,7 @@ export class InGameToolTester {
       ToolResultRenderer.sendProgress(player, i + 1, cases.length, tool);
 
       try {
-        const ctx = new ToolContextImpl({ activeBotName: this.getSession(player).activeBot });
+        const ctx = new ToolContextImpl({ activeBotName: session.activeBot });
         const result = await this.toolManager.executeTool(tool, params, ctx);
         results.push({ tool, result });
         this.report.append({
@@ -281,98 +362,28 @@ export class InGameToolTester {
   private buildSmokeCases(player: Player): SmokeTestCase[] {
     const cases: SmokeTestCase[] = [];
     const registry = this.toolManager.getRegistry();
+    const session = this.getSession(player);
+    const botPlayer = BotManager.get(session.activeBot)?.getPlayer();
 
-    for (const [name, defaultCase] of Object.entries(DEFAULT_SMOKE_CASES)) {
-      // 跳过未注册的工具
-      if (!registry.get(name)) continue;
+    for (const name of DEFAULT_SMOKE_TOOLS) {
+      const tool = registry.get(name);
+      if (!tool) continue;
 
       // 允许配置覆盖
       const configured = this.config.smoke_cases[name];
-      const base = configured || defaultCase;
-      const resolved = this.resolveParams(base.params, player);
-      cases.push({ tool: base.tool, params: resolved });
+      if (configured) {
+        cases.push({ tool: configured.tool, params: configured.params });
+        continue;
+      }
+
+      // 基于假人环境生成默认参数
+      const params = botPlayer
+        ? DefaultParamProvider.generate(botPlayer, tool.metadata)
+        : {};
+      cases.push({ tool: name, params });
     }
 
     return cases;
-  }
-
-  /**
-   * 解析参数中的占位符
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private resolveParams(value: any, player: Player): any {
-    if (typeof value === 'string') {
-      return this.resolvePlaceholder(value, player);
-    }
-    if (Array.isArray(value)) {
-      return value.map((v) => this.resolveParams(v, player));
-    }
-    if (value && typeof value === 'object') {
-      const result: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(value)) {
-        result[k] = this.resolveParams(v, player);
-      }
-      return result;
-    }
-    return value;
-  }
-
-  private resolvePlaceholder(value: string, player: Player): string | number | boolean | Record<string, number> {
-    // 逗号分隔坐标字符串："{feet.x},{feet.y},{feet.z}"
-    if (value.includes(',')) {
-      const parts = value.split(',').map((p) => this.resolvePlaceholder(p.trim(), player));
-      // 如果三部分都是数字，尝试组合为对象
-      if (
-        parts.length === 3 &&
-        typeof parts[0] === 'number' &&
-        typeof parts[1] === 'number' &&
-        typeof parts[2] === 'number'
-      ) {
-        return { x: parts[0], y: parts[1], z: parts[2] };
-      }
-      return value.split(',').map((p) => this.resolvePlaceholder(p.trim(), player)).join(',');
-    }
-
-    const match = value.match(/^\{([a-zA-Z_]+)\.([a-zA-Z_]+)([+-]\d+)?\}$/);
-    if (!match) return value;
-
-    const [, source, axis, offsetStr] = match;
-    let base = 0;
-
-    if (source === 'player') {
-      if (axis === 'x') base = Math.floor(player.pos.x);
-      else if (axis === 'y') base = Math.floor(player.pos.y);
-      else if (axis === 'z') base = Math.floor(player.pos.z);
-      else if (axis === 'dimid') base = player.pos.dimid;
-    } else if (source === 'bot') {
-      const bot = BotManager.get(this.getSession(player).activeBot);
-      const pl = bot?.getPlayer();
-      if (pl) {
-        if (axis === 'x') base = Math.floor(pl.pos.x);
-        else if (axis === 'y') base = Math.floor(pl.pos.y);
-        else if (axis === 'z') base = Math.floor(pl.pos.z);
-        else if (axis === 'dimid') base = pl.pos.dimid;
-      }
-    } else if (source === 'feet') {
-      if (axis === 'x') base = Math.floor(player.pos.x);
-      else if (axis === 'y') base = Math.floor(player.pos.y) - 1;
-      else if (axis === 'z') base = Math.floor(player.pos.z);
-    } else if (source === 'view') {
-      const block = player.getBlockFromViewVector();
-      const pos = block ? block.pos : null;
-      if (pos) {
-        if (axis === 'x') base = pos.x;
-        else if (axis === 'y') base = pos.y;
-        else if (axis === 'z') base = pos.z;
-      } else {
-        if (axis === 'x') base = Math.floor(player.pos.x);
-        else if (axis === 'y') base = Math.floor(player.pos.y);
-        else if (axis === 'z') base = Math.floor(player.pos.z);
-      }
-    }
-
-    const offset = offsetStr ? Number(offsetStr) : 0;
-    return base + offset;
   }
 
   /**
@@ -450,5 +461,20 @@ export class InGameToolTester {
       return this.sessions.get(player.xuid)!;
     }
     return session;
+  }
+
+  /**
+   * 获取人类玩家的脚部坐标（整数方块坐标）
+   */
+  private getPlayerFeet(player: Player): { x: number; y: number; z: number; dimid: number } {
+    const feet = player.feetPos
+      ? { x: player.feetPos.x, y: player.feetPos.y, z: player.feetPos.z }
+      : { x: player.pos.x, y: player.pos.y - 1.62, z: player.pos.z };
+    return {
+      x: Math.floor(feet.x),
+      y: Math.floor(feet.y),
+      z: Math.floor(feet.z),
+      dimid: player.pos.dimid,
+    };
   }
 }

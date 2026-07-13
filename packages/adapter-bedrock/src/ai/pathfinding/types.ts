@@ -57,6 +57,8 @@ export interface PathOptions {
   preferredBlock?: string;
   maxRange?: number;
   pathfinding?: 'astar';
+  /** 测试模式：移动卡住时允许传送回退（仅用于自动化测试） */
+  allowTeleportFallback?: boolean;
 }
 
 // ── 寻路上下文 ──

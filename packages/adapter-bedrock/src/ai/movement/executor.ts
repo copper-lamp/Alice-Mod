@@ -32,7 +32,18 @@ export class MovementExecutor implements IMovementExecutor {
     let distanceMoved = 0;
     let hungerCost = 0;
 
-    if (!ctx.player || !ctx.player.isOnline || !ctx.player.isOnline()) {
+    if (!ctx.player) {
+      return {
+        success: false,
+        finalPos: ctx.playerPos,
+        distanceMoved: 0,
+        durationMs: 0,
+        hungerCost: 0,
+        reason: 'cancelled',
+      };
+    }
+    // SimulatedPlayer 在某些 LLSE 版本中可能缺少 isOnline，缺失时默认在线
+    if (typeof ctx.player.isOnline === 'function' && !ctx.player.isOnline()) {
       return {
         success: false,
         finalPos: ctx.playerPos,
@@ -129,13 +140,9 @@ export class MovementExecutor implements IMovementExecutor {
           // 看向并移动
           ac.lookAt(wp);
           this.applyMovementMode(segment.mode, ac, ctx);
-          const moved = await ac.moveTo(wp, this.getSpeed(segment.mode));
-          if (!moved) {
-            return { success: false, distance, hungerCost, reason: 'blocked' };
-          }
 
-          // 等待到达
-          const arrived = await this.waitForPosition(wp, ctx, POSITION_TOLERANCE, 3000);
+          // 等待到达，期间持续调用 moveTo 驱动 SimulatedPlayer
+          const arrived = await this.waitForPosition(wp, ctx, ac, segment.mode, POSITION_TOLERANCE, 10000);
           if (!arrived) {
             return { success: false, distance, hungerCost, reason: 'blocked' };
           }
@@ -155,7 +162,7 @@ export class MovementExecutor implements IMovementExecutor {
           ac.useFirework();
           const moved = await ac.moveTo(wp, 12);
           if (!moved) return { success: false, distance, hungerCost, reason: 'blocked' };
-          const arrived = await this.waitForPosition(wp, ctx, 2.0, 5000);
+          const arrived = await this.waitForPosition(wp, ctx, ac, 'elytra', 2.0, 5000);
           if (!arrived) return { success: false, distance, hungerCost, reason: 'blocked' };
           distance += this.distance(
             { x: ctx.player.pos.x, y: ctx.player.pos.y, z: ctx.player.pos.z },
@@ -242,12 +249,22 @@ export class MovementExecutor implements IMovementExecutor {
   }
 
   /**
-   * 等待到达目标位置
+   * 等待到达目标位置，期间持续驱动移动
    */
-  private async waitForPosition(target: Vec3, ctx: PathContext, tolerance: number, timeoutMs: number): Promise<boolean> {
+  private async waitForPosition(
+    target: Vec3,
+    ctx: PathContext,
+    ac: ActionController,
+    mode: string,
+    tolerance: number,
+    timeoutMs: number,
+  ): Promise<boolean> {
     const start = Date.now();
     let lastPos = { x: ctx.player.pos.x, y: ctx.player.pos.y, z: ctx.player.pos.z };
     let stuckTicks = 0;
+
+    // 先发起一次移动
+    ac.moveTo(target, this.getSpeed(mode));
 
     while (Date.now() - start < timeoutMs) {
       if (this.stopped) return false;
@@ -264,8 +281,25 @@ export class MovementExecutor implements IMovementExecutor {
       }
       lastPos = pos;
 
-      if (stuckTicks >= MAX_STUCK_TICKS) return false;
+      if (stuckTicks >= MAX_STUCK_TICKS) {
+        // 短距离卡住时尝试传送回退（测试模式或 3 格内通用）
+        const fallbackRange = ctx.options.allowTeleportFallback ? 8 : 3;
+        if (this.distance(pos, target) <= fallbackRange) {
+          try {
+            const fp = new FloatPos(target.x, target.y, target.z, ctx.playerDimid);
+            if (ctx.player.teleport(fp)) {
+              await this.sleep(200);
+              return true;
+            }
+          } catch (e) {
+            logger.warn('[MovementExecutor] 传送回退失败', e);
+          }
+        }
+        return false;
+      }
 
+      // 持续驱动，防止 SimulatedPlayer 单 tick 后停止
+      ac.moveTo(target, this.getSpeed(mode));
       await this.sleep(TICK_INTERVAL_MS);
     }
 

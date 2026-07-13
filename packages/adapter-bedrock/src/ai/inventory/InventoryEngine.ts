@@ -40,7 +40,7 @@ export class InventoryEngine {
     if (offhand) {
       const item = typeof offhand.getItem === 'function' ? offhand.getItem(0) : offhand;
       if (item && !item.isNull()) {
-        result.push({ name: item.name, count: item.count, slot: 0, source: 'offhand' });
+        result.push({ name: item.name, type: item.type, count: item.count, slot: 0, source: 'offhand' });
       }
     }
 
@@ -50,7 +50,7 @@ export class InventoryEngine {
       for (let i = 0; i < size; i++) {
         const item = inventory.getItem(i);
         if (item && !item.isNull()) {
-          result.push({ name: item.name, count: item.count, slot: i, source: 'inventory' });
+          result.push({ name: item.name, type: item.type, count: item.count, slot: i, source: 'inventory' });
         }
       }
     }
@@ -61,7 +61,7 @@ export class InventoryEngine {
       for (let i = 0; i < size; i++) {
         const item = armor.getItem(i);
         if (item && !item.isNull()) {
-          result.push({ name: item.name, count: item.count, slot: i, source: 'armor' });
+          result.push({ name: item.name, type: item.type, count: item.count, slot: i, source: 'armor' });
         }
       }
     }
@@ -86,7 +86,9 @@ export class InventoryEngine {
     const result: ItemSlot[] = [];
 
     const pushIfMatch = (source: InventorySource, slot: number, item: Item | null) => {
-      if (item && !item.isNull() && matchName(item.name, normalized)) {
+      if (!item || item.isNull()) return;
+      // 同时按显示名（可能本地化）和内部 type（英文标识符）匹配
+      if (matchName(item.name, normalized) || matchName(item.type, normalized)) {
         result.push({ source, slot, item });
       }
     };
@@ -125,18 +127,170 @@ export class InventoryEngine {
   }
 
   /**
-   * 设置当前选中的快捷栏槽位（LLSE 部分版本支持）
+   * 设置当前选中的快捷栏槽位（LLSE 部分版本支持）。
+   * 若 LLSE API 无法切换，则通过 /item replace 或 /replaceitem 命令把目标槽位物品放入主手。
    */
   selectSlot(slot: number): boolean {
+    if (slot < 0) return false;
+
+    const mainSlot = this.player.selectedSlot ?? 0;
+    if (mainSlot === slot) {
+      return true;
+    }
+
+    // 1. 尝试 LLSE 原生 API
     try {
       if (typeof this.player.setSelectedSlot === 'function') {
-        this.player.setSelectedSlot(slot);
+        const ok = this.player.setSelectedSlot(slot);
+        logger.info(`[InventoryEngine] setSelectedSlot(${slot}) => ${ok}`);
+        if (ok && this.player.selectedSlot === slot) {
+          return true;
+        }
+      }
+    } catch (e) {
+      logger.warn(`[InventoryEngine] setSelectedSlot(${slot}) 异常`, e);
+    }
+
+    // 2. 直接赋值（部分版本支持）
+    try {
+      this.player.selectedSlot = slot;
+      if (this.player.selectedSlot === slot) {
+        logger.info(`[InventoryEngine] selectedSlot 赋值为 ${slot}`);
         return true;
       }
-      this.player.selectedSlot = slot;
-      return (this.player.selectedSlot ?? 0) === slot;
     } catch (e) {
+      logger.warn(`[InventoryEngine] selectedSlot 赋值异常`, e);
+    }
+
+    // 3. 通过背包交换把目标槽位物品移到主手（不依赖命令权限）
+    try {
+      if (this.swapToMainHand(slot)) {
+        logger.info(`[InventoryEngine] 通过背包交换将槽位 ${slot} 物品移入主手`);
+        return true;
+      }
+    } catch (e) {
+      logger.warn('[InventoryEngine] 背包交换兜底失败', e);
+    }
+
+    // 4. 最后兜底：使用命令将目标槽位物品替换到主手
+    try {
+      const inventory = this.player.getInventory();
+      if (inventory && typeof inventory.getItem === 'function') {
+        const item = inventory.getItem(slot);
+        if (item && !item.isNull()) {
+          const itemId = normalizeName(item.type || item.name);
+          if (this.replaceMainHand(itemId)) {
+            logger.info(`[InventoryEngine] 命令将 ${itemId} 放入主手（槽位 ${slot}）`);
+            return true;
+          }
+        }
+      }
+    } catch (e) {
+      logger.warn('[InventoryEngine] 主手替换兜底失败', e);
+    }
+
+    return false;
+  }
+
+  /**
+   * 使用 /item replace 或 /replaceitem 命令替换主手物品（兼容新旧 MC 版本）。
+   */
+  private replaceMainHand(itemId: string): boolean {
+    const normalizedId = itemId.replace(/^minecraft:/, '');
+    const selector = `"${this.player.realName}"`;
+
+    // 新版命令（1.19.80+）: item replace entity <selector> weapon.mainhand with <item>
+    const newCmd = `item replace entity ${selector} weapon.mainhand with ${normalizedId} 1`;
+    // 旧版命令: replaceitem entity <selector> slot.weapon.mainhand <item> <count> [data]
+    const oldCmd = `replaceitem entity ${selector} slot.weapon.mainhand ${normalizedId} 1 0`;
+
+    for (const cmd of [newCmd, oldCmd]) {
+      try {
+        let ok = false;
+        const api = mc as any;
+        if (typeof this.player.runCmd === 'function') {
+          ok = this.player.runCmd(cmd);
+        }
+        if (!ok && typeof api.runCmd === 'function') {
+          ok = api.runCmd(cmd);
+        }
+        if (!ok && typeof api.runcmdEx === 'function') {
+          const res = api.runcmdEx(cmd);
+          ok = res?.success ?? false;
+        }
+        if (!ok && typeof api.runcmd === 'function') {
+          api.runcmd(cmd);
+          ok = true;
+        }
+        if (ok) {
+          logger.info(`[InventoryEngine] 执行主手替换命令成功: ${cmd}`);
+          return true;
+        }
+      } catch (e) {
+        logger.warn(`[InventoryEngine] 主手替换命令失败: ${cmd}`, e);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 将指定背包槽位的物品移动到当前主手槽位。
+   * 用于 LLSE 无法切换 selectedSlot 时的最后兜底。
+   */
+  private swapToMainHand(slot: number): boolean {
+    const inventory = this.player.getInventory();
+    if (!inventory || typeof inventory.getItem !== 'function' || typeof inventory.setItem !== 'function') {
       return false;
+    }
+
+    const sourceItem = inventory.getItem(slot);
+    if (!sourceItem || sourceItem.isNull()) return false;
+
+    const mainSlot = this.player.selectedSlot ?? 0;
+    if (mainSlot === slot) return true;
+
+    const mainItem = inventory.getItem(mainSlot);
+    const targetType = normalizeName(sourceItem.type || sourceItem.name);
+
+    try {
+      // 使用 mc.newItem 创建新副本，避免 LLSE 对 clone() 对象的引用限制
+      const targetClone = mc.newItem(targetType, sourceItem.count, null) ?? sourceItem.clone();
+      inventory.setItem(mainSlot, targetClone);
+      // 原槽位放回主手原有物品（简单交换）
+      if (mainItem && !mainItem.isNull()) {
+        const mainType = normalizeName(mainItem.type || mainItem.name);
+        const mainClone = mc.newItem(mainType, mainItem.count, null) ?? mainItem.clone();
+        inventory.setItem(slot, mainClone);
+      }
+      this.refreshItems();
+      this.persist();
+
+      // 验证主手是否确实切换
+      const newHand = this.player.getHand();
+      if (newHand && !newHand.isNull()) {
+        const newHandType = normalizeName(newHand.type || newHand.name);
+        if (newHandType === targetType) {
+          return true;
+        }
+      }
+      logger.warn(`[InventoryEngine] swapToMainHand 验证失败，主手仍是 ${newHand?.name ?? '空'}`);
+      return false;
+    } catch (e) {
+      logger.warn('[InventoryEngine] swapToMainHand 异常', e);
+      return false;
+    }
+  }
+
+  /**
+   * 刷新玩家物品栏显示
+   */
+  private refreshItems(): void {
+    try {
+      if (typeof (this.player as any).refreshItems === 'function') {
+        (this.player as any).refreshItems();
+      }
+    } catch (e) {
+      // ignore
     }
   }
 
@@ -185,8 +339,13 @@ export class InventoryEngine {
     }
 
     const originalCount = item.count;
-    const dropItem = item.clone();
-    dropItem.count = dropCount;
+    // 使用 item.type（英文标识符）创建新物品；LLSE 运行时 Item 可能没有 getExtraTag
+    const extra = typeof item.getExtraTag === 'function' ? item.getExtraTag() : null;
+    const itemType = normalizeName(item.type || item.name);
+    const dropItem = mc.newItem(itemType, dropCount, extra);
+    if (!dropItem) {
+      return { success: false, error: '创建掉落物品失败' };
+    }
 
     const dropPos = this.resolveDropPosition(targetEntityId);
 
@@ -231,9 +390,14 @@ export class InventoryEngine {
       return { success: false, error: `背包中未找到物品: ${itemName}` };
     }
 
-    // 避免从目标槽位装备到自己
+    // 避免从目标槽位装备到自己；若已装备在目标槽位，直接视为成功
     if (sourceRef.source === destSource && sourceRef.slot === destIndex) {
-      return { success: false, error: '目标槽位已经是该物品' };
+      return {
+        success: true,
+        item: sourceRef.item.name,
+        slot,
+        previousItem: sourceRef.item.name,
+      };
     }
 
     // 2. 处理目标槽位已有物品：尝试移回背包
@@ -256,11 +420,14 @@ export class InventoryEngine {
       return { success: false, error: '源槽位为空' };
     }
 
-    const clone = itemToEquip.clone();
-    clone.count = 1;
+    const itemType = normalizeName(itemToEquip.type || itemToEquip.name);
+    const equipItem = mc.newItem(itemType, 1, null);
+    if (!equipItem) {
+      return { success: false, error: '创建装备物品失败' };
+    }
 
     try {
-      destContainer.setItem(destIndex, clone);
+      destContainer.setItem(destIndex, equipItem);
       sourceContainer.removeItem(sourceRef.slot, 1);
       this.persist();
 
@@ -304,18 +471,22 @@ export class InventoryEngine {
       return { success: false, error: '源槽位为空' };
     }
 
-    const clone = itemToEquip.clone();
-    clone.count = Math.min(itemToEquip.count, getMaxStackSize(itemToEquip.name));
+    const itemType = normalizeName(itemToEquip.type || itemToEquip.name);
+    const offhandCount = Math.min(itemToEquip.count, getMaxStackSize(itemType));
+    const offhandItem = mc.newItem(itemType, offhandCount, null);
+    if (!offhandItem) {
+      return { success: false, error: '创建副手物品失败' };
+    }
 
     try {
       // @ts-expect-error — LLSE Player 类型未声明 setOffHand，但运行时可用
       if (typeof this.player.setOffHand === 'function') {
         // @ts-expect-error — LLSE Player 类型未声明 setOffHand，但运行时可用
-        this.player.setOffHand(clone);
+        this.player.setOffHand(offhandItem);
       } else {
         return { success: false, error: '当前环境不支持设置副手物品' };
       }
-      sourceContainer.removeItem(sourceRef.slot, clone.count);
+      sourceContainer.removeItem(sourceRef.slot, offhandCount);
       this.persist();
 
       return {
@@ -353,7 +524,10 @@ export class InventoryEngine {
       return { success: false, error: '背包已满，无法卸下装备' };
     }
 
-    destContainer.setItem(destIndex, null);
+    const airItem = mc.newItem('air', 1, null);
+    if (airItem) {
+      destContainer.setItem(destIndex, airItem);
+    }
     this.persist();
 
     return {
@@ -503,32 +677,39 @@ export class InventoryEngine {
     const inventory = this.player.getInventory();
     if (!inventory) return false;
 
-    // 尝试堆叠到已有槽位
     const size = inventory.size ?? 36;
-    const maxStack = getMaxStackSize(item.name);
+    const itemType = normalizeName(item.type || item.name);
+    const maxStack = getMaxStackSize(itemType);
+    let remaining = item.count;
 
-    for (let i = 0; i < size; i++) {
+    // 尝试堆叠到已有槽位
+    for (let i = 0; i < size && remaining > 0; i++) {
       const existing = inventory.getItem(i);
       if (!existing || existing.isNull()) continue;
-      if (normalizeName(existing.name) !== normalizeName(item.name)) continue;
+      if (normalizeName(existing.name) !== itemType && normalizeName(existing.type) !== itemType) continue;
       if (existing.count >= maxStack) continue;
 
       const space = maxStack - existing.count;
-      const amount = Math.min(item.count, space);
-      const clone = item.clone();
-      clone.count = existing.count + amount;
-      inventory.setItem(i, clone);
-      item.count -= amount;
-      if (item.count <= 0) {
-        return true;
-      }
+      const amount = Math.min(remaining, space);
+      if (amount <= 0) continue;
+
+      const merged = mc.newItem(itemType, existing.count + amount, null);
+      if (!merged) continue;
+      inventory.setItem(i, merged);
+      remaining -= amount;
+    }
+
+    if (remaining <= 0) {
+      return true;
     }
 
     // 尝试放入空槽
     for (let i = 0; i < size; i++) {
       const existing = inventory.getItem(i);
       if (existing && !existing.isNull()) continue;
-      inventory.setItem(i, item);
+
+      const toPlace = remaining < item.count ? mc.newItem(itemType, remaining, null) : item;
+      inventory.setItem(i, toPlace);
       return true;
     }
 

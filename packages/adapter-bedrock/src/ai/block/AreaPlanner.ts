@@ -9,6 +9,13 @@ import type { AreaMode } from './types.js';
 import { configManager } from '../../config/index.js';
 import { normalizeName } from '../inventory/InventoryEngine.js';
 
+/**
+ * 获取方块内部类型标识（优先 type，避免 name 被本地化）
+ */
+function getBlockType(block: any): string {
+  return normalizeName(block?.type || block?.name || 'air');
+}
+
 /** 6 个邻接方向 */
 const DIRECTIONS: Vec3[] = [
   { x: 1, y: 0, z: 0 },
@@ -84,7 +91,7 @@ export class AreaPlanner {
    */
   private buildVeinQueue(from: Vec3, radius = 16): Vec3[] {
     const startBlock = this.safeGetBlock(from);
-    const targetName = startBlock ? normalizeName(startBlock.name) : null;
+    const targetName = getBlockType(startBlock);
 
     if (!targetName || targetName === 'air') return [];
 
@@ -104,7 +111,7 @@ export class AreaPlanner {
       if (queue.length >= maxBlocks) break;
 
       const block = this.safeGetBlock(pos);
-      const name = block ? normalizeName(block.name) : 'air';
+      const name = getBlockType(block);
       if (name !== targetName) continue;
 
       queue.push(pos);

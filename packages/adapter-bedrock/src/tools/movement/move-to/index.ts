@@ -28,8 +28,8 @@ export default class MoveToTool implements IToolModule {
           },
           distance: {
             type: 'number',
-            default: 2,
-            description: '目标距离（默认2格，仅entity/block有效）',
+            default: 0,
+            description: '目标距离（0表示不限制，仅entity/block有效；coordinate类型忽略此参数）',
           },
           sprint: {
             type: 'boolean',
@@ -139,7 +139,7 @@ export default class MoveToTool implements IToolModule {
   }
 
   /**
-   * 在目标与玩家之间保留指定距离
+   * 在目标与玩家之间保留指定距离；distance <= 0 表示不保留距离，直接前往目标点。
    */
   private applyDistance(target: Vec3, playerPos: { x: number; y: number; z: number }, distance: number): Vec3 {
     if (distance <= 0) return target;

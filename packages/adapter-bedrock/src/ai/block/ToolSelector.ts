@@ -117,8 +117,8 @@ export class ToolSelector {
     }
 
     const candidates = inventory
-      .filter((item) => this.isToolOfType(item.name, rule.toolType!))
-      .sort((a, b) => this.toolPriority(b.name) - this.toolPriority(a.name));
+      .filter((item) => this.isToolOfType(item.type || item.name, rule.toolType!))
+      .sort((a, b) => this.toolPriority(b.type || b.name) - this.toolPriority(a.type || a.name));
 
     if (candidates.length === 0) {
       return { toolSlot: null, canHandMine: rule.canHandMine };
@@ -144,8 +144,8 @@ export class ToolSelector {
     if (!rule.toolType) return null;
 
     const candidates = inventory
-      .filter((item) => item.slot !== excludeSlot && this.isToolOfType(item.name, rule.toolType!))
-      .sort((a, b) => this.toolPriority(b.name) - this.toolPriority(a.name));
+      .filter((item) => item.slot !== excludeSlot && this.isToolOfType(item.type || item.name, rule.toolType!))
+      .sort((a, b) => this.toolPriority(b.type || b.name) - this.toolPriority(a.type || a.name));
 
     if (candidates.length === 0) return null;
     return { slot: candidates[0].slot, name: candidates[0].name };
@@ -159,7 +159,10 @@ export class ToolSelector {
     const alternatives = BLOCK_ALTERNATIVES[normalized] || this.findGroupAlternative(normalized);
 
     for (const alt of alternatives) {
-      const found = inventory.find((item) => normalizeName(item.name) === normalizeName(alt));
+      const found = inventory.find((item) => {
+        const itemId = normalizeName(item.type || item.name);
+        return itemId === normalizeName(alt);
+      });
       if (found) return alt;
     }
 

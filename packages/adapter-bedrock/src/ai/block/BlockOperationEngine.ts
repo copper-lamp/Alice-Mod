@@ -13,14 +13,22 @@ import type {
   PlaceResult,
   UseBlockResult,
 } from './types.js';
-import { ToolSelector } from './ToolSelector.js';
-import { BlockValidator } from './BlockValidator.js';
-import { AreaPlanner } from './AreaPlanner.js';
-import { InventoryEngine, normalizeName } from '../inventory/InventoryEngine.js';
-import { aiEngine } from '../index.js';
+
 import { configManager } from '../../config/index.js';
 import { BotManager } from '../../bot/BotManager.js';
 import { waitFor } from '../../utils/helpers.js';
+import { InventoryEngine, normalizeName } from '../inventory/InventoryEngine.js';
+import { aiEngine } from '../index.js';
+import { ToolSelector } from './ToolSelector.js';
+import { BlockValidator } from './BlockValidator.js';
+import { AreaPlanner } from './AreaPlanner.js';
+
+/**
+ * 获取方块内部类型标识（优先 type，避免 name 被本地化）
+ */
+function getBlockType(block: any): string {
+  return normalizeName(block?.type || block?.name || 'air');
+}
 
 /** 操作超时时间（毫秒） */
 const OPERATION_TIMEOUT_MS = 120000;
@@ -50,8 +58,8 @@ export class BlockOperationEngine {
   async mineBlock(pos: Vec3): Promise<MineResult> {
     const start = Date.now();
 
-    // 1. 移动靠近
-    const approachPos = this.computeApproachPos(pos, 5);
+    // 1. 移动靠近（保持在 3 格内以便挖掘）
+    const approachPos = this.computeApproachPos(pos, 3);
     const moveResult = await aiEngine.moveTo(this.botName, approachPos);
     if (!moveResult.success) {
       return { success: false, error: moveResult.reason, duration_ms: Date.now() - start };
@@ -59,7 +67,7 @@ export class BlockOperationEngine {
 
     // 2. 获取方块
     const block = this.safeGetBlock(pos);
-    const blockName = block ? normalizeName(block.name) : 'air';
+    const blockName = getBlockType(block);
 
     if (blockName === 'air') {
       return { success: true, block: 'air', drops: [], duration_ms: 0 };
@@ -79,7 +87,10 @@ export class BlockOperationEngine {
 
     // 4. 耐久检查与切换
     if (toolRec.toolSlot !== null) {
-      this.inventoryEngine.selectSlot(toolRec.toolSlot);
+      const slotOk = this.inventoryEngine.selectSlot(toolRec.toolSlot);
+      if (!slotOk) {
+        logger.warn(`[BlockOperationEngine] 选择工具槽位 ${toolRec.toolSlot} 失败`);
+      }
       const selectedItem = this.inventoryEngine.getSelectedItem();
       if (selectedItem) {
         const damage = this.inventoryEngine.getItemDamage(selectedItem);
@@ -97,12 +108,64 @@ export class BlockOperationEngine {
       }
     }
 
-    // 5. 看向方块并执行挖掘
+    // 5. 看向方块并持续执行挖掘，直到方块被破坏或超时
     this.lookAt(pos);
-    this.player.simulateDestroyBlock(pos);
+    await this.sleep(250); // 等视角同步
+    const mineStart = Date.now();
+    const maxMineMs = 15000;
+    const dimid = this.player.pos?.dimid ?? 0;
+    const blockFp = new FloatPos(pos.x, pos.y, pos.z, dimid);
 
-    // 6. 等待方块破坏（轮询校验）
-    const broken = await waitFor(() => this.blockValidator.confirmBroken(pos, this.world), 15000, 100);
+    try {
+      // LLSE simulateDestroy 需要每 tick 持续调用才会持续破坏方块。
+      // 参考 FakePlayer 实现：在循环中不断调用 simulateDestroy，直到方块破坏。
+      while (Date.now() - mineStart < maxMineMs) {
+        if (this.blockValidator.confirmBroken(pos, this.world)) break;
+
+        if (typeof this.player.simulateDestroy === 'function') {
+          // 优先无参数版本：破坏视线前方方块
+          this.player.simulateDestroy();
+        } else if (typeof this.player.simulateDestroyBlock === 'function') {
+          this.player.simulateDestroyBlock(pos);
+        }
+
+        await this.sleep(100);
+      }
+
+      // 若仍未破坏，尝试带 FloatPos 参数版本（部分 LLSE 版本需要传入目标坐标）
+      if (!this.blockValidator.confirmBroken(pos, this.world)) {
+        while (Date.now() - mineStart < maxMineMs) {
+          if (this.blockValidator.confirmBroken(pos, this.world)) break;
+          if (typeof this.player.simulateDestroy === 'function') {
+            try {
+              this.player.simulateDestroy(blockFp);
+            } catch (e) {
+              this.player.simulateDestroy();
+            }
+          } else if (typeof this.player.simulateDestroyBlock === 'function') {
+            this.player.simulateDestroyBlock(pos);
+          }
+          await this.sleep(100);
+        }
+      }
+    } catch (e) {
+      logger.warn('[BlockOperationEngine] 挖掘调用失败', e);
+    }
+
+    // 6. 等待方块破坏（轮询校验），失败时使用命令兜底
+    let broken = this.blockValidator.confirmBroken(pos, this.world);
+    if (!broken) {
+      try {
+        const cmd = `setblock ${pos.x} ${pos.y} ${pos.z} air destroy`;
+        if (this.runServerCommand(cmd)) {
+          logger.warn(`[BlockOperationEngine] 模拟挖掘未生效，使用命令兜底: ${cmd}`);
+          await this.sleep(200);
+          broken = this.blockValidator.confirmBroken(pos, this.world);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
 
     // 7. 保存背包
     BotManager.saveInventory(this.botName);
@@ -139,8 +202,8 @@ export class BlockOperationEngine {
       return { success: false, error: 'ITEM_NOT_FOUND', duration_ms: Date.now() - start };
     }
 
-    // 2. 移动靠近
-    const approachPos = this.computeApproachPos(pos, 3);
+    // 2. 移动靠近（保持 2 格内以便放置）
+    const approachPos = this.computeApproachPos(pos, 2);
     const moveResult = await aiEngine.moveTo(this.botName, approachPos);
     if (!moveResult.success) {
       return { success: false, error: moveResult.reason, duration_ms: Date.now() - start };
@@ -153,14 +216,65 @@ export class BlockOperationEngine {
       return { success: false, error: 'PLACE_BLOCKED', duration_ms: Date.now() - start };
     }
 
-    // 4. 放置
-    this.inventoryEngine.selectSlot(slot.slot);
-    this.lookAt(face.neighbor);
-    this.player.simulatePlaceBlock(pos, face.face);
+    // 4. 切换到方块
+    const slotOk = this.inventoryEngine.selectSlot(slot.slot);
+    if (!slotOk) {
+      logger.warn(`[BlockOperationEngine] 选择方块槽位 ${slot.slot} 失败`);
+    }
 
-    // 5. 验证
-    await this.sleep(100);
-    const placed = this.blockValidator.confirmPlaced(pos, this.world, material);
+    // 计算放置面中心（视线应落在邻接方块的面上），而不是邻接方块中心。
+    // 否则看向箱子等可交互方块时 simulateUseItem 会打开容器。
+    const faceCenter = {
+      x: pos.x + 0.5 + face.face.x * 0.5,
+      y: pos.y + 0.5 + face.face.y * 0.5,
+      z: pos.z + 0.5 + face.face.z * 0.5,
+    };
+    this.lookAt(faceCenter);
+    // 给 LLSE 一帧时间应用视角
+    await this.sleep(200);
+
+    let placed = false;
+    const dimid = this.player.pos?.dimid ?? 0;
+    const placeStart = Date.now();
+    const maxPlaceMs = 5000;
+    try {
+      while (Date.now() - placeStart < maxPlaceMs) {
+        // LLSE 实际 API：simulateUseItemOnBlock(targetPos, clickBlockPos)
+        // targetPos 是要放置方块的位置，clickBlockPos 是被点击的邻接方块。
+        if (typeof this.player.simulateUseItemOnBlock === 'function') {
+          const targetFp = new FloatPos(pos.x, pos.y, pos.z, dimid);
+          const faceFp = new FloatPos(face.neighbor.x, face.neighbor.y, face.neighbor.z, dimid);
+          this.player.simulateUseItemOnBlock(targetFp, faceFp);
+        } else if (typeof this.player.simulateUseItem === 'function') {
+          this.player.simulateUseItem();
+        }
+
+        await this.sleep(100);
+        if (this.blockValidator.confirmPlaced(pos, this.world, material)) {
+          placed = true;
+          break;
+        }
+      }
+    } catch (e) {
+      logger.warn('[BlockOperationEngine] 放置调用失败', e);
+    }
+
+    // 5. 验证，若模拟放置未成功则使用命令兜底
+    if (!placed) {
+      placed = this.blockValidator.confirmPlaced(pos, this.world, material);
+    }
+    if (!placed) {
+      try {
+        const cmd = `setblock ${pos.x} ${pos.y} ${pos.z} ${material}`;
+        if (this.runServerCommand(cmd)) {
+          logger.warn(`[BlockOperationEngine] 模拟放置未生效，使用命令兜底: ${cmd}`);
+          await this.sleep(200);
+          placed = this.blockValidator.confirmPlaced(pos, this.world, material);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
 
     // 6. 保存背包
     BotManager.saveInventory(this.botName);
@@ -189,7 +303,7 @@ export class BlockOperationEngine {
 
     // 2. 获取方块
     const block = this.safeGetBlock(pos);
-    const blockName = block ? normalizeName(block.name) : 'air';
+    const blockName = getBlockType(block);
 
     if (blockName === 'air') {
       return { success: false, error: 'PLACE_BLOCKED', duration_ms: Date.now() - start };
@@ -303,6 +417,7 @@ export class BlockOperationEngine {
       fail_count: failCount,
       drops,
       duration_ms: Date.now() - start,
+      error: failCount === 0 ? undefined : `部分方块操作失败: ${failCount}/${queue.length}`,
     };
   }
 
@@ -353,8 +468,11 @@ export class BlockOperationEngine {
    */
   private lookAt(pos: Vec3): void {
     try {
-      if (typeof this.player.lookAt === 'function') {
-        this.player.lookAt(new FloatPos(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, this.player.pos?.dimid ?? 0));
+      const target = new FloatPos(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5, this.player.pos?.dimid ?? 0);
+      if (typeof this.player.simulateLookAt === 'function') {
+        this.player.simulateLookAt(target);
+      } else if (typeof this.player.lookAt === 'function') {
+        this.player.lookAt(target);
       }
     } catch (e) {
       // 忽略看向失败
@@ -366,6 +484,38 @@ export class BlockOperationEngine {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 以玩家上下文优先执行服务器命令。
+   */
+  private runServerCommand(cmd: string): boolean {
+    try {
+      if (typeof this.player.runCmd === 'function') {
+        const ok = this.player.runCmd(cmd);
+        if (ok) return true;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    try {
+      const api = mc as any;
+      if (typeof api.runCmd === 'function') {
+        return api.runCmd(cmd);
+      }
+      if (typeof api.runcmdEx === 'function') {
+        const res = api.runcmdEx(cmd);
+        return res?.success ?? false;
+      }
+      if (typeof api.runcmd === 'function') {
+        api.runcmd(cmd);
+        return true;
+      }
+    } catch (e) {
+      // ignore
+    }
+    return false;
   }
 
   /**

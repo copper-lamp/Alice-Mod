@@ -25,18 +25,43 @@ export class ContainerAPI {
    * @returns 容器对象，失败返回 null
    */
   open(block: Block): Container | null {
+    try {
+      const pos = block.getPos();
+      const blockName = (block as any).type || (block as any).name || 'unknown';
+      logger.info(`[ContainerAPI] 尝试打开容器 pos=${pos.x},${pos.y},${pos.z} type=${blockName}`);
+    } catch (e) {
+      // ignore
+    }
+
     if (!this.isWithinReach(block)) {
+      logger.warn('[ContainerAPI] 方块距离过远，无法打开');
       return null;
     }
 
     try {
-      const container = block.getContainer();
+      let container: Container | null = null;
+      if (typeof block.getContainer === 'function') {
+        container = block.getContainer();
+      }
+      // 兜底：部分 LLSE 版本需通过玩家打开容器
+      if (!container && typeof (this.player as any).getInventory === 'function') {
+        try {
+          const inv = (this.player as any).getInventory();
+          if (inv && typeof inv.getContainer === 'function') {
+            // 仅作尝试，不强制使用
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
       if (!container) {
+        logger.warn('[ContainerAPI] block.getContainer 返回空');
         return null;
       }
       this.openBlock = block;
       return container;
     } catch (e) {
+      logger.warn('[ContainerAPI] 打开容器异常', e);
       return null;
     }
   }
@@ -142,16 +167,20 @@ export class ContainerAPI {
     const dz = playerPos.z - blockPos.z;
     const horizontal = Math.sqrt(dx * dx + dz * dz);
 
+    logger.info(`[ContainerAPI] computeApproachTarget player=${JSON.stringify(playerPos)} block=${JSON.stringify(blockPos)} horizontal=${horizontal.toFixed(2)}`);
+
     if (horizontal <= distance) {
       return { x: playerPos.x, y: playerPos.y, z: playerPos.z };
     }
 
     const ratio = distance / horizontal;
-    return {
+    const target = {
       x: blockPos.x + dx * ratio,
       y: blockPos.y + dy * ratio,
       z: blockPos.z + dz * ratio,
     };
+    logger.info(`[ContainerAPI] approachTarget=${JSON.stringify(target)}`);
+    return target;
   }
 
   /**
@@ -172,7 +201,8 @@ export class ContainerAPI {
     for (let i = 0; i < size; i++) {
       const item = container.getItem(i);
       if (!item || item.isNull()) continue;
-      if (!normalized || matchName(item.name, itemName!)) {
+      // 同时按显示名（可能本地化）和内部 type（英文标识符）匹配
+      if (!normalized || matchName(item.name, itemName!) || matchName(item.type, itemName!)) {
         slots.push(i);
       }
     }
@@ -186,14 +216,48 @@ export class ContainerAPI {
   private isWithinReach(block: Block): boolean {
     try {
       const playerPos = { x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z };
-      const pos = block.getPos();
-      const blockPos = { x: pos.x + 0.5, y: pos.y + 0.5, z: pos.z + 0.5 };
+      let bx = 0;
+      let by = 0;
+      let bz = 0;
+      let gotPos = false;
+
+      // 优先使用 getPos()，失败则回退到 .pos 属性
+      try {
+        if (typeof block.getPos === 'function') {
+          const pos = block.getPos();
+          if (pos && typeof pos.x === 'number') {
+            bx = pos.x;
+            by = pos.y;
+            bz = pos.z;
+            gotPos = true;
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      if (!gotPos && block.pos && typeof block.pos.x === 'number') {
+        bx = block.pos.x;
+        by = block.pos.y;
+        bz = block.pos.z;
+        gotPos = true;
+      }
+
+      if (!gotPos) {
+        logger.warn('[ContainerAPI] isWithinReach 无法获取方块坐标');
+        return false;
+      }
+
+      const blockPos = { x: bx + 0.5, y: by + 0.5, z: bz + 0.5 };
       const dx = playerPos.x - blockPos.x;
       const dy = playerPos.y - blockPos.y;
       const dz = playerPos.z - blockPos.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      logger.info(`[ContainerAPI] isWithinReach player=${JSON.stringify(playerPos)} blockCenter=${JSON.stringify(blockPos)} dist=${dist.toFixed(2)} max=${MAX_INTERACTION_DISTANCE}`);
       return dist <= MAX_INTERACTION_DISTANCE;
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      logger.warn(`[ContainerAPI] isWithinReach 异常: ${message}`);
       return false;
     }
   }
@@ -209,7 +273,8 @@ export class ContainerAPI {
     const toMoveTotal = Math.min(maxAmount, item.count);
     if (toMoveTotal <= 0) return 0;
 
-    const maxStack = getMaxStackSize(item.name);
+    const itemType = normalizeName(item.type || item.name);
+    const maxStack = getMaxStackSize(itemType);
     let moved = 0;
 
     // 1. 优先合并到目标容器中已有同类物品的槽位
@@ -217,15 +282,15 @@ export class ContainerAPI {
     for (let i = 0; i < destSize && moved < toMoveTotal; i++) {
       const destItem = dest.getItem(i);
       if (!destItem || destItem.isNull()) continue;
-      if (normalizeName(destItem.name) !== normalizeName(item.name)) continue;
+      if (normalizeName(destItem.name) !== itemType && normalizeName(destItem.type) !== itemType) continue;
       if (destItem.count >= maxStack) continue;
 
       const space = maxStack - destItem.count;
       const amount = Math.min(toMoveTotal - moved, space, item.count);
       if (amount <= 0) continue;
 
-      const merged = destItem.clone();
-      merged.count = destItem.count + amount;
+      const merged = mc.newItem(itemType, destItem.count + amount, null);
+      if (!merged) continue;
       dest.setItem(i, merged);
       moved += amount;
     }
@@ -238,8 +303,8 @@ export class ContainerAPI {
       const amount = Math.min(toMoveTotal - moved, maxStack, item.count);
       if (amount <= 0) continue;
 
-      const clone = item.clone();
-      clone.count = amount;
+      const clone = mc.newItem(itemType, amount, null);
+      if (!clone) continue;
       dest.setItem(i, clone);
       moved += amount;
     }

@@ -8,6 +8,13 @@ import type { Vec3 } from '../pathfinding/types.js';
 import type { PlacementFace } from './types.js';
 import { normalizeName } from '../inventory/InventoryEngine.js';
 
+/**
+ * 获取方块内部类型标识（优先 type，避免 name 被本地化）
+ */
+function getBlockType(block: any): string {
+  return normalizeName(block?.type || block?.name || 'air');
+}
+
 /** 6 个邻接方向 */
 const DIRECTIONS: Vec3[] = [
   { x: 1, y: 0, z: 0 },
@@ -47,14 +54,14 @@ export class BlockValidator {
     for (const dir of DIRECTIONS) {
       const neighbor: Vec3 = { x: pos.x + dir.x, y: pos.y + dir.y, z: pos.z + dir.z };
       const neighborBlock = this.safeGetBlock(world, neighbor);
-      const neighborName = neighborBlock ? normalizeName(neighborBlock.name) : 'air';
+      const neighborName = getBlockType(neighborBlock);
 
       // 邻接方块必须是实体方块，不能是空气或可替换方块
       if (REPLACEABLE_BLOCKS.has(neighborName)) continue;
 
       // 目标位置本身必须可放置（空气或可替换）
       const targetBlock = this.safeGetBlock(world, pos);
-      const targetName = targetBlock ? normalizeName(targetBlock.name) : 'air';
+      const targetName = getBlockType(targetBlock);
       if (!REPLACEABLE_BLOCKS.has(targetName)) continue;
 
       // 玩家需要能够到达该放置面附近
@@ -85,7 +92,7 @@ export class BlockValidator {
    */
   confirmBroken(pos: Vec3, world: any): boolean {
     const block = this.safeGetBlock(world, pos);
-    const name = block ? normalizeName(block.name) : 'air';
+    const name = getBlockType(block);
     return name === 'air' || REPLACEABLE_BLOCKS.has(name);
   }
 
@@ -95,7 +102,7 @@ export class BlockValidator {
   confirmPlaced(pos: Vec3, world: any, expectedName: string): boolean {
     const block = this.safeGetBlock(world, pos);
     if (!block) return false;
-    const actual = normalizeName(block.name);
+    const actual = getBlockType(block);
     const expected = normalizeName(expectedName);
     return actual === expected || this.isEquivalentBlock(actual, expected);
   }

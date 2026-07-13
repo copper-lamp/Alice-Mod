@@ -15,7 +15,16 @@ export class GroundPathPlanner implements IGroundPathPlanner {
 
     try {
       const pl = ctx.player;
-      if (!pl || !pl.isOnline || !pl.isOnline()) {
+      if (!pl) {
+        return {
+          success: false,
+          reason: 'no_path',
+          nodeCount: 0,
+          durationMs: Date.now() - startTime,
+        };
+      }
+      // SimulatedPlayer 在某些 LLSE 版本中可能缺少 isOnline，缺失时默认在线
+      if (typeof pl.isOnline === 'function' && !pl.isOnline()) {
         return {
           success: false,
           reason: 'no_path',
