@@ -6,7 +6,7 @@
  */
 
 import { ToolRegistry } from './tool-registry.js';
-import type { ToolContext, ToolResult } from './tool-module.types.js';
+import type { ToolContext, ResultEnvelope } from './tool-module.types.js';
 
 /**
  * 工具管理器
@@ -29,14 +29,17 @@ export class ToolManager {
     name: string,
     params: Record<string, any>,
     ctx: ToolContext,
-  ): Promise<ToolResult> {
-    const tool = this.registry.get(name);
+  ): Promise<ResultEnvelope> {
+    const tool = this.registry.resolve(name);
     if (!tool) {
       logger.error(`[ToolManager] 工具未找到: ${name}`);
       return {
         success: false,
-        error: `工具未找到: ${name}`,
-        duration_ms: 0,
+        error: {
+          code: 'NOT_FOUND',
+          message: `工具未找到: ${name}`,
+        },
+        meta: { duration: 0 },
       };
     }
 
@@ -57,12 +60,16 @@ export class ToolManager {
       if (result.success) {
         logger.info(`[ToolManager] 工具 ${name} 执行成功, 耗时=${duration}ms`);
       } else {
-        logger.warn(`[ToolManager] 工具 ${name} 执行失败, 耗时=${duration}ms, 错误=${result.error || 'unknown'}`);
+        const errMsg = result.error?.message || 'unknown';
+        logger.warn(`[ToolManager] 工具 ${name} 执行失败, 耗时=${duration}ms, 错误=${errMsg}`);
       }
 
       return {
         ...result,
-        duration_ms: duration,
+        meta: {
+          ...result.meta,
+          duration,
+        },
       };
     } catch (err) {
       const duration = Date.now() - startTime;
@@ -71,8 +78,11 @@ export class ToolManager {
       logger.error(`[ToolManager] 工具 ${name} 执行异常, 耗时=${duration}ms, 错误=${message}\n${stack || ''}`);
       return {
         success: false,
-        error: message,
-        duration_ms: duration,
+        error: {
+          code: 'TIMEOUT',
+          message,
+        },
+        meta: { duration },
       };
     }
   }

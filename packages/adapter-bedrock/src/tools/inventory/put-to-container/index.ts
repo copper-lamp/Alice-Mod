@@ -1,13 +1,12 @@
 /**
  * 工具：put_to_container
  *
- * 移动到容器旁，将背包物品放入容器。
+ * 将背包中的物品放入容器（箱子、熔炉、桶等）。
+ * 执行AI会自动移动到容器附近。
  */
 
-import type { IToolModule, ToolMetadata, ToolContext, ToolResult } from '../../../registry/tool-module.types.js';
-import { aiEngine } from '../../../ai/index.js';
+import type { IToolModule, ToolMetadata, ToolContext, ResultEnvelope } from '../../../registry/tool-module.types.js';
 import { ContainerAPI } from '../../../ai/inventory/ContainerAPI.js';
-import { BotManager } from '../../../bot/BotManager.js';
 
 export default class PutToContainerTool implements IToolModule {
   metadata(): ToolMetadata {
@@ -18,16 +17,9 @@ export default class PutToContainerTool implements IToolModule {
       input_schema: {
         type: 'object',
         properties: {
-          container_position: {
-            type: 'object',
-            properties: {
-              x: { type: 'number' },
-              y: { type: 'number' },
-              z: { type: 'number' },
-            },
-            required: ['x', 'y', 'z'],
-            description: '容器方块坐标',
-          },
+          x: { type: 'number', description: '容器方块 X 坐标' },
+          y: { type: 'number', description: '容器方块 Y 坐标' },
+          z: { type: 'number', description: '容器方块 Z 坐标' },
           item_name: {
             type: 'string',
             description: '要放入的物品名称，不填则放入背包内所有可放入物品',
@@ -41,16 +33,12 @@ export default class PutToContainerTool implements IToolModule {
             description: '假人名称（多假人时必须指定）',
           },
         },
-        required: ['container_position'],
+        required: ['x', 'y', 'z'],
       },
       output_schema: {
         type: 'object',
         properties: {
-          success: { type: 'boolean' },
-          item: { type: 'string' },
-          transferred: { type: 'number' },
-          remaining: { type: 'number' },
-          reason: { type: 'string' },
+          putCount: { type: 'number' },
         },
       },
       execution: {
@@ -62,19 +50,18 @@ export default class PutToContainerTool implements IToolModule {
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async execute(params: Record<string, any>, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: Record<string, any>, ctx: ToolContext): Promise<ResultEnvelope> {
     let containerAPI: ContainerAPI | null = null;
 
     try {
-      const { container_position, item_name, count, bot_name } = params;
+      const { x, y, z, item_name, count, bot_name } = params;
       const botName = this.resolveBotName(ctx, bot_name);
 
       if (!botName) {
         return {
           success: false,
-          error: '未指定假人名称，且不存在唯一在线假人',
-          duration_ms: ctx.getElapsedMs(),
+          error: { code: 'NOT_FOUND', message: '未指定假人名称，且不存在唯一在线假人' },
+          meta: { duration: ctx.getElapsedMs() },
         };
       }
 
@@ -82,78 +69,64 @@ export default class PutToContainerTool implements IToolModule {
       if (!player) {
         return {
           success: false,
-          error: `假人不在线: ${botName}`,
-          duration_ms: ctx.getElapsedMs(),
+          error: { code: 'NOT_FOUND', message: `假人不在线: ${botName}` },
+          meta: { duration: ctx.getElapsedMs() },
         };
       }
 
-      const blockPos = { x: Number(container_position.x), y: Number(container_position.y), z: Number(container_position.z) };
-      const block = ctx.world.getBlock(blockPos.x, blockPos.y, blockPos.z);
-      if (!block) {
+      const blockPos = { x: Number(x), y: Number(y), z: Number(z) };
+
+      // 确保在容器附近
+      const px = player.pos?.x ?? 0;
+      const py = player.pos?.y ?? 0;
+      const pz = player.pos?.z ?? 0;
+      const dist = Math.sqrt((px - blockPos.x) ** 2 + (py - blockPos.y) ** 2 + (pz - blockPos.z) ** 2);
+      if (dist > 5) {
+        const { aiEngine } = await import('../../../ai/index.js');
+        const moveResult = await aiEngine.moveTo(botName, blockPos, { distance: 2.5, timeout: 15000 });
+        if (!moveResult.success) {
+          return {
+            success: false,
+            error: { code: 'NO_PATH', message: `无法移动到容器附近: ${moveResult.reason}` },
+            meta: { duration: ctx.getElapsedMs() },
+          };
+        }
+      }
+
+      containerAPI = new ContainerAPI(player, botName);
+      const opened = containerAPI.open(blockPos);
+      if (!opened) {
         return {
           success: false,
-          error: `找不到目标方块: ${blockPos.x}, ${blockPos.y}, ${blockPos.z}`,
-          duration_ms: ctx.getElapsedMs(),
+          error: { code: 'CONTAINER_NOT_FOUND', message: `无法打开容器: ${blockPos.x}, ${blockPos.y}, ${blockPos.z}` },
+          meta: { duration: ctx.getElapsedMs() },
         };
       }
 
-      containerAPI = new ContainerAPI(player);
-
-      // 移动到容器附近
-      const approachTarget = containerAPI.computeApproachTarget(blockPos, 2);
-      const moveResult = await aiEngine.moveTo(botName, approachTarget, { timeout: 20000 });
-      if (!moveResult.success) {
-        return {
-          success: false,
-          error: `移动到容器附近失败: ${moveResult.reason}`,
-          duration_ms: ctx.getElapsedMs(),
-        };
-      }
-
-      // 移动后重新获取方块
-      const movedBlock = ctx.world.getBlock(blockPos.x, blockPos.y, blockPos.z);
-      if (!movedBlock) {
-        return {
-          success: false,
-          error: '移动后目标方块消失',
-          duration_ms: ctx.getElapsedMs(),
-        };
-      }
-
-      const container = containerAPI.open(movedBlock);
-      if (!container) {
-        return {
-          success: false,
-          error: '目标方块不是容器或距离过远',
-          duration_ms: ctx.getElapsedMs(),
-        };
-      }
-
-      const result = containerAPI.put(container, item_name, count);
+      const result = containerAPI.put(item_name, count);
       containerAPI.close();
-      containerAPI = null;
 
-      if (result.success) {
-        this.saveInventory(botName);
+      if (result.count <= 0) {
+        return {
+          success: false,
+          error: {
+            code: 'ITEM_NOT_FOUND',
+            message: item_name ? `背包中未找到物品: ${item_name}` : '背包中没有可放入的物品',
+          },
+          meta: { duration: ctx.getElapsedMs() },
+        };
       }
 
       return {
-        success: result.success,
-        data: {
-          item: result.item,
-          transferred: result.transferred,
-          remaining: result.remaining,
-          reason: result.success ? 'success' : result.error,
-        },
-        error: result.success ? undefined : result.error,
-        duration_ms: ctx.getElapsedMs(),
+        success: true,
+        data: { putCount: result.count },
+        meta: { duration: ctx.getElapsedMs() },
       };
     } catch (err) {
-      containerAPI?.close();
       return {
         success: false,
-        error: err instanceof Error ? err.message : String(err),
-        duration_ms: ctx.getElapsedMs(),
+        error: { code: 'INTERNAL_ERROR', message: err instanceof Error ? err.message : String(err) },
+        meta: { duration: ctx.getElapsedMs() },
       };
     }
   }
@@ -171,13 +144,5 @@ export default class PutToContainerTool implements IToolModule {
 
   private isOnline(bot: { isOnline: boolean | (() => boolean) }): boolean {
     return typeof bot.isOnline === 'function' ? bot.isOnline() : bot.isOnline;
-  }
-
-  private saveInventory(botName: string): void {
-    try {
-      BotManager.saveInventory(botName);
-    } catch (e) {
-      logger.warn(`[put_to_container] 保存背包失败: ${botName}`, e);
-    }
   }
 }

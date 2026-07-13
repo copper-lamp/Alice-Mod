@@ -1,32 +1,31 @@
 /**
  * 工具：drop_item
  *
- * 丢弃背包中指定物品，可指定数量；未指定名称时丢弃当前主手物品。
+ * 从背包中丢弃物品，支持指定物品名称、数量，以及向指定实体（玩家）丢弃。
  */
 
-import type { IToolModule, ToolMetadata, ToolContext, ToolResult } from '../../../registry/tool-module.types.js';
-import { InventoryEngine } from '../../../ai/inventory/InventoryEngine.js';
+import type { IToolModule, ToolMetadata, ToolContext, ResultEnvelope } from '../../../registry/tool-module.types.js';
 
 export default class DropItemTool implements IToolModule {
   metadata(): ToolMetadata {
     return {
       name: 'drop_item',
-      description: '丢弃背包中的物品。可指定物品名称和数量，未指定名称时丢弃当前主手物品。',
+      description: '从背包中丢弃物品，支持指定物品名称、数量，以及向指定实体（玩家）丢弃。',
       category: 'inventory',
       input_schema: {
         type: 'object',
         properties: {
           item_name: {
             type: 'string',
-            description: '要丢弃的物品名称（如 cobblestone、stone_sword），不填则丢弃主手物品',
+            description: '要丢弃的物品名称，不填则丢弃当前手持物品',
           },
           count: {
             type: 'number',
-            description: '丢弃数量，不填则丢弃该槽位全部',
+            description: '丢弃数量，不填则丢弃所有匹配物品',
           },
           target_entity: {
             type: 'string',
-            description: '目标实体 ID，指定时向该实体位置丢弃',
+            description: '目标实体 ID（可选，向指定玩家/实体丢弃物品）',
           },
           bot_name: {
             type: 'string',
@@ -37,24 +36,19 @@ export default class DropItemTool implements IToolModule {
       output_schema: {
         type: 'object',
         properties: {
-          success: { type: 'boolean' },
-          item: { type: 'string' },
-          dropped: { type: 'number' },
-          remaining: { type: 'number' },
-          reason: { type: 'string' },
+          droppedCount: { type: 'number' },
         },
       },
       execution: {
         timeout_default_ms: 10000,
-        timeout_max_ms: 30000,
+        timeout_max_ms: 20000,
         is_movement: false,
         is_async: true,
       },
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async execute(params: Record<string, any>, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: Record<string, any>, ctx: ToolContext): Promise<ResultEnvelope> {
     try {
       const { item_name, count, target_entity, bot_name } = params;
       const botName = this.resolveBotName(ctx, bot_name);
@@ -62,8 +56,8 @@ export default class DropItemTool implements IToolModule {
       if (!botName) {
         return {
           success: false,
-          error: '未指定假人名称，且不存在唯一在线假人',
-          duration_ms: ctx.getElapsedMs(),
+          error: { code: 'NOT_FOUND', message: '未指定假人名称，且不存在唯一在线假人' },
+          meta: { duration: ctx.getElapsedMs() },
         };
       }
 
@@ -71,30 +65,67 @@ export default class DropItemTool implements IToolModule {
       if (!player) {
         return {
           success: false,
-          error: `假人不在线: ${botName}`,
-          duration_ms: ctx.getElapsedMs(),
+          error: { code: 'NOT_FOUND', message: `假人不在线: ${botName}` },
+          meta: { duration: ctx.getElapsedMs() },
         };
       }
 
-      const engine = new InventoryEngine(player, botName);
-      const result = engine.drop(item_name, count, target_entity);
+      const inventory = player.getInventory();
+      if (!inventory) {
+        return {
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: '无法获取背包' },
+          meta: { duration: ctx.getElapsedMs() },
+        };
+      }
+
+      let droppedCount = 0;
+      const size = inventory.size ?? 36;
+
+      for (let i = 0; i < size; i++) {
+        const item = inventory.getItem(i);
+        if (!item || item.isNull()) continue;
+
+        const name = String(item.type || item.name || '').toLowerCase();
+        if (item_name && !name.includes(item_name.toLowerCase())) continue;
+
+        const itemCount = item.count ?? 1;
+        const toDrop = count ? Math.min(itemCount, count - droppedCount) : itemCount;
+
+        // 丢弃物品
+        try {
+          if (typeof player.simulateDropItem === 'function') {
+            player.simulateDropItem(i, toDrop);
+          }
+        } catch (e) {
+          continue;
+        }
+
+        droppedCount += toDrop;
+        if (count && droppedCount >= count) break;
+      }
+
+      if (droppedCount === 0) {
+        return {
+          success: false,
+          error: {
+            code: 'ITEM_NOT_FOUND',
+            message: item_name ? `背包中未找到物品: ${item_name}` : '背包中没有可丢弃的物品',
+          },
+          meta: { duration: ctx.getElapsedMs() },
+        };
+      }
 
       return {
-        success: result.success,
-        data: {
-          item: result.item,
-          dropped: result.dropped,
-          remaining: result.remaining,
-          reason: result.success ? 'success' : result.error,
-        },
-        error: result.success ? undefined : result.error,
-        duration_ms: ctx.getElapsedMs(),
+        success: true,
+        data: { droppedCount },
+        meta: { duration: ctx.getElapsedMs() },
       };
     } catch (err) {
       return {
         success: false,
-        error: err instanceof Error ? err.message : String(err),
-        duration_ms: ctx.getElapsedMs(),
+        error: { code: 'INTERNAL_ERROR', message: err instanceof Error ? err.message : String(err) },
+        meta: { duration: ctx.getElapsedMs() },
       };
     }
   }

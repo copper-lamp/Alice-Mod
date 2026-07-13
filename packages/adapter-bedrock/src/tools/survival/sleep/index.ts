@@ -1,41 +1,44 @@
 /**
- * 生存工具 sleep
+ * 工具：sleep
  *
- * 让假人睡觉或起床，可指定床的位置和等待时间。
+ * 让假人睡觉或起床。通过 action 参数区分 sleep 和 wake。
+ * sleep 模式需要指定床的位置，wake 模式无需参数。
  */
 
-import type { IToolModule, ToolMetadata, ToolContext, ToolResult } from '../../../registry/tool-module.types.js';
-import { SurvivalEngine } from '../../../ai/survival/index.js';
-import { InventoryEngine } from '../../../ai/inventory/index.js';
-import type { Vec3 } from '../../../ai/pathfinding/types.js';
+import type { IToolModule, ToolMetadata, ToolContext, ResultEnvelope } from '../../../registry/tool-module.types.js';
+import { SurvivalEngine } from '../../../ai/survival/SurvivalEngine.js';
 
 export default class SleepTool implements IToolModule {
   metadata(): ToolMetadata {
     return {
       name: 'sleep',
-      description: '让假人睡觉或起床，可指定床的位置和等待时间',
+      description: '让假人睡觉或起床。action=sleep 需要指定床的位置，action=wake 无需参数。',
       category: 'survival',
       input_schema: {
         type: 'object',
         properties: {
           action: {
             type: 'string',
-            description: '操作类型',
             enum: ['sleep', 'wake'],
+            description: '操作类型：sleep 睡觉，wake 起床',
           },
           bed_pos: {
             type: 'object',
-            description: '床的位置（不指定则自动搜索附近床）',
             properties: {
               x: { type: 'number' },
               y: { type: 'number' },
               z: { type: 'number' },
             },
+            description: '床的位置坐标（sleep 模式必填）',
           },
           wait_seconds: {
             type: 'number',
-            description: '等待天亮后自动起床的秒数，0 表示等到天亮',
-            default: 0,
+            description: '等待时间（秒），超过此时间未入睡则返回失败，不填则无限等待',
+            default: 30,
+          },
+          bot_name: {
+            type: 'string',
+            description: '假人名称（多假人时必须指定）',
           },
         },
         required: ['action'],
@@ -43,87 +46,119 @@ export default class SleepTool implements IToolModule {
       output_schema: {
         type: 'object',
         properties: {
-          slept_duration: { type: 'number', description: '睡眠持续毫秒数' },
-          time_when_wake: { type: 'number', description: '起床时的游戏刻时间' },
+          bedPosition: {
+            type: 'object',
+            properties: {
+              x: { type: 'number' },
+              y: { type: 'number' },
+              z: { type: 'number' },
+            },
+          },
+          timeSkipped: { type: 'boolean' },
         },
       },
       execution: {
         timeout_default_ms: 30000,
-        timeout_max_ms: 120000,
+        timeout_max_ms: 60000,
         is_movement: true,
-        is_async: false,
+        is_async: true,
       },
     };
   }
 
-  async execute(params: Record<string, any>, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: Record<string, any>, ctx: ToolContext): Promise<ResultEnvelope> {
     try {
-      const resolved = this.resolveBot(ctx, params);
-      if (!resolved) {
+      const { action, bed_pos, wait_seconds = 30, bot_name } = params;
+
+      if (action !== 'sleep' && action !== 'wake') {
         return {
           success: false,
-          error: 'BOT_NOT_FOUND',
-          duration_ms: ctx.getElapsedMs(),
+          error: { code: 'INVALID_PARAMS', message: `不支持的操作: ${action}，可选: sleep, wake` },
+          meta: { duration: ctx.getElapsedMs() },
         };
       }
 
-      const { player, botName } = resolved;
-      const inventoryEngine = new InventoryEngine(player, botName);
-      const engine = new SurvivalEngine({
-        player,
-        botName,
-        inventoryEngine,
-        world: ctx.world,
-      });
+      if (action === 'sleep' && !bed_pos) {
+        return {
+          success: false,
+          error: { code: 'INVALID_PARAMS', message: 'sleep 模式需要指定 bed_pos' },
+          meta: { duration: ctx.getElapsedMs() },
+        };
+      }
 
-      const bedPos: Vec3 | undefined = params.bed_pos
-        ? {
-            x: Number(params.bed_pos.x),
-            y: Number(params.bed_pos.y),
-            z: Number(params.bed_pos.z),
-          }
-        : undefined;
-      const maxWaitMs = params.wait_seconds ? params.wait_seconds * 1000 : undefined;
+      const botName = this.resolveBotName(ctx, bot_name);
+      if (!botName) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: '未指定假人名称，且不存在唯一在线假人' },
+          meta: { duration: ctx.getElapsedMs() },
+        };
+      }
 
-      const result = await engine.sleep(params.action, bedPos, maxWaitMs);
+      const player = ctx.bot.getBotPlayer(botName);
+      if (!player) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `假人不在线: ${botName}` },
+          meta: { duration: ctx.getElapsedMs() },
+        };
+      }
+
+      const engine = new SurvivalEngine(player, botName);
+
+      if (action === 'wake') {
+        const result = engine.wake();
+        return {
+          success: true,
+          data: {},
+          meta: { duration: ctx.getElapsedMs() },
+        };
+      }
+
+      // sleep 模式
+      const bedPosition = { x: Number(bed_pos.x), y: Number(bed_pos.y), z: Number(bed_pos.z) };
+      const result = engine.sleep(bedPosition, wait_seconds);
+
+      if (!result.success) {
+        let errorCode: string = 'NOT_NIGHT';
+        if (result.reason?.includes('怪物')) errorCode = 'MONSTERS_NEARBY';
+        else if (result.reason?.includes('占用')) errorCode = 'BED_OCCUPIED';
+        else if (result.reason?.includes('不')) errorCode = 'NOT_NIGHT';
+
+        return {
+          success: false,
+          error: { code: errorCode as any, message: result.reason || '无法入睡' },
+          data: { bedPosition, timeSkipped: false },
+          meta: { duration: ctx.getElapsedMs() },
+        };
+      }
 
       return {
-        success: result.success,
-        data: result.success
-          ? {
-              slept_duration: result.sleptDuration,
-              time_when_wake: result.timeWhenWake,
-            }
-          : undefined,
-        error: result.error,
-        duration_ms: ctx.getElapsedMs(),
+        success: true,
+        data: { bedPosition, timeSkipped: true },
+        meta: { duration: ctx.getElapsedMs() },
       };
     } catch (err) {
       return {
         success: false,
-        error: err instanceof Error ? err.message : String(err),
-        duration_ms: ctx.getElapsedMs(),
+        error: { code: 'INTERNAL_ERROR', message: err instanceof Error ? err.message : String(err) },
+        meta: { duration: ctx.getElapsedMs() },
       };
     }
   }
 
-  private resolveBot(
-    ctx: ToolContext,
-    params: Record<string, any>,
-  ): { player: any; botName: string } | null {
-    if (params.bot_name) {
-      const player = ctx.bot.getBotPlayer(params.bot_name);
-      if (!player) return null;
-      return { player, botName: params.bot_name };
-    }
-
+  private resolveBotName(ctx: ToolContext, explicitName?: string): string | null {
+    if (explicitName) return explicitName;
     const activeBot = ctx.bot.getActiveBot();
-    if (!activeBot) return null;
+    if (activeBot && activeBot.name && this.isOnline(activeBot)) return activeBot.name;
 
-    const player = typeof activeBot.getPlayer === 'function' ? activeBot.getPlayer() : activeBot;
-    const botName = activeBot.name || 'default';
-    if (!player) return null;
+    const bots = ctx.bot.listBots();
+    const online = bots.filter((b) => this.isOnline(b));
+    if (online.length === 1) return online[0].name;
+    return null;
+  }
 
-    return { player, botName };
+  private isOnline(bot: { isOnline: boolean | (() => boolean) }): boolean {
+    return typeof bot.isOnline === 'function' ? bot.isOnline() : bot.isOnline;
   }
 }

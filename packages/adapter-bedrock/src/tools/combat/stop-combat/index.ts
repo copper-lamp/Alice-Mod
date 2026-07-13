@@ -1,30 +1,24 @@
 /**
- * 工具：dismount
+ * 工具：stop_combat
  *
- * 从当前骑乘的实体上下来。
+ * 停止当前战斗行为，切换回被动模式。
  */
 
 import type { IToolModule, ToolMetadata, ToolContext, ResultEnvelope } from '../../../registry/tool-module.types.js';
 
-export default class DismountTool implements IToolModule {
+export default class StopCombatTool implements IToolModule {
   metadata(): ToolMetadata {
     return {
-      name: 'dismount',
-      description: '从当前骑乘的实体上下来。',
-      category: 'movement',
+      name: 'stop_combat',
+      description: '停止当前战斗行为，切换回被动模式。',
+      category: 'combat',
       input_schema: {
         type: 'object',
         properties: {
-          bot_name: {
+          botName: {
             type: 'string',
             description: '假人名称（多假人时必须指定）',
           },
-        },
-      },
-      output_schema: {
-        type: 'object',
-        properties: {
-          isRiding: { type: 'boolean' },
         },
       },
       execution: {
@@ -38,10 +32,10 @@ export default class DismountTool implements IToolModule {
 
   async execute(params: Record<string, any>, ctx: ToolContext): Promise<ResultEnvelope> {
     try {
-      const { bot_name } = params;
-      const botName = this.resolveBotName(ctx, bot_name);
+      const { botName } = params;
+      const resolvedBotName = this.resolveBotName(ctx, botName);
 
-      if (!botName) {
+      if (!resolvedBotName) {
         return {
           success: false,
           error: { code: 'NOT_FOUND', message: '未指定假人名称，且不存在唯一在线假人' },
@@ -49,21 +43,19 @@ export default class DismountTool implements IToolModule {
         };
       }
 
-      const player = ctx.bot.getBotPlayer(botName);
+      const player = ctx.bot.getBotPlayer(resolvedBotName);
       if (!player) {
         return {
           success: false,
-          error: { code: 'NOT_FOUND', message: `假人不在线: ${botName}` },
+          error: { code: 'NOT_FOUND', message: `假人不在线: ${resolvedBotName}` },
           meta: { duration: ctx.getElapsedMs() },
         };
       }
 
-      // 执行下马
+      // 停止移动
       try {
-        if (typeof player.simulateStopRiding === 'function') {
-          player.simulateStopRiding();
-        } else if (typeof player.simulateSneak === 'function') {
-          player.simulateSneak();
+        if (typeof player.simulateStopMoving === 'function') {
+          player.simulateStopMoving();
         }
       } catch (e) {
         // ignore
@@ -71,7 +63,7 @@ export default class DismountTool implements IToolModule {
 
       return {
         success: true,
-        data: { isRiding: false },
+        data: undefined,
         meta: { duration: ctx.getElapsedMs() },
       };
     } catch (err) {

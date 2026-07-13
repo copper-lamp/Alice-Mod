@@ -1,10 +1,11 @@
 /**
  * 工具：use_block
  *
- * 右键使用方块（开门、拉杆、工作台等交互操作）。
+ * 与指定坐标的方块交互（如打开箱子、拉杆、按钮等）。
+ * 执行AI会自动移动到方块附近。
  */
 
-import type { IToolModule, ToolMetadata, ToolContext, ToolResult } from '../../../registry/tool-module.types.js';
+import type { IToolModule, ToolMetadata, ToolContext, ResultEnvelope } from '../../../registry/tool-module.types.js';
 import { BlockOperationEngine } from '../../../ai/block/BlockOperationEngine.js';
 import { InventoryEngine } from '../../../ai/inventory/InventoryEngine.js';
 
@@ -12,14 +13,14 @@ export default class UseBlockTool implements IToolModule {
   metadata(): ToolMetadata {
     return {
       name: 'use_block',
-      description: '右键使用方块（开门、拉杆、工作台等交互操作）',
+      description: '与指定坐标的方块交互（如打开箱子、拉杆、按钮等）。执行AI会自动移动到方块附近。',
       category: 'block',
       input_schema: {
         type: 'object',
         properties: {
-          x: { type: 'number', description: '方块 X 坐标' },
-          y: { type: 'number', description: '方块 Y 坐标' },
-          z: { type: 'number', description: '方块 Z 坐标' },
+          x: { type: 'number', description: '交互目标的 X 坐标' },
+          y: { type: 'number', description: '交互目标的 Y 坐标' },
+          z: { type: 'number', description: '交互目标的 Z 坐标' },
           bot_name: {
             type: 'string',
             description: '假人名称（多假人时必须指定）',
@@ -30,19 +31,20 @@ export default class UseBlockTool implements IToolModule {
       output_schema: {
         type: 'object',
         properties: {
-          block: { type: 'string' },
+          blockName: { type: 'string' },
+          interactionType: { type: 'string' },
         },
       },
       execution: {
-        timeout_default_ms: 5000,
-        timeout_max_ms: 10000,
+        timeout_default_ms: 15000,
+        timeout_max_ms: 30000,
         is_movement: true,
         is_async: true,
       },
     };
   }
 
-  async execute(params: Record<string, any>, ctx: ToolContext): Promise<ToolResult> {
+  async execute(params: Record<string, any>, ctx: ToolContext): Promise<ResultEnvelope> {
     try {
       const { x, y, z, bot_name } = params;
       const botName = this.resolveBotName(ctx, bot_name);
@@ -50,8 +52,8 @@ export default class UseBlockTool implements IToolModule {
       if (!botName) {
         return {
           success: false,
-          error: '未指定假人名称，且不存在唯一在线假人',
-          duration_ms: ctx.getElapsedMs(),
+          error: { code: 'NOT_FOUND', message: '未指定假人名称，且不存在唯一在线假人' },
+          meta: { duration: ctx.getElapsedMs() },
         };
       }
 
@@ -59,12 +61,12 @@ export default class UseBlockTool implements IToolModule {
       if (!player) {
         return {
           success: false,
-          error: `假人不在线: ${botName}`,
-          duration_ms: ctx.getElapsedMs(),
+          error: { code: 'NOT_FOUND', message: `假人不在线: ${botName}` },
+          meta: { duration: ctx.getElapsedMs() },
         };
       }
 
-      const inventoryEngine = new InventoryEngine(player as Player, botName);
+      const inventoryEngine = new InventoryEngine(player as any, botName);
       const engine = new BlockOperationEngine({
         player,
         botName,
@@ -72,21 +74,37 @@ export default class UseBlockTool implements IToolModule {
         world: ctx.world,
       });
 
-      const result = await engine.useBlock({ x: Number(x), y: Number(y), z: Number(z) });
+      const pos = { x: Number(x), y: Number(y), z: Number(z) };
+      const result = await engine.useBlock(pos);
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: {
+            code: 'BLOCK_NOT_FOUND',
+            message: result.reason || '交互失败',
+          },
+          data: {
+            blockName: result.blockName ?? '',
+            interactionType: result.interactionType ?? 'unknown',
+          },
+          meta: { duration: ctx.getElapsedMs() },
+        };
+      }
 
       return {
-        success: result.success,
+        success: true,
         data: {
-          block: result.block,
+          blockName: result.blockName ?? '',
+          interactionType: result.interactionType ?? 'interacted',
         },
-        error: result.error,
-        duration_ms: result.duration_ms ?? ctx.getElapsedMs(),
+        meta: { duration: ctx.getElapsedMs() },
       };
     } catch (err) {
       return {
         success: false,
-        error: err instanceof Error ? err.message : String(err),
-        duration_ms: ctx.getElapsedMs(),
+        error: { code: 'INTERNAL_ERROR', message: err instanceof Error ? err.message : String(err) },
+        meta: { duration: ctx.getElapsedMs() },
       };
     }
   }
@@ -94,11 +112,15 @@ export default class UseBlockTool implements IToolModule {
   private resolveBotName(ctx: ToolContext, explicitName?: string): string | null {
     if (explicitName) return explicitName;
     const activeBot = ctx.bot.getActiveBot();
-    if (activeBot && activeBot.name) return activeBot.name;
+    if (activeBot && activeBot.name && this.isOnline(activeBot)) return activeBot.name;
 
     const bots = ctx.bot.listBots();
-    const online = bots.filter((b: any) => b.isOnline);
+    const online = bots.filter((b) => this.isOnline(b));
     if (online.length === 1) return online[0].name;
     return null;
+  }
+
+  private isOnline(bot: { isOnline: boolean | (() => boolean) }): boolean {
+    return typeof bot.isOnline === 'function' ? bot.isOnline() : bot.isOnline;
   }
 }

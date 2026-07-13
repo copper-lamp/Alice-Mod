@@ -5,7 +5,7 @@
  * 支持按名称、分类查询工具，生成注册消息负载。
  */
 
-import type { IToolModule, ToolMetadata, RegisteredTool, ToolRegistryConfig } from './tool-module.types.js';
+import type { IToolModule, ToolMetadata, ToolSchema, RegisteredTool, ToolRegistryConfig } from './tool-module.types.js';
 // logger 为 LLSE 全局变量，无需导入
 
 export class ToolRegistry {
@@ -194,9 +194,51 @@ export class ToolRegistry {
   }
 
   /**
+   * 模糊匹配工具名（先精确匹配，再大小写不敏感匹配）。
+   * 用于容错 LLM 生成的工具名大小写错误。
+   */
+  resolve(name: string): RegisteredTool | undefined {
+    // 先精确匹配
+    const exact = this.tools.get(name);
+    if (exact) return exact;
+
+    // 再大小写不敏感匹配
+    const lower = name.toLowerCase();
+    for (const tool of this.tools.values()) {
+      if (tool.name.toLowerCase() === lower) {
+        return tool;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * 获取所有工具的 Schema 列表（用于 LLM 工具调用）。
+   * 格式兼容 OpenAI function calling / tool_use。
+   */
+  allSchemas(): ToolSchema[] {
+    return this.getAll().map((t) => ({
+      type: 'function' as const,
+      function: {
+        name: t.metadata.name,
+        description: t.metadata.description,
+        parameters: t.metadata.input_schema as Record<string, unknown>,
+      },
+    }));
+  }
+
+  /**
    * 获取工具数量
    */
   get count(): number {
+    return this.tools.size;
+  }
+
+  /**
+   * 获取工具数量（别名，兼容 Protocol 规范）
+   */
+  get size(): number {
     return this.tools.size;
   }
 

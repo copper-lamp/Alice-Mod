@@ -2,7 +2,7 @@
  * IToolModule 接口定义
  *
  * 定义工具模块的统一接口规范，所有工具必须实现此接口。
- * 遵循 MCP 风格的工具定义，包含元数据、输入/输出 schema、执行逻辑。
+ * 遵循协议规范 v1.0 的 ResultEnvelope 和 ErrorCode 标准。
  */
 
 // ── 工具分类 ──
@@ -14,7 +14,118 @@ export type ToolCategory =
   | 'entity'
   | 'survival'
   | 'block'
+  | 'combat'
   | 'chat';
+
+// ── 错误码（ErrorCode 标准 v1.0）──
+
+/**
+ * 通用错误码
+ */
+export type GeneralErrorCode =
+  | 'NOT_FOUND'
+  | 'TOO_FAR'
+  | 'TIMEOUT'
+  | 'NO_PERMISSION'
+  | 'INVALID_PARAMS'
+  | 'INTERNAL_ERROR'
+  | 'CANCELLED';
+
+/**
+ * 领域错误码 - 背包
+ */
+export type InventoryErrorCode =
+  | 'INVENTORY_FULL'
+  | 'ITEM_NOT_FOUND'
+  | 'CONTAINER_FULL'
+  | 'CONTAINER_NOT_FOUND';
+
+/**
+ * 领域错误码 - 战斗
+ */
+export type CombatErrorCode =
+  | 'TARGET_NOT_FOUND'
+  | 'WEAPON_BROKEN'
+  | 'NO_AMMO';
+
+/**
+ * 领域错误码 - 生存
+ */
+export type SurvivalErrorCode =
+  | 'NOT_HUNGRY'
+  | 'NO_FOOD'
+  | 'NOT_NIGHT'
+  | 'MONSTERS_NEARBY'
+  | 'BED_OCCUPIED';
+
+/**
+ * 领域错误码 - 移动
+ */
+export type MovementErrorCode =
+  | 'NO_PATH'
+  | 'BLOCKED'
+  | 'ENTITY_MOVED'
+  | 'NOT_RIDEABLE'
+  | 'NOT_RIDING';
+
+/**
+ * 领域错误码 - 方块
+ */
+export type BlockErrorCode =
+  | 'BLOCK_NOT_FOUND'
+  | 'NOT_BREAKABLE'
+  | 'POSITION_OCCUPIED'
+  | 'CANNOT_PLACE'
+  | 'TOO_LARGE'
+  | 'NO_ORE';
+
+/**
+ * 领域错误码 - 对话
+ */
+export type ChatErrorCode =
+  | 'MESSAGE_TOO_LONG'
+  | 'PLAYER_NOT_FOUND'
+  | 'MUTED'
+  | 'EMOTE_NOT_FOUND'
+  | 'MESSAGE_NOT_FOUND';
+
+/**
+ * 领域错误码 - QQ
+ */
+export type QQErrorCode =
+  | 'CONNECTION_FAILED'
+  | 'SEND_FAILED';
+
+/**
+ * 领域错误码 - 记忆
+ */
+export type MemoryErrorCode =
+  | 'MEMORY_NOT_FOUND'
+  | 'STORAGE_FULL';
+
+/**
+ * 领域错误码 - 任务
+ */
+export type TaskErrorCode =
+  | 'TASK_NOT_FOUND'
+  | 'TASK_ALREADY_RUNNING'
+  | 'DEPENDENCY_FAILED'
+  | 'MAX_RETRIES_EXCEEDED';
+
+/**
+ * 统一错误码类型
+ */
+export type ErrorCode =
+  | GeneralErrorCode
+  | InventoryErrorCode
+  | CombatErrorCode
+  | SurvivalErrorCode
+  | MovementErrorCode
+  | BlockErrorCode
+  | ChatErrorCode
+  | QQErrorCode
+  | MemoryErrorCode
+  | TaskErrorCode;
 
 // ── 工具元数据 ──
 
@@ -111,13 +222,31 @@ export interface ToolContext {
   getElapsedMs(): number;
 }
 
-// ── 工具执行结果 ──
+// ── ResultEnvelope（协议规范 v1.0）──
 
-export interface ToolResult {
+/**
+ * 返回信封（ResultEnvelope）。
+ * 所有工具必须返回此格式。
+ */
+export interface ResultEnvelope<T = Record<string, unknown>> {
+  /** 是否成功 */
   success: boolean;
-  data?: Record<string, unknown>;
-  error?: string;
-  duration_ms: number;
+
+  /** 错误信息（success=false 时必填） */
+  error?: {
+    code: ErrorCode;
+    message: string;
+    details?: unknown;
+  };
+
+  /** 返回数据（success=true 时包含） */
+  data?: T;
+
+  /** 执行元数据 */
+  meta?: {
+    duration: number;
+    cost?: Record<string, number>;
+  };
 }
 
 // ── IToolModule 接口 ──
@@ -131,7 +260,7 @@ export interface IToolModule {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     params: Record<string, any>,
     ctx: ToolContext,
-  ): Promise<ToolResult>;
+  ): Promise<ResultEnvelope>;
 }
 
 // ── 已注册工具 ──
@@ -148,4 +277,19 @@ export interface RegisteredTool {
 export interface ToolRegistryConfig {
   toolsDir: string;
   scanIntervalMs?: number;
+}
+
+// ── ToolSchema（LLM 可见格式）──
+
+/**
+ * 工具 Schema，直接传递给 LLM API。
+ * 格式兼容 OpenAI function calling / tool_use。
+ */
+export interface ToolSchema {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
 }

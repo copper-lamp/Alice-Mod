@@ -183,7 +183,7 @@ export class BlockOperationEngine {
   /**
    * 在指定坐标放置方块
    */
-  async placeBlock(pos: Vec3, blockName: string): Promise<PlaceResult> {
+  async placeBlock(pos: Vec3, blockName: string, facing?: string): Promise<PlaceResult> {
     const start = Date.now();
 
     // 1. 材料检查与替代
