@@ -1,7 +1,7 @@
 package io.alice.mod.adapter.ai;
 
 import carpet.patches.EntityPlayerMPFake;
-import io.alice.mod.adapter.bot.BotManager;
+import io.alice.mod.adapter.world.WorldContextManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -27,7 +27,6 @@ public final class BotAccess {
     public static void init() {
         ServerLifecycleEvents.SERVER_STARTED.register(s -> {
             server = s;
-            BotManager.init(s);
             LOG.info("BotAccess: MinecraftServer initialized");
         });
 
@@ -54,7 +53,13 @@ public final class BotAccess {
      * @return 假人实例，或 null（如果没有在线假人）
      */
     public static ServerPlayer getBot() {
-        java.util.List<EntityPlayerMPFake> bots = BotManager.findAll();
+        io.alice.mod.adapter.bot.BotManager mgr = WorldContextManager.isActive()
+                ? WorldContextManager.getActive().getBotManager() : null;
+        if (mgr == null) {
+            LOG.warn("BotAccess: no active BotManager");
+            return null;
+        }
+        java.util.List<EntityPlayerMPFake> bots = mgr.findAll();
         if (bots.isEmpty()) {
             LOG.warn("BotAccess: no online bots available");
             return null;
@@ -69,7 +74,9 @@ public final class BotAccess {
      * @return 假人实例，或 null
      */
     public static ServerPlayer getBotByName(String botName) {
-        return BotManager.findByName(botName);
+        io.alice.mod.adapter.bot.BotManager mgr = WorldContextManager.isActive()
+                ? WorldContextManager.getActive().getBotManager() : null;
+        return mgr != null ? mgr.findByName(botName) : null;
     }
 
     /**

@@ -5,6 +5,7 @@ import type {
   ConfigEntry,
   WorkspaceInfo,
   WorkspaceItem,
+  WorldItem,
   WorkspaceFileValidation,
   WorkspaceCreateParams,
   TcpStatus,
@@ -54,6 +55,18 @@ export const windowApi = {
   maximize: () => window.electronAPI.window.maximize(),
   close: () => window.electronAPI.window.close(),
   isMaximized: () => window.electronAPI.window.isMaximized()
+}
+
+/** IPC 调用封装 - 世界上下文 */
+export const worldApi = {
+  list: (workspaceId: string) =>
+    window.electronAPI.invoke('world:list', { workspaceId }) as Promise<WorldItem[]>,
+
+  setActive: (workspaceId: string, worldName: string) =>
+    window.electronAPI.invoke('world:set-active', { workspaceId, worldName }) as Promise<{ success: boolean }>,
+
+  getActive: (workspaceId: string) =>
+    window.electronAPI.invoke('world:get-active', { workspaceId }) as Promise<WorldItem | null>,
 }
 
 /** IPC 调用封装 - 工作区 */

@@ -2,6 +2,8 @@ package io.alice.mod.adapter.bot;
 
 import carpet.patches.EntityPlayerMPFake;
 import com.mojang.authlib.GameProfile;
+import io.alice.mod.adapter.world.WorldContext;
+import io.alice.mod.adapter.world.WorldContextManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
@@ -20,10 +22,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
- * 假人管理器 — 全局单例，负责假人的全生命周期管理。
+ * 假人管理器 — 假人的全生命周期管理。
  * <p>
  * 职责：
  * <ul>
@@ -34,7 +35,14 @@ import java.util.stream.Collectors;
  *   <li>服务端重启后恢复假人注册表</li>
  * </ul>
  * <p>
- * 设计为静态单例模式，方便工具层和事件系统直接访问。
+ * <strong>过渡期设计：</strong>
+ * 正在从"静态全局单例"迁移到"世界上下文中的实例"。
+ * 当前同时支持两种访问方式：
+ * <ul>
+ *   <li>静态方法：委托给当前活跃的 WorldContext 中的 BotManager 实例</li>
+ *   <li>实例方法：通过 {@code WorldContextManager.getActive().getBotManager()} 直接调用</li>
+ * </ul>
+ * 未来所有静态方法将标记 {@code @Deprecated} 并最终移除。
  */
 public final class BotManager {
 
@@ -46,83 +54,104 @@ public final class BotManager {
     /** 假人名称合法字符正则。 */
     public static final String NAME_PATTERN = "^[a-zA-Z0-9_]+$";
 
-    /** 重生死延迟（游戏刻），约 30 秒。 */
+    /** 重生死亡延迟（游戏刻），约 30 秒。 */
     private static final long RESPAWN_DELAY_TICKS = 30 * 20;
 
-    /** 在线假人映射：UUID → EntityPlayerMPFake。 */
-    private static final Map<UUID, EntityPlayerMPFake> bots = new ConcurrentHashMap<>();
+    // ── 实例字段（新设计） ──
 
-    /** 名称索引：名称 → UUID。 */
-    private static final Map<String, UUID> nameIndex = new ConcurrentHashMap<>();
+    private final MinecraftServer server;
+    private final Map<UUID, EntityPlayerMPFake> bots = new ConcurrentHashMap<>();
+    private final Map<String, UUID> nameIndex = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> pendingRespawns = new ConcurrentHashMap<>();
+    private final Map<UUID, Boolean> deathHandled = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> createdAtMap = new ConcurrentHashMap<>();
 
-    /** 等待重生的假人：UUID → 死亡时的游戏刻。 */
-    private static final Map<UUID, Long> pendingRespawns = new ConcurrentHashMap<>();
+    // ── 静态委托（过渡期） ──
 
-    /** 死亡标记跟踪：防止重复处理死亡。 */
-    private static final Map<UUID, Boolean> deathHandled = new ConcurrentHashMap<>();
+    /** 当前活跃的 BotManager 实例（来自活跃的 WorldContext）。 */
+    private static volatile BotManager currentInstance;
 
-    /** 假人创建时间戳：UUID → 创建时间（毫秒）。 */
-    private static final Map<UUID, Long> createdAtMap = new ConcurrentHashMap<>();
+    // ── 构造 ──
 
-    /** MinecraftServer 实例引用。 */
-    private static MinecraftServer server;
+    public BotManager(MinecraftServer server) {
+        this.server = server;
+    }
 
-    private BotManager() {}
-
-    // ---- 初始化 ---- //
+    // ── 静态委托管理（过渡期） ──
 
     /**
-     * 设置 MinecraftServer 实例。
-     * 在服务端启动时由 {@link io.alice.mod.adapter.AliceModAdapter} 调用。
+     * 设置当前活跃的 BotManager 实例。
+     * 由 {@link WorldContext#initialize()} 在激活世界上下文时调用。
      */
-    public static void init(MinecraftServer minecraftServer) {
-        server = minecraftServer;
-        LOG.info("BotManager initialized");
+    public static void setCurrentContext(WorldContext ctx) {
+        currentInstance = ctx.getBotManager();
+    }
+
+    /** 清除当前活跃的 BotManager 实例。由 {@link WorldContext#shutdown()} 调用。 */
+    public static void clearCurrentContext() {
+        currentInstance = null;
     }
 
     /**
-     * 服务端启动完成后的回调。
-     * 从注册表恢复已知的假人信息（不自动上线）。
+     * 获取当前活跃的 BotManager 实例。
+     * 优先从 WorldContext 获取，兜底使用静态委托。
      */
-    public static void onServerStarted(MinecraftServer minecraftServer) {
-        server = minecraftServer;
-        BotRepository repository = BotRepository.get(server);
+    private static BotManager instance() {
+        WorldContext ctx = WorldContextManager.getActive();
+        if (ctx != null) return ctx.getBotManager();
+        if (currentInstance != null) return currentInstance;
+        throw new IllegalStateException("No active BotManager (no world context)");
+    }
+
+    // ── 初始化（实例方法） ──
+
+    /** 初始化 BotManager。由 WorldContext 在激活时调用。 */
+    public void init(MinecraftServer minecraftServer) {
+        // server already set in constructor
+        BotRepository repository = BotRepository.get(minecraftServer);
         int count = repository.size();
-        LOG.info("BotManager: recovered {} bot entries from repository", count);
+        LOG.info("BotManager initialized for server, {} bot entries recovered", count);
     }
 
-    /**
-     * 服务端停止时的清理。
-     */
-    public static void onServerStopped() {
+    /** 服务端停止时的清理（实例方法）。 */
+    public void shutdown() {
         bots.clear();
         nameIndex.clear();
         pendingRespawns.clear();
         deathHandled.clear();
         createdAtMap.clear();
-        server = null;
-        LOG.info("BotManager: cleared all bot data");
+        LOG.info("BotManager shut down");
     }
 
-    // ---- 核心操作 ---- //
+    // ── 静态委托方法（过渡期，保持向后兼容） ──
+
+    /** @deprecated 使用实例方法 */
+    @Deprecated
+    public static void onServerStarted(MinecraftServer minecraftServer) {
+        instance().init(minecraftServer);
+    }
+
+    /** @deprecated 使用实例方法 */
+    @Deprecated
+    public static void onServerStopped() {
+        BotManager mgr = currentInstance;
+        if (mgr != null) mgr.shutdown();
+    }
+
+    /** @deprecated 使用 {@code BotManager.spawn(name, level, pos)} */
+    @Deprecated
+    public static EntityPlayerMPFake spawn(MinecraftServer server, String name,
+                                           ServerLevel level, Vec3 pos) {
+        return instance().spawn(name, level, pos);
+    }
+
+    // ── 核心操作（实例方法） ──
 
     /**
      * 创建并生成假人。
-     * <p>
-     * 幂等性：同名的假人只会存在一个 — 如果已在线则返回在线实例；
-     * 如果已注册但离线则唤醒；如果不存在则创建新实例。
-     *
-     * @param server MinecraftServer 实例
-     * @param name   假人名称（仅限字母数字和下划线，最长 16 字符）
-     * @param level  目标维度
-     * @param pos    生成位置
-     * @return 假人实例
-     * @throws IllegalArgumentException 名称非法时抛出
+     * 幂等性：同名的假人只会存在一个。
      */
-    public static synchronized EntityPlayerMPFake spawn(MinecraftServer server,
-                                                         String name,
-                                                         ServerLevel level,
-                                                         Vec3 pos) {
+    public synchronized EntityPlayerMPFake spawn(String name, ServerLevel level, Vec3 pos) {
         validateName(name);
 
         // 检查是否已在线
@@ -136,7 +165,7 @@ public final class BotManager {
         BotRepository repository = BotRepository.get(server);
         UUID existingUuid = repository.findByName(name);
         if (existingUuid != null) {
-            return respawn(server, existingUuid, level, pos);
+            return respawn(existingUuid, level, pos);
         }
 
         // 创建全新假人
@@ -176,18 +205,17 @@ public final class BotManager {
         return player;
     }
 
-    /**
-     * 休眠假人：保存存档后从游戏世界移除，不删除注册信息。
-     *
-     * @param player 假人实例
-     * @return true 如果成功下线
-     */
+    /** @deprecated 使用实例方法 */
+    @Deprecated
     public static boolean despawn(EntityPlayerMPFake player) {
+        return instance().despawnInternal(player);
+    }
+
+    private boolean despawnInternal(EntityPlayerMPFake player) {
         if (player == null) return false;
         UUID uuid = player.getUUID();
         String name = player.getName().getString();
 
-        // 更新注册表中的位置信息
         BotRepository repository = BotRepository.get(server);
         BotRepository.Entry entry = repository.find(uuid);
         if (entry != null) {
@@ -201,24 +229,19 @@ public final class BotManager {
             ));
         }
 
-        // 移除假人
         unregisterBot(player);
         player.connection.disconnect(net.minecraft.network.chat.Component.literal("Despawned"));
-
-        // 触发事件
         BotEventDispatcher.fireDespawn(name, uuid);
 
         LOG.info("BotManager: despawned bot '{}' (uuid={})", name, uuid);
         return true;
     }
 
-    /**
-     * 永久销毁假人：下线并删除注册信息。
-     *
-     * @param uuid 假人 UUID
-     * @return true 如果成功销毁
-     */
-    public static boolean dismiss(UUID uuid) {
+    /** @deprecated 使用实例方法 */
+    @Deprecated
+    public static boolean dismiss(UUID uuid) { return instance().dismissInternal(uuid); }
+
+    private boolean dismissInternal(UUID uuid) {
         EntityPlayerMPFake player = bots.get(uuid);
         String name = player != null ? player.getName().getString() : "unknown";
 
@@ -227,30 +250,23 @@ public final class BotManager {
             player.connection.disconnect(net.minecraft.network.chat.Component.literal("Dismissed"));
         }
 
-        // 从注册表移除
         BotRepository.get(server).remove(uuid);
         pendingRespawns.remove(uuid);
         deathHandled.remove(uuid);
         createdAtMap.remove(uuid);
-
-        // 触发事件
         BotEventDispatcher.fireDismiss(name, uuid);
 
         LOG.info("BotManager: dismissed bot '{}' (uuid={})", name, uuid);
         return true;
     }
 
-    /**
-     * 永久销毁假人（按名称）。
-     *
-     * @param name 假人名称
-     * @return true 如果成功销毁
-     */
-    public static boolean dismissByName(String name) {
+    /** @deprecated 使用实例方法 */
+    @Deprecated
+    public static boolean dismissByName(String name) { return instance().dismissByNameInternal(name); }
+
+    private boolean dismissByNameInternal(String name) {
         EntityPlayerMPFake player = findByName(name);
-        if (player != null) {
-            return dismiss(player.getUUID());
-        }
+        if (player != null) return dismissInternal(player.getUUID());
         UUID uuid = BotRepository.get(server).findByName(name);
         if (uuid != null) {
             BotRepository.get(server).remove(uuid);
@@ -262,10 +278,7 @@ public final class BotManager {
 
     // ---- 死亡处理 ---- //
 
-    /**
-     * 假人死亡回调（由 {@link #tick()} 检测到死亡后调用）。
-     */
-    static void onDeath(EntityPlayerMPFake body) {
+    private void onDeathInternal(EntityPlayerMPFake body) {
         MinecraftServer srv = server;
         if (srv == null) return;
 
@@ -273,42 +286,34 @@ public final class BotManager {
         String name = body.getName().getString();
         String deathMessage = body.getCombatTracker().getDeathMessage().getString();
 
-        // 触发事件
         BotEventDispatcher.fireDeath(name, uuid, deathMessage);
-
-        // 补满血量以保证 .dat 存档完整
         body.setHealth(body.getMaxHealth());
-
-        // 记录死亡时间，用于重生计时
         pendingRespawns.put(uuid, srv.overworld().getGameTime());
 
         LOG.info("BotManager: bot '{}' died: {}", name, deathMessage);
     }
 
-    /**
-     * 重生一个假人（从休眠或死亡状态恢复）。
-     *
-     * @param server MinecraftServer
-     * @param uuid   假人 UUID
-     * @param level  目标维度（为 null 时使用注册表中记录的维度）
-     * @param pos    目标位置（为 null 时使用注册表中记录的位置）
-     * @return 假人实例，或 null（如果注册表中不存在该 UUID）
-     */
-    @Nullable
-    public static synchronized EntityPlayerMPFake respawn(MinecraftServer server,
-                                                           UUID uuid,
-                                                           @Nullable ServerLevel level,
-                                                           @Nullable Vec3 pos) {
-        // 如果已在线，直接返回
+    /** @deprecated 使用实例方法 */
+    @Deprecated
+    static void onDeath(EntityPlayerMPFake body) { instance().onDeathInternal(body); }
+
+    /** @deprecated 使用实例方法 */
+    @Deprecated
+    public static EntityPlayerMPFake respawn(MinecraftServer server, UUID uuid,
+                                              ServerLevel level, Vec3 pos) {
+        return instance().respawn(uuid, level, pos);
+    }
+
+    private synchronized EntityPlayerMPFake respawn(UUID uuid,
+                                                     @Nullable ServerLevel level,
+                                                     @Nullable Vec3 pos) {
         EntityPlayerMPFake live = bots.get(uuid);
         if (live != null) return live;
 
-        // 查注册表
         BotRepository repository = BotRepository.get(server);
         BotRepository.Entry entry = repository.find(uuid);
         if (entry == null) return null;
 
-        // 确定维度和位置
         if (level == null) {
             ResourceLocation dimId = ResourceLocation.tryParse(entry.dimension());
             if (dimId != null) {
@@ -320,33 +325,20 @@ public final class BotManager {
             pos = new Vec3(entry.x() + 0.5, entry.y(), entry.z() + 0.5);
         }
 
-        // 创建假人
         GameProfile profile = new GameProfile(uuid, entry.name());
         EntityPlayerMPFake player = EntityPlayerMPFake.respawnFake(server, level, profile, ClientInformation.createDefault());
         FakeConnection connection = new FakeConnection();
         server.getPlayerList().placeNewPlayer(connection, player,
                 CommonListenerCookie.createInitial(profile, false));
 
-        // 恢复玩家数据
         server.getPlayerList().load(player).ifPresent(player::load);
-
-        // 强制设置为生存模式
         player.setGameMode(GameType.SURVIVAL);
-
-        // 传送
         player.teleportTo(level, pos.x, pos.y, pos.z, Set.of(), player.getYRot(), player.getXRot(), false);
         player.setHealth(player.getMaxHealth());
 
-        // 重置死亡标记
         deathHandled.remove(uuid);
-
-        // 注册到索引
         registerBot(player);
-
-        // 清除重生等待状态
         pendingRespawns.remove(uuid);
-
-        // 触发事件
         BotEventDispatcher.fireRespawn(entry.name(), uuid);
 
         LOG.info("BotManager: respawned bot '{}' (uuid={})", entry.name(), uuid);
@@ -355,16 +347,8 @@ public final class BotManager {
 
     // ---- Tick 驱动 ---- //
 
-    /**
-     * 主 tick 驱动 — 在服务端主 tick 中调用。
-     * <p>
-     * 当前负责：
-     * <ul>
-     *   <li>死亡检测（遍历在线假人，检测血量 ≤ 0 或 isDeadOrDying）</li>
-     *   <li>死亡假人的定时重生检查</li>
-     * </ul>
-     */
-    public static void tick() {
+    /** 主 tick 驱动 — 在服务端主 tick 中调用。 */
+    public void tick() {
         if (server == null) return;
 
         // 死亡检测
@@ -372,7 +356,7 @@ public final class BotManager {
             UUID uuid = bot.getUUID();
             if (!deathHandled.containsKey(uuid) && (bot.getHealth() <= 0.0f || bot.isDeadOrDying())) {
                 deathHandled.put(uuid, true);
-                onDeath(bot);
+                onDeathInternal(bot);
             }
         }
 
@@ -398,7 +382,7 @@ public final class BotManager {
                                 ResourceKey.create(Registries.DIMENSION, dimId));
                         if (dimLevel != null) level = dimLevel;
                     }
-                    respawn(server, uuid, level, null);
+                    respawn(uuid, level, null);
                 } else {
                     pendingRespawns.remove(uuid);
                 }
@@ -409,106 +393,81 @@ public final class BotManager {
         }
     }
 
+    
+
     // ---- 查询 ---- //
 
     /** 根据 UUID 查找在线假人。 */
     @Nullable
-    public static EntityPlayerMPFake get(UUID uuid) {
-        return bots.get(uuid);
-    }
+    public EntityPlayerMPFake get(UUID uuid) { return bots.get(uuid); }
 
     /** 根据名称查找在线假人。 */
     @Nullable
-    public static EntityPlayerMPFake findByName(String name) {
+    public EntityPlayerMPFake findByName(String name) {
         UUID uuid = nameIndex.get(name);
         return uuid != null ? bots.get(uuid) : null;
     }
 
     /** 获取所有在线假人。 */
-    public static List<EntityPlayerMPFake> findAll() {
-        return List.copyOf(bots.values());
-    }
+    public List<EntityPlayerMPFake> findAll() { return List.copyOf(bots.values()); }
 
     /** 获取所有已注册的假人信息（在线 + 离线）。 */
-    public static List<BotInfo> listAll() {
+    public List<BotInfo> listAll() {
         List<BotInfo> result = new ArrayList<>();
-
-        // 在线假人
         for (EntityPlayerMPFake bot : bots.values()) {
             UUID uuid = bot.getUUID();
             ServerLevel level = (ServerLevel) bot.level();
-            result.add(new BotInfo(
-                    uuid,
-                    bot.getName().getString(),
-                    true,
-                    level.dimension().location(),
-                    bot.blockPosition(),
-                    bot.getHealth(),
-                    bot.getMaxHealth(),
-                    getCreatedAt(uuid)
-            ));
+            result.add(new BotInfo(uuid, bot.getName().getString(), true,
+                    level.dimension().location(), bot.blockPosition(),
+                    bot.getHealth(), bot.getMaxHealth(), getCreatedAt(uuid)));
         }
-
-        // 离线假人（注册表中存在但不在线）
         BotRepository repository = BotRepository.get(server);
         for (Map.Entry<UUID, BotRepository.Entry> entry : repository.all()) {
             if (!bots.containsKey(entry.getKey())) {
                 BotRepository.Entry e = entry.getValue();
-                result.add(new BotInfo(
-                        entry.getKey(),
-                        e.name(),
-                        false,
+                result.add(new BotInfo(entry.getKey(), e.name(), false,
                         ResourceLocation.tryParse(e.dimension()),
-                        new BlockPos(e.x(), e.y(), e.z()),
-                        0, 0,
-                        e.createdAt()
-                ));
+                        new BlockPos(e.x(), e.y(), e.z()), 0, 0, e.createdAt()));
             }
         }
-
         return result;
     }
 
     /** 判断是否为假人。 */
-    public static boolean isBot(ServerPlayer player) {
-        return player instanceof EntityPlayerMPFake;
-    }
+    public boolean isBot(ServerPlayer player) { return player instanceof EntityPlayerMPFake; }
 
     /** 获取在线假人数量。 */
-    public static int onlineCount() {
-        return bots.size();
-    }
+    public int onlineCount() { return bots.size(); }
 
     /** 获取假人创建时间。 */
-    public static long getCreatedAt(UUID uuid) {
-        return createdAtMap.getOrDefault(uuid, 0L);
-    }
+    public long getCreatedAt(UUID uuid) { return createdAtMap.getOrDefault(uuid, 0L); }
 
-    /** 获取 {@link IBotHandle} 实例。 */
-    @Nullable
+    
+
+    /** @deprecated 使用实例方法 */
+    @Deprecated @Nullable
     public static IBotHandle getHandle(UUID uuid) {
-        EntityPlayerMPFake player = bots.get(uuid);
+        EntityPlayerMPFake player = instance().get(uuid);
         return player != null ? new BotHandleImpl(player) : null;
     }
 
-    @Nullable
+    /** @deprecated 使用实例方法 */
+    @Deprecated @Nullable
     public static IBotHandle getHandleByName(String name) {
-        EntityPlayerMPFake player = findByName(name);
+        EntityPlayerMPFake player = instance().findByName(name);
         return player != null ? new BotHandleImpl(player) : null;
     }
 
     // ---- 内部方法 ---- //
 
-    /** 注册假人到索引。 */
-    private static void registerBot(EntityPlayerMPFake player) {
+    private void registerBot(EntityPlayerMPFake player) {
         UUID uuid = player.getUUID();
         String name = player.getName().getString();
         bots.put(uuid, player);
         nameIndex.put(name, uuid);
     }
 
-    /** 从索引中移除假人。 */
-    private static void unregisterBot(EntityPlayerMPFake player) {
+    private void unregisterBot(EntityPlayerMPFake player) {
         UUID uuid = player.getUUID();
         String name = player.getName().getString();
         bots.remove(uuid);
@@ -516,7 +475,7 @@ public final class BotManager {
     }
 
     /** 校验假人名称合法性。 */
-    static void validateName(String name) {
+    public static void validateName(String name) {
         if (name == null || name.isEmpty()) {
             throw new IllegalArgumentException("Bot name cannot be empty");
         }
@@ -531,65 +490,38 @@ public final class BotManager {
     // ---- 内部类 ---- //
 
     /** 假人信息（用于列表查询）。 */
-    public record BotInfo(
-            UUID uuid,
-            String name,
-            boolean online,
-            ResourceLocation dimension,
-            BlockPos position,
-            float health,
-            float maxHealth,
-            long createdAt
-    ) {}
+    public record BotInfo(UUID uuid, String name, boolean online,
+                          ResourceLocation dimension, BlockPos position,
+                          float health, float maxHealth, long createdAt) {}
 
     /** IBotHandle 实现。 */
     private static class BotHandleImpl implements IBotHandle {
-
         private final EntityPlayerMPFake player;
 
-        BotHandleImpl(EntityPlayerMPFake player) {
-            this.player = player;
-        }
+        BotHandleImpl(EntityPlayerMPFake player) { this.player = player; }
 
-        @Override
-        public UUID uuid() { return player.getUUID(); }
-
-        @Override
-        public String name() { return player.getName().getString(); }
-
-        @Override
-        public boolean isOnline() { return true; }
-
-        @Override
-        public ServerPlayer getPlayer() { return player; }
+        @Override public UUID uuid() { return player.getUUID(); }
+        @Override public String name() { return player.getName().getString(); }
+        @Override public boolean isOnline() { return true; }
+        @Override public ServerPlayer getPlayer() { return player; }
 
         @Override
         public void teleport(double x, double y, double z, ResourceLocation dimension) {
-            ServerLevel level = server.getLevel(
+            MinecraftServer srv = instance().server;
+            ServerLevel level = srv.getLevel(
                     ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, dimension));
             if (level != null) {
                 player.teleportTo(level, x, y, z, Set.of(), player.getYRot(), player.getXRot(), false);
             }
         }
 
-        @Override
-        public float getHealth() { return player.getHealth(); }
-
-        @Override
-        public float getMaxHealth() { return player.getMaxHealth(); }
-
-        @Override
-        public Vec3 getPosition() { return player.position(); }
-
-        @Override
-        public ResourceLocation getDimension() {
+        @Override public float getHealth() { return player.getHealth(); }
+        @Override public float getMaxHealth() { return player.getMaxHealth(); }
+        @Override public Vec3 getPosition() { return player.position(); }
+        @Override public ResourceLocation getDimension() {
             return ((ServerLevel) player.level()).dimension().location();
         }
-
-        @Override
-        public int getFoodLevel() { return player.getFoodData().getFoodLevel(); }
-
-        @Override
-        public int getExperienceLevel() { return player.experienceLevel; }
+        @Override public int getFoodLevel() { return player.getFoodData().getFoodLevel(); }
+        @Override public int getExperienceLevel() { return player.experienceLevel; }
     }
 }

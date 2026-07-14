@@ -13,10 +13,13 @@ import java.util.concurrent.CompletableFuture;
  * <p>
  * 遵循通信协议规范的握手流程：
  * <ol>
- *   <li>发送 {@code handshake} 请求（含 instance_id + auth_token + version + mod）</li>
+ *   <li>发送 {@code handshake} 请求（含 instance_id + auth_token + version + mod + world_name）</li>
  *   <li>服务端验证 token，返回 session_id / server_version / heartbeat_interval</li>
  *   <li>验证失败时返回 JSON-RPC 错误码 -32001</li>
  * </ol>
+ * <p>
+ * v2 协议扩展：handshake 消息携带 {@code world_name} 和 {@code world_online} 字段，
+ * 使 Agent Core 能区分不同世界的会话。
  */
 public final class HandshakeManager {
 
@@ -56,12 +59,19 @@ public final class HandshakeManager {
         params.addProperty("version", config.version());
         params.addProperty("mod", config.modName());
 
+        // v2 协议扩展：世界身份信息
+        if (config.worldName() != null && !config.worldName().isEmpty()) {
+            params.addProperty("world_name", config.worldName());
+            params.addProperty("world_online", true);
+        }
+
         Request request = new Request(HANDSHAKE_ID, "handshake", params);
         String json = JsonRpcCodec.toJson(request);
 
         sender.send(json, HANDSHAKE_ID);
 
-        LOG.info("Handshake sent: instance_id={}, version={}", config.instanceId(), config.version());
+        LOG.info("Handshake sent: instance_id={}, world='{}', v2={}",
+                config.instanceId(), config.worldName(), config.worldName() != null);
         return future;
     }
 
@@ -147,8 +157,13 @@ public final class HandshakeManager {
             String instanceId,
             String authToken,
             String version,
-            String modName
-    ) {}
+            String modName,
+            String worldName       // v2 扩展：世界名称，可为 null
+    ) {
+        public HandshakeConfig(String instanceId, String authToken, String version, String modName) {
+            this(instanceId, authToken, version, modName, null);
+        }
+    }
 
     /** 握手成功结果。 */
     public record HandshakeResult(

@@ -11,7 +11,7 @@ import type { JsonRpcResponse } from '@mcagent/shared';
 import { PROTOCOL_VERSION, ErrorCode as SharedErrorCode } from '@mcagent/shared';
 import { createSuccessResponse, createErrorResponse } from './codec';
 
-/** 握手请求参数 */
+/** 握手请求参数（v2 扩展） */
 export interface HandshakeParams {
   instance_id: string;
   auth_token: string;
@@ -20,6 +20,16 @@ export interface HandshakeParams {
     edition: 'bedrock' | 'java';
   };
   mod?: string;
+
+  // ---- v2 新增字段（可选） ----
+  /** 当前世界名称，支持世界上下文切换时必填 */
+  world_name?: string;
+  /** 当前世界是否在线 */
+  world_online?: boolean;
+  /** 游戏版本，如 "java" */
+  edition?: string;
+  /** 游戏版本号，如 "1.21.4" */
+  game_version?: string;
 }
 
 /** 握手成功响应结果 */

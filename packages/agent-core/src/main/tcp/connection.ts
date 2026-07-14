@@ -33,6 +33,8 @@ export enum ConnectionEvent {
   StateChange = 'state-change',
   Closed = 'closed',
   Error = 'error',
+  WorldOnline = 'world:online',       // 世界上线通知
+  WorldOffline = 'world:offline',     // 世界下线通知
 }
 
 /** 消息处理器 */
@@ -52,6 +54,11 @@ export class TcpConnection extends EventEmitter {
   public instanceId: string | null = null;
   public version: ClientVersion | null = null;
   public toolCount = 0;
+
+  /** 当前世界名称（v2 握手扩展），无世界上下文时为 null */
+  public worldName: string | null = null;
+  /** 当前世界是否在线（v2 握手扩展） */
+  public worldOnline: boolean = true;
 
   private _state: ConnectionState = ConnectionState.Disconnected;
   private readonly socket: Socket;
@@ -242,6 +249,14 @@ export class TcpConnection extends EventEmitter {
       }
       if (result.valid && result.instanceId) {
         this.instanceId = result.instanceId;
+
+        // 解析 v2 握手扩展字段
+        const params = request.params as Record<string, unknown> | undefined;
+        if (params) {
+          this.worldName = typeof params.world_name === 'string' ? params.world_name : null;
+          this.worldOnline = typeof params.world_online === 'boolean' ? params.world_online : true;
+        }
+
         this.transitionTo(ConnectionState.Connected);
         this.heartbeat.start(() => this.sendPing());
       }
@@ -299,6 +314,36 @@ export class TcpConnection extends EventEmitter {
       if (params?.tools) {
         this.toolCount = params.tools.length;
       }
+    }
+
+    // 世界上下文通知
+    if (notification.method === 'world_online') {
+      const params = notification.params as Record<string, unknown> | undefined;
+      if (params) {
+        this.worldName = typeof params.world_name === 'string' ? params.world_name : this.worldName;
+        this.worldOnline = true;
+        this.emit(ConnectionEvent.WorldOnline, {
+          instanceId: this.instanceId,
+          worldName: params.world_name,
+          botCount: typeof params.bot_count === 'number' ? params.bot_count : 0,
+        });
+      }
+      return;
+    }
+
+    if (notification.method === 'world_offline') {
+      const params = notification.params as Record<string, unknown> | undefined;
+      if (params) {
+        this.worldOnline = false;
+        this.emit(ConnectionEvent.WorldOffline, {
+          instanceId: this.instanceId,
+          worldName: params.world_name,
+          uptimeSeconds: typeof params.uptime_seconds === 'number' ? params.uptime_seconds : 0,
+          botCount: typeof params.bot_count === 'number' ? params.bot_count : 0,
+          reason: typeof params.reason === 'string' ? params.reason : undefined,
+        });
+      }
+      return;
     }
 
     this.emit(ConnectionEvent.Notification, notification);

@@ -7,6 +7,7 @@ import io.alice.mod.adapter.tool.ToolResult;
 import io.alice.mod.adapter.tool.annotation.ToolMethod;
 import io.alice.mod.adapter.tool.annotation.ToolModule;
 import io.alice.mod.adapter.tool.annotation.ToolParam;
+import io.alice.mod.adapter.world.WorldContextManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -229,7 +230,7 @@ public enum BotTools {
     public ToolResult botList(Map<String, Object> params) {
         long start = System.currentTimeMillis();
         try {
-            List<BotInfo> allBots = BotManager.listAll();
+            List<BotInfo> allBots = getBotManager().listAll();
 
             List<Map<String, Object>> botList = new ArrayList<>();
             for (BotInfo info : allBots) {
@@ -253,8 +254,8 @@ public enum BotTools {
 
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("total", allBots.size());
-            data.put("online", BotManager.onlineCount());
-            data.put("offline", allBots.size() - BotManager.onlineCount());
+            data.put("online", getBotManager().onlineCount());
+            data.put("offline", allBots.size() - getBotManager().onlineCount());
             data.put("bots", botList);
 
             return ToolResult.ok("Found " + allBots.size() + " bots", data, start);
@@ -322,7 +323,7 @@ public enum BotTools {
             data.put("food_level", bot.getFoodData().getFoodLevel());
             data.put("experience_level", bot.experienceLevel);
             data.put("game_mode", bot.gameMode.getGameModeForPlayer().getName());
-            data.put("created_at", BotManager.getCreatedAt(bot.getUUID()));
+            data.put("created_at", getBotManager().getCreatedAt(bot.getUUID()));
 
             return ToolResult.ok("Bot info: " + bot.getName().getString(), data, start);
         } catch (Exception e) {
@@ -331,6 +332,10 @@ public enum BotTools {
     }
 
     // ---- 辅助方法 ---- //
+
+    private static BotManager getBotManager() {
+        return WorldContextManager.getActive().getBotManager();
+    }
 
     private static String getString(Map<String, Object> params, String key) {
         Object v = params.get(key);
@@ -368,14 +373,15 @@ public enum BotTools {
 
     /** 通过名称或 UUID 解析在线假人。 */
     private static EntityPlayerMPFake resolveBot(String nameOrUuid) {
+        BotManager mgr = getBotManager();
         // 先尝试 UUID
         try {
             UUID uuid = UUID.fromString(nameOrUuid);
-            EntityPlayerMPFake bot = BotManager.get(uuid);
+            EntityPlayerMPFake bot = mgr.get(uuid);
             if (bot != null) return bot;
         } catch (IllegalArgumentException ignored) {}
 
         // 再尝试名称
-        return BotManager.findByName(nameOrUuid);
+        return mgr.findByName(nameOrUuid);
     }
 }

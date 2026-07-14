@@ -32,7 +32,29 @@ public class ToolRegistrarImpl implements ToolRegistrar {
         }
 
         try {
-            ToolRegistry.register(tool);
+            // Wrap the API AliceTool into the internal AliceTool type
+            io.alice.mod.adapter.tool.AliceTool internalTool = new io.alice.mod.adapter.tool.AliceTool() {
+                @Override
+                public String name() { return tool.name(); }
+                @Override
+                public String description() { return tool.description(); }
+                @Override
+                public java.util.Map<String, Object> parameterSchema() { return tool.parameterSchema(); }
+                @Override
+                public ToolResult invoke(java.util.Map<String, Object> args) {
+                    io.alice.mod.adapter.api.ToolResult apiResult = tool.invoke(args);
+                    return new ToolResult(
+                            apiResult.success(),
+                            apiResult.message(),
+                            apiResult.data(),
+                            apiResult.meta(),
+                            apiResult.errorCode(),
+                            apiResult.errorMessage(),
+                            apiResult.errorDetails()
+                    );
+                }
+            };
+            ToolRegistry.register(internalTool);
             LOG.info("Plugin registered tool: {} (from {})",
                     tool.name(), tool.getClass().getName());
         } catch (IllegalStateException e) {

@@ -7,6 +7,8 @@ import io.alice.mod.adapter.api.types.InventorySnapshot;
 import io.alice.mod.adapter.api.types.ItemStackInfo;
 import io.alice.mod.adapter.api.types.Vec3;
 import io.alice.mod.adapter.bot.BotManager;
+import io.alice.mod.adapter.world.WorldContextManager;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
@@ -60,7 +62,7 @@ public class PlayerServiceImpl implements PlayerService {
             if (!stack.isEmpty()) {
                 usedSlots++;
                 items.add(new ItemStackInfo(i,
-                        stack.getItem().arch$registryName().toString(),
+                        BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),
                         stack.getCount(),
                         Map.of()));
             }
@@ -78,7 +80,7 @@ public class PlayerServiceImpl implements PlayerService {
             ItemStack stack = armorSlots.get(i);
             if (!stack.isEmpty()) {
                 equipment.add(new ItemStackInfo(i,
-                        stack.getItem().arch$registryName().toString(),
+                        BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),
                         stack.getCount(),
                         Map.of()));
             }
@@ -94,13 +96,17 @@ public class PlayerServiceImpl implements PlayerService {
 
     private ServerPlayer resolvePlayer(String nameOrUuid) {
         // 先尝试作为假人名称/UUID
-        try {
-            UUID uuid = UUID.fromString(nameOrUuid);
-            EntityPlayerMPFake bot = BotManager.get(uuid);
+        BotManager mgr = WorldContextManager.isActive()
+                ? WorldContextManager.getActive().getBotManager() : null;
+        if (mgr != null) {
+            try {
+                UUID uuid = UUID.fromString(nameOrUuid);
+                EntityPlayerMPFake bot = mgr.get(uuid);
+                if (bot != null) return bot;
+            } catch (IllegalArgumentException ignored) {}
+            EntityPlayerMPFake bot = mgr.findByName(nameOrUuid);
             if (bot != null) return bot;
-        } catch (IllegalArgumentException ignored) {}
-        EntityPlayerMPFake bot = BotManager.findByName(nameOrUuid);
-        if (bot != null) return bot;
+        }
 
         // 再尝试作为真实玩家
         var server = BotAccess.getServer();

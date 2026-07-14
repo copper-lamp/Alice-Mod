@@ -4,6 +4,7 @@ import io.alice.mod.adapter.ai.BotAccess;
 import io.alice.mod.adapter.api.service.WorldService;
 import io.alice.mod.adapter.api.types.*;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -35,7 +36,7 @@ public class WorldServiceImpl implements WorldService {
     public String getBlockId(int x, int y, int z, String dimension) {
         ServerLevel level = getLevel(dimension);
         if (level == null) return "unknown";
-        return level.getBlockState(new BlockPos(x, y, z)).getBlock().arch$registryName().toString();
+        return BuiltInRegistries.BLOCK.getKey(level.getBlockState(new BlockPos(x, y, z)).getBlock()).toString();
     }
 
     @Override
@@ -71,7 +72,7 @@ public class WorldServiceImpl implements WorldService {
         if (shape.isEmpty()) {
             return new CollisionShape(true, 0, 0, 0, 0, 0, 0);
         }
-        AABB bounds = shape.bounds().get(0);
+        AABB bounds = shape.bounds();
         return new CollisionShape(false,
                 bounds.minX, bounds.minY, bounds.minZ,
                 bounds.maxX, bounds.maxY, bounds.maxZ);
@@ -95,7 +96,7 @@ public class WorldServiceImpl implements WorldService {
             }
             result.add(new EntityInfo(
                     entity.getUUID(),
-                    entity.getType().arch$registryName().toString(),
+                    BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString(),
                     new Vec3(entity.getX(), entity.getY(), entity.getZ()),
                     entity.getName().getString(),
                     health,
@@ -119,8 +120,8 @@ public class WorldServiceImpl implements WorldService {
         return new WeatherInfo(
                 level.isRaining(),
                 level.isThundering(),
-                level.rainLevel,
-                level.thunderLevel
+                (int) level.getRainLevel(0),
+                (int) level.getThunderLevel(0)
         );
     }
 

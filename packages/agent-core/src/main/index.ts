@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell, Notification } from 'electron'
 import path from 'path'
 import fs, { existsSync, mkdirSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { initLogger, getLogger, getLogDb } from './log'
 import { registerAllIpcHandlers, setMemoryManager } from './ipc'
 import { setLogDb } from './ipc/log-handler'
@@ -8,6 +9,7 @@ import { getToolCallCollector, setToolCallCollector } from './ipc/tool-call-hand
 import { PipelineEventCollector } from './pipeline/event-collector'
 import { getDatabaseManager } from './database'
 import { getWorkspaceManager } from './workspace'
+import { getWorldSessionManager, WorldSessionEventType } from './workspace/world-session-manager'
 import { DefaultLLMObserver, SqliteObserverStore, setLLMObserver } from './llm'
 import { TcpServer, ServerEvent } from './tcp'
 import { MemoryManager, DEFAULT_MEMORY_CONFIG } from './memory'
@@ -18,6 +20,35 @@ import { TriggerModule, setTriggerModule } from './trigger'
 import { initQQBotIntegration } from './qq-bot/integration'
 import { DefaultToolDispatcher, setToolDispatcher } from './pipeline/tool-dispatcher'
 import type { JsonRpcRequest, JsonRpcResponse, ToolSchema, JsonRpcNotification } from '@mcagent/shared'
+
+// ════════════════════════════════════════════════════════════════
+// Windows 控制台编码修复
+// ════════════════════════════════════════════════════════════════
+// 将控制台代码页切换到 UTF-8 (65001)，否则 UTF-8 编码的中文日志
+// 在 GBK 终端上会显示为乱码（如 鏂囦欢 → 文件）。
+function fixConsoleEncoding(): void {
+  if (process.platform !== 'win32') return
+
+  // 方法1: 通过 chcp 切换控制台代码页为 UTF-8
+  try {
+    execSync('chcp 65001 > NUL 2>&1', { stdio: 'ignore' })
+  } catch {
+    // chcp 命令不可用时忽略（如 Windows Server Core、Wine 等环境）
+  }
+
+  // 方法2: Node.js 层面确保 stdout/stderr 使用 UTF-8 编码
+  // 当 stdout 被 pipe 时（如 electron-vite 开发模式），chcp 可能不生效，
+  // 因此直接设置 process.stdout/stderr 的编码为 UTF-8
+  try {
+    process.stdout.setDefaultEncoding?.('utf-8')
+    process.stderr.setDefaultEncoding?.('utf-8')
+  } catch {
+    // 某些环境下 setDefaultEncoding 可能不可用
+  }
+}
+
+// 在模块加载时立即执行编码修复，确保在任何 console.* 输出之前生效
+fixConsoleEncoding()
 
 let mainWindow: BrowserWindow | null = null
 
@@ -192,12 +223,66 @@ async function initializeServices(): Promise<void> {
           body: `实例 ${instanceId} 已连接 (${address})`,
         }).show()
       }
+
+      // 注册初始世界上下文（如果握手时提供了 world_name）
+      if (conn?.worldName) {
+        const workspace = workspaceManager.getWorkspaceByConnectionId(clientId)
+        if (workspace) {
+          const worldManager = getWorldSessionManager()
+          worldManager.registerWorld(workspace.id, {
+            instanceId: conn.instanceId!,
+            worldName: conn.worldName,
+            edition: conn.version?.edition ?? 'java',
+            gameVersion: conn.version?.protocol ?? '',
+          })
+          if (conn.worldOnline !== false) {
+            worldManager.setWorldOnline(workspace.id, conn.worldName)
+          }
+        }
+      }
     }
   })
 
   tcpServerInstance.on(ServerEvent.ConnectionClosed, ({ clientId }) => {
     workspaceManager.setOffline(clientId)
     logger.warn('TCP', `连接 ${clientId} 已断开`)
+  })
+
+  // 世界上下文事件处理
+  tcpServerInstance.on(ServerEvent.WorldOnline, ({ clientId, instanceId, worldName, botCount }) => {
+    if (!instanceId || !worldName) return
+    const workspace = workspaceManager.getWorkspaceByConnectionId(clientId)
+    if (!workspace) return
+
+    const worldManager = getWorldSessionManager()
+    worldManager.registerWorld(workspace.id, {
+      instanceId,
+      worldName,
+      edition: 'java',
+      gameVersion: '',
+    })
+    // 设置 botCount
+    const session = worldManager.getWorld(workspace.id, worldName)
+    if (session) {
+      session.botCount = typeof botCount === 'number' ? botCount : 0
+    }
+    worldManager.setWorldOnline(workspace.id, worldName)
+    logger.info('TCP', `世界 ${worldName} 上线 (实例: ${instanceId})`)
+  })
+
+  tcpServerInstance.on(ServerEvent.WorldOffline, ({ clientId, instanceId, worldName, uptimeSeconds, botCount, reason }) => {
+    if (!instanceId || !worldName) return
+    const workspace = workspaceManager.getWorkspaceByConnectionId(clientId)
+    if (!workspace) return
+
+    const worldManager = getWorldSessionManager()
+    const session = worldManager.getWorld(workspace.id, worldName)
+    if (session) {
+      session.uptimeSeconds = typeof uptimeSeconds === 'number' ? uptimeSeconds : 0
+      session.botCount = typeof botCount === 'number' ? botCount : 0
+    }
+    worldManager.setWorldOffline(workspace.id, worldName, reason)
+    logger.info('TCP', `世界 ${worldName} 下线 (实例: ${instanceId})`)
   })
 
   try {

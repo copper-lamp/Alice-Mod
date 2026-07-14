@@ -7,12 +7,12 @@ import io.alice.mod.adapter.api.service.BotService;
 import io.alice.mod.adapter.api.types.Vec3;
 import io.alice.mod.adapter.bot.BotManager;
 import io.alice.mod.adapter.ai.BotAccess;
+import io.alice.mod.adapter.world.WorldContextManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,7 +40,7 @@ public class BotServiceImpl implements BotService {
             throw new IllegalArgumentException("Invalid dimension: " + dimension);
         }
         EntityPlayerMPFake bot = BotManager.spawn(server, name, level,
-                new Vec3d(position.x(), position.y(), position.z()));
+                new net.minecraft.world.phys.Vec3(position.x(), position.y(), position.z()));
         return new BotHandleImpl(bot);
     }
 
@@ -62,20 +62,20 @@ public class BotServiceImpl implements BotService {
 
     @Override
     public Optional<BotHandle> get(UUID uuid) {
-        EntityPlayerMPFake bot = BotManager.get(uuid);
+        EntityPlayerMPFake bot = getBotManager().get(uuid);
         return bot != null ? Optional.of(new BotHandleImpl(bot)) : Optional.empty();
     }
 
     @Override
     public Optional<BotHandle> findByName(String name) {
-        EntityPlayerMPFake bot = BotManager.findByName(name);
+        EntityPlayerMPFake bot = getBotManager().findByName(name);
         return bot != null ? Optional.of(new BotHandleImpl(bot)) : Optional.empty();
     }
 
     @Override
     public List<BotHandle> getAllOnline() {
         List<BotHandle> handles = new ArrayList<>();
-        for (EntityPlayerMPFake bot : BotManager.findAll()) {
+        for (EntityPlayerMPFake bot : getBotManager().findAll()) {
             handles.add(new BotHandleImpl(bot));
         }
         return handles;
@@ -83,7 +83,7 @@ public class BotServiceImpl implements BotService {
 
     @Override
     public List<BotInfo> listAll() {
-        List<BotManager.BotInfo> allBots = BotManager.listAll();
+        List<BotManager.BotInfo> allBots = getBotManager().listAll();
         List<BotInfo> result = new ArrayList<>();
         for (BotManager.BotInfo info : allBots) {
             result.add(new BotInfo(
@@ -102,18 +102,23 @@ public class BotServiceImpl implements BotService {
 
     @Override
     public boolean isBot(UUID uuid) {
-        return BotManager.get(uuid) != null;
+        return getBotManager().get(uuid) != null;
     }
 
     // ---- 辅助方法 ---- //
 
+    private static BotManager getBotManager() {
+        return WorldContextManager.getActive().getBotManager();
+    }
+
     private static EntityPlayerMPFake resolveBot(String nameOrUuid) {
+        BotManager mgr = getBotManager();
         try {
             UUID uuid = UUID.fromString(nameOrUuid);
-            EntityPlayerMPFake bot = BotManager.get(uuid);
+            EntityPlayerMPFake bot = mgr.get(uuid);
             if (bot != null) return bot;
         } catch (IllegalArgumentException ignored) {}
-        return BotManager.findByName(nameOrUuid);
+        return mgr.findByName(nameOrUuid);
     }
 
     private static ServerLevel resolveDimension(MinecraftServer server, String dimension) {

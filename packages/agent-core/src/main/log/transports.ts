@@ -20,7 +20,8 @@ export function createConsoleTransport(config: LogConfig): (entry: LogEntry) => 
     const color = levelColors[entry.level] || ''
     const time = new Date(entry.timestamp).toISOString().slice(11, 19)
     const module = entry.module.padEnd(10)
-    console.log(`${color}[${time}] [${entry.level.toUpperCase()}] [${module}] ${entry.message}${reset}`)
+    // 使用 process.stdout.write 直接输出，避免 console.log 在 Windows 上的编码问题
+    process.stdout.write(`${color}[${time}] [${entry.level.toUpperCase()}] [${module}] ${entry.message}${reset}\n`)
   }
 }
 

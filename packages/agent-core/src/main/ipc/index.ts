@@ -10,6 +10,7 @@ import { registerLogHandlers } from './log-handler'
 import { registerToolCallHandlers } from './tool-call-handler'
 import { registerMemoryHandlers, setMemoryManager } from './memory-handler'
 import { registerWorkspaceHandlers } from './workspace-handler'
+import { registerWorldHandlers } from './world-handler'
 import { registerWikiHandlers, setWikiClient, WikiClient } from '../wiki'
 import { registerSearchHandlers, setSearchClient, SearchClient } from '../search'
 import { registerDialogHandlers } from './dialog-handler'
@@ -36,4 +37,5 @@ export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerMemoryHandlers()
   registerDialogHandlers()
   registerWorkspaceHandlers(mainWindow)
+  registerWorldHandlers(mainWindow)
 }

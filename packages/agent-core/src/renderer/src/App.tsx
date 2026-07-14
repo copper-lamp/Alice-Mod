@@ -10,11 +10,17 @@ import AgentCreatePage from './components/agent/AgentCreatePage'
 import ConfigPanel from './components/settings/ConfigPanel'
 import { useUIStore } from './stores/uiStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
+import { useWorldStore } from './stores/worldStore'
 
 const App: React.FC = () => {
   const { layoutMode, activeNav } = useUIStore()
   const refreshWorkspaces = useWorkspaceStore(s => s.refreshWorkspaces)
   const handleStateChange = useWorkspaceStore(s => s.handleStateChange)
+
+  const handleWorldOnline = useWorldStore(s => s.handleWorldOnline)
+  const handleWorldOffline = useWorldStore(s => s.handleWorldOffline)
+  const handleWorldStateChange = useWorldStore(s => s.handleStateChange)
+  const handleWorldActiveChanged = useWorldStore(s => s.handleActiveChanged)
 
   useEffect(() => {
     // 启动时加载工作区列表
@@ -36,12 +42,30 @@ const App: React.FC = () => {
       refreshWorkspaces()
     })
 
+    // 世界上下文事件监听
+    const unsubscribeWorldOnline = window.electronAPI.on('world:online', (event) => {
+      handleWorldOnline(event as { workspaceId: string; worldName: string; instanceId: string })
+    })
+    const unsubscribeWorldOffline = window.electronAPI.on('world:offline', (event) => {
+      handleWorldOffline(event as { workspaceId: string; worldName: string })
+    })
+    const unsubscribeWorldState = window.electronAPI.on('world:state-changed', (event) => {
+      handleWorldStateChange(event as { workspaceId: string; worldName: string; state: string })
+    })
+    const unsubscribeWorldActive = window.electronAPI.on('world:active-changed', (event) => {
+      handleWorldActiveChanged(event as { workspaceId: string; worldName: string })
+    })
+
     return () => {
       unsubscribeState()
       unsubscribeCreated()
       unsubscribeRemoved()
+      unsubscribeWorldOnline()
+      unsubscribeWorldOffline()
+      unsubscribeWorldState()
+      unsubscribeWorldActive()
     }
-  }, [refreshWorkspaces, handleStateChange])
+  }, [refreshWorkspaces, handleStateChange, handleWorldOnline, handleWorldOffline, handleWorldStateChange, handleWorldActiveChanged])
 
   const renderContent = () => {
     switch (layoutMode) {

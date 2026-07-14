@@ -112,7 +112,8 @@ public final class TcpClient {
                 config.instanceId(),
                 config.authToken(),
                 config.version(),
-                config.modName()
+                config.modName(),
+                config.worldName()
         );
         this.handshakeManager = new HandshakeManager(hsConfig);
         this.heartbeatManager = new HeartbeatManager(this::sendNotification);
@@ -636,7 +637,8 @@ public final class TcpClient {
             String authToken,
             String version,
             String modName,
-            boolean autoReconnect
+            boolean autoReconnect,
+            String worldName        // v2 扩展：世界名称，用于 handshake
     ) {
         public static final String DEFAULT_VERSION = "1.0.0";
         public static final String DEFAULT_MOD_NAME = "alice-mod";
@@ -650,7 +652,13 @@ public final class TcpClient {
 
         public ClientConfig(String instanceId, String authToken) {
             this(DEFAULT_HOST, DEFAULT_PORT, instanceId, authToken,
-                    DEFAULT_VERSION, DEFAULT_MOD_NAME, true);
+                    DEFAULT_VERSION, DEFAULT_MOD_NAME, true, null);
+        }
+
+        /** 带世界名称的构造（v2）。 */
+        public ClientConfig(String host, int port, String instanceId, String authToken,
+                            String version, String modName, boolean autoReconnect) {
+            this(host, port, instanceId, authToken, version, modName, autoReconnect, null);
         }
     }
 

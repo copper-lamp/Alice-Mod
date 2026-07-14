@@ -1,5 +1,6 @@
 import React from 'react'
 import WorkspaceDropdown from '../workspace/WorkspaceDropdown'
+import WorldDropdown from '../workspace/WorldDropdown'
 
 interface Props {
   onConfigOpen?: () => void
@@ -12,11 +13,14 @@ const CustomTitleBar: React.FC<Props> = ({ onConfigOpen }) => {
       className="flex items-center justify-between h-9 bg-gray-100 select-none px-2"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
-      {/* 左侧：Alice + 工作区选择器 */}
+      {/* 左侧：Alice + 工作区选择器 + 世界选择器 */}
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold text-gray-700 ml-1 tracking-wide">Alice</span>
         <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <WorkspaceDropdown />
+        </div>
+        <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <WorldDropdown />
         </div>
       </div>
 

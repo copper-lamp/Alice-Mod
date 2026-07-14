@@ -11,3 +11,6 @@ export { Workspace, WorkspaceState, type WorkspaceData, type WorkspaceSession, t
 export { ToolRegistry } from './tool-registry';
 export { WorkspaceManager, WorkspaceEvent, type WorkspaceEventData, getWorkspaceManager, setWorkspaceManager, resetWorkspaceManager } from './workspace-manager';
 export { WorkspaceStore } from './workspace-store';
+export { WorldSession, WorldSessionState, WorldSessionEventType, type WorldSessionData, type WorldSessionEvent } from './world-session';
+export { WorldSessionManager, getWorldSessionManager, setWorldSessionManager, resetWorldSessionManager } from './world-session-manager';
+export { WorldStore } from './world-store';

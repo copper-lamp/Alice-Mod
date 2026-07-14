@@ -25,6 +25,8 @@ export enum ServerEvent {
   ConnectionError = 'connection:error',
   RequestReceived = 'request:received',
   NotificationReceived = 'notification:received',
+  WorldOnline = 'world:online',         // 世界上线通知
+  WorldOffline = 'world:offline',       // 世界下线通知
 }
 
 /**
@@ -234,6 +236,27 @@ export class TcpServer extends EventEmitter {
 
     connection.on(ConnectionEvent.Notification, (clientId: string, notification: JsonRpcNotification) => {
       this.emit(ServerEvent.NotificationReceived, { clientId, notification });
+    });
+
+    // 世界上下文事件转发
+    connection.on(ConnectionEvent.WorldOnline, (data: { instanceId: string | null; worldName: string; botCount: number }) => {
+      this.emit(ServerEvent.WorldOnline, {
+        clientId: connection.id,
+        instanceId: data.instanceId,
+        worldName: data.worldName,
+        botCount: data.botCount,
+      });
+    });
+
+    connection.on(ConnectionEvent.WorldOffline, (data: { instanceId: string | null; worldName: string; uptimeSeconds: number; botCount: number; reason?: string }) => {
+      this.emit(ServerEvent.WorldOffline, {
+        clientId: connection.id,
+        instanceId: data.instanceId,
+        worldName: data.worldName,
+        uptimeSeconds: data.uptimeSeconds,
+        botCount: data.botCount,
+        reason: data.reason,
+      });
     });
 
     connection.on(ConnectionEvent.Closed, () => {

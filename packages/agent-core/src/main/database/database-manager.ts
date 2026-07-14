@@ -145,6 +145,7 @@ export class DatabaseManager implements IDatabaseManager {
       { version: 1, module: 'memory', description: '记忆表：memory_meta, memory_tags, memory_access_log' },
       { version: 1, module: 'map', description: '地图表：map_features, map_spatial_grid, map_regions' },
       { version: 1, module: 'task', description: '任务表：task_meta, task_deps, task_schedule' },
+      { version: 1, module: 'world', description: '世界上下文表：world_meta' },
       { version: 1, module: 'qq', description: 'QQ 表：qq_bot_config, qq_msg_history' },
       { version: 1, module: 'trigger', description: '事件触发器表：event_triggers, trigger_logs, trigger_schedule' },
       { version: 1, module: 'future', description: '预留表：knowledge_base, skill_registry' },
@@ -388,7 +389,30 @@ export class DatabaseManager implements IDatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_map_regions_workspace ON map_regions(workspace_id);
 
       -- ════════════════════════════════════════════════════════════
-      -- 7. 任务系统
+      -- 7. 世界上下文
+      -- ════════════════════════════════════════════════════════════
+
+      CREATE TABLE IF NOT EXISTS world_meta (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        instance_id TEXT NOT NULL,
+        world_name TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'offline' CHECK(state IN ('offline', 'connecting', 'online')),
+        edition TEXT,
+        game_version TEXT,
+        connected_at INTEGER,
+        last_online_at INTEGER,
+        bot_count INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspace_meta(id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_world_meta_workspace_world
+        ON world_meta(workspace_id, world_name);
+      CREATE INDEX IF NOT EXISTS idx_world_meta_state ON world_meta(state);
+
+      -- ════════════════════════════════════════════════════════════
+      -- 8. 任务系统
       -- ════════════════════════════════════════════════════════════
       CREATE TABLE IF NOT EXISTS task_meta (
         id TEXT PRIMARY KEY,
@@ -448,7 +472,7 @@ export class DatabaseManager implements IDatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_task_schedule_event ON task_schedule(trigger_event);
 
       -- ════════════════════════════════════════════════════════════
-      -- 8. QQ 机器人
+      -- 9. QQ 机器人
       -- ════════════════════════════════════════════════════════════
       CREATE TABLE IF NOT EXISTS qq_bot_config (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -475,7 +499,7 @@ export class DatabaseManager implements IDatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_qq_msg_timestamp ON qq_msg_history(timestamp);
 
       -- ════════════════════════════════════════════════════════════
-      -- 9. 事件触发器
+      -- 10. 事件触发器
       -- ════════════════════════════════════════════════════════════
 
       CREATE TABLE IF NOT EXISTS event_triggers (
@@ -531,7 +555,7 @@ export class DatabaseManager implements IDatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_trigger_schedule_next ON trigger_schedule(next_scheduled_at);
 
       -- ════════════════════════════════════════════════════════════
-      -- 10. 预留扩展表（V15+）
+      -- 11. 预留扩展表（V15+）
       -- ════════════════════════════════════════════════════════════
       CREATE TABLE IF NOT EXISTS knowledge_base (
         id TEXT PRIMARY KEY,

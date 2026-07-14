@@ -260,6 +260,19 @@ export interface WorkspaceItem {
   createdAt: number
 }
 
+/** 世界上下文列表项（UI 展示用） */
+export interface WorldItem {
+  id: string
+  instanceId: string
+  worldName: string
+  state: 'online' | 'offline' | 'connecting'
+  edition: 'bedrock' | 'java'
+  gameVersion: string
+  botCount: number
+  uptimeSeconds: number
+  lastOnlineAt?: number
+}
+
 /** 新建工作区 — 文件校验结果 */
 export interface WorkspaceFileValidation {
   valid: boolean
