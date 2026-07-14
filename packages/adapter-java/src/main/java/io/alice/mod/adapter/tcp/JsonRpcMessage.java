@@ -15,6 +15,8 @@ import java.util.Objects;
  *   <li><b>Notification</b> — 无 id，无需响应</li>
  *   <li><b>Batch</b> — 一组 Request/Notification 的 JSON 数组</li>
  * </ul>
+ * <p>
+ * id 类型为 {@link JsonRpcId}，支持 JSON-RPC 2.0 规范中的 String、Number 和 null。
  */
 public final class JsonRpcMessage {
 
@@ -25,21 +27,31 @@ public final class JsonRpcMessage {
     /** 客户端 → 服务端：请求消息。 */
     public record Request(
             String jsonrpc,
-            int id,
+            JsonRpcId id,
             String method,
             JsonElement params
     ) {
         public Request {
             Objects.requireNonNull(jsonrpc, "jsonrpc");
+            Objects.requireNonNull(id, "id");
             Objects.requireNonNull(method, "method");
         }
 
-        public Request(int id, String method, JsonElement params) {
+        public Request(JsonRpcId id, String method, JsonElement params) {
             this("2.0", id, method, params);
         }
 
-        public Request(int id, String method) {
+        public Request(JsonRpcId id, String method) {
             this(id, method, null);
+        }
+
+        /** 使用 int id 的便捷构造。 */
+        public static Request withIntId(int id, String method, JsonElement params) {
+            return new Request(JsonRpcId.of(id), method, params);
+        }
+
+        public static Request withIntId(int id, String method) {
+            return new Request(JsonRpcId.of(id), method);
         }
     }
 
@@ -48,14 +60,15 @@ public final class JsonRpcMessage {
     /** 服务端 → 客户端：成功响应。 */
     public record Response(
             String jsonrpc,
-            int id,
+            JsonRpcId id,
             JsonElement result
     ) {
         public Response {
             Objects.requireNonNull(jsonrpc, "jsonrpc");
+            Objects.requireNonNull(id, "id");
         }
 
-        public Response(int id, JsonElement result) {
+        public Response(JsonRpcId id, JsonElement result) {
             this("2.0", id, result);
         }
     }
@@ -65,15 +78,16 @@ public final class JsonRpcMessage {
     /** 服务端 → 客户端：错误响应。 */
     public record Error(
             String jsonrpc,
-            int id,
+            JsonRpcId id,
             ErrorObject error
     ) {
         public Error {
             Objects.requireNonNull(jsonrpc, "jsonrpc");
+            Objects.requireNonNull(id, "id");
             Objects.requireNonNull(error, "error");
         }
 
-        public Error(int id, ErrorObject error) {
+        public Error(JsonRpcId id, ErrorObject error) {
             this("2.0", id, error);
         }
     }

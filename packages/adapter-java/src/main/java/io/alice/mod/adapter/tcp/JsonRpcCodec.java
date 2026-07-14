@@ -26,6 +26,8 @@ import java.util.Optional;
  *   <li>无 {@code id} + 有 {@code method} → Notification</li>
  *   <li>JSON 数组 → Batch</li>
  * </ul>
+ * <p>
+ * id 安全：使用 {@link JsonRpcId#fromJson} 解析，兼容 String、Number、null 三种类型。
  */
 public final class JsonRpcCodec {
 
@@ -43,7 +45,7 @@ public final class JsonRpcCodec {
     public static String toJson(Request msg) {
         JsonObject root = new JsonObject();
         root.addProperty("jsonrpc", msg.jsonrpc());
-        root.addProperty("id", msg.id());
+        root.add("id", msg.id().toJson());
         root.addProperty("method", msg.method());
         if (msg.params() != null) {
             root.add("params", msg.params());
@@ -55,7 +57,7 @@ public final class JsonRpcCodec {
     public static String toJson(Response msg) {
         JsonObject root = new JsonObject();
         root.addProperty("jsonrpc", msg.jsonrpc());
-        root.addProperty("id", msg.id());
+        root.add("id", msg.id().toJson());
         root.add("result", msg.result());
         return GSON.toJson(root);
     }
@@ -64,7 +66,7 @@ public final class JsonRpcCodec {
     public static String toJson(Error msg) {
         JsonObject root = new JsonObject();
         root.addProperty("jsonrpc", msg.jsonrpc());
-        root.addProperty("id", msg.id());
+        root.add("id", msg.id().toJson());
         root.add("error", errorObjectToJson(msg.error()));
         return GSON.toJson(root);
     }
@@ -105,7 +107,7 @@ public final class JsonRpcCodec {
 
         // 有 id + method = Request
         if (has(obj, "id") && has(obj, "method")) {
-            int id = obj.get("id").getAsInt();
+            JsonRpcId id = JsonRpcId.fromJson(obj.get("id"));
             String method = obj.get("method").getAsString();
             JsonElement params = obj.get("params");
             return ParseResult.request(new Request(id, method, params));
@@ -120,13 +122,13 @@ public final class JsonRpcCodec {
 
         // 有 id + result = Response
         if (has(obj, "id") && has(obj, "result")) {
-            int id = obj.get("id").getAsInt();
+            JsonRpcId id = JsonRpcId.fromJson(obj.get("id"));
             return ParseResult.response(new Response(id, obj.get("result")));
         }
 
         // 有 id + error = Error
         if (has(obj, "id") && has(obj, "error")) {
-            int id = obj.get("id").getAsInt();
+            JsonRpcId id = JsonRpcId.fromJson(obj.get("id"));
             return ParseResult.error(new Error(id, parseErrorObject(obj.get("error").getAsJsonObject())));
         }
 
