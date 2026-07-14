@@ -1,23 +1,23 @@
 {
   "schemaVersion": 1,
-  "id": "mcagent-adapter",
+  "id": "alice-mod",
   "version": "1.0.0",
-  "name": "McAgent Adapter JE",
-  "description": "McAgent Fabric adapter for Java Edition",
+  "name": "Alice Mod",
+  "description": "Alice Mod — Fabric adapter for Java Edition, providing AI-driven bot control and game interaction capabilities.",
   "authors": [
     "McAgent"
   ],
   "contact": {},
   "license": "MIT",
-  "icon": "assets/mcagent-adapter/icon.png",
+  "icon": "assets/alice-mod/icon.png",
   "environment": "*",
   "entrypoints": {
     "main": [
-      "io.mcagent.adapter.McAgentMod"
+      "io.alice.mod.adapter.AliceModAdapter"
     ]
   },
   "mixins": [
-    "mcagent-adapter.mixins.json"
+    "alice-mod.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.16.0",
