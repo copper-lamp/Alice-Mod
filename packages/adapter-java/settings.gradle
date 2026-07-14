@@ -1,1 +1,16 @@
+pluginManagement {
+    repositories {
+        maven {
+            name = "Fabric"
+            url = uri("https://maven.fabricmc.net/")
+        }
+        maven {
+            name = "Aliyun"
+            url = uri("https://maven.aliyun.com/repository/public/")
+        }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
 rootProject.name = "alice-mod-adapter"

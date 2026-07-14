@@ -13,8 +13,9 @@ import java.util.concurrent.CompletableFuture;
  * <p>
  * 遵循通信协议规范的握手流程：
  * <ol>
- *   <li>发送 {@code handshake} 请求（含 instance_id + auth_token）</li>
- *   <li>服务端验证 token，返回 session_id 和心跳间隔</li>
+ *   <li>发送 {@code handshake} 请求（含 instance_id + auth_token + version + mod）</li>
+ *   <li>服务端验证 token，返回 session_id / server_version / heartbeat_interval</li>
+ *   <li>验证失败时返回 JSON-RPC 错误码 -32001</li>
  * </ol>
  */
 public final class HandshakeManager {
@@ -22,12 +23,15 @@ public final class HandshakeManager {
     private static final Logger LOG = LoggerFactory.getLogger(HandshakeManager.class);
 
     /** 握手请求的固定 id（数字 1）。 */
-    private static final JsonRpcId HANDSHAKE_ID = JsonRpcId.of(1);
+    public static final JsonRpcId HANDSHAKE_ID = JsonRpcId.of(1);
 
     private final HandshakeConfig config;
 
     /** 握手成功后服务端返回的信息。 */
     private volatile HandshakeResult result;
+
+    /** 待完成的 Future（由 handshake() 创建，handleResponse() 完成）。 */
+    private CompletableFuture<HandshakeResult> pendingFuture;
 
     public HandshakeManager(HandshakeConfig config) {
         this.config = config;
@@ -35,12 +39,16 @@ public final class HandshakeManager {
 
     /**
      * 执行握手认证。
+     * <p>
+     * 发送 handshake 请求后返回 Future，
+     * 收到服务端响应时由 {@link #handleResponse(Response)} 完成该 Future。
      *
      * @param sender 发送消息的回调
-     * @return 包含握手结果的 Future
+     * @return 包含握手结果的 Future（由 handleResponse 完成）
      */
     public CompletableFuture<HandshakeResult> handshake(Sender sender) {
         CompletableFuture<HandshakeResult> future = new CompletableFuture<>();
+        this.pendingFuture = future;
 
         JsonObject params = new JsonObject();
         params.addProperty("instance_id", config.instanceId());
@@ -59,12 +67,18 @@ public final class HandshakeManager {
 
     /**
      * 处理握手响应。由 {@link TcpClient} 在收到对应响应时调用。
+     *
+     * @param response 服务端返回的响应
+     * @return 握手结果
+     * @throws HandshakeException 握手失败时抛出
      */
     public HandshakeResult handleResponse(Response response) {
         JsonObject resultObj = response.result().getAsJsonObject();
         boolean success = resultObj.get("success").getAsBoolean();
         if (!success) {
-            throw new HandshakeException("handshake returned success=false");
+            HandshakeException ex = new HandshakeException("handshake returned success=false");
+            completeFutureExceptionally(ex);
+            throw ex;
         }
 
         String sessionId = resultObj.get("session_id").getAsString();
@@ -76,7 +90,22 @@ public final class HandshakeManager {
         this.result = new HandshakeResult(sessionId, serverVersion, heartbeatInterval);
         LOG.info("Handshake successful: session_id={}, server_version={}, heartbeat_interval={}s",
                 sessionId, serverVersion, heartbeatInterval);
+
+        // 完成 Future
+        completeFuture(this.result);
+
         return this.result;
+    }
+
+    /**
+     * 处理握手错误响应（服务端返回 JSON-RPC Error）。
+     */
+    public void handleError(JsonRpcMessage.Error error) {
+        String msg = String.format("Handshake rejected: code=%d, message=%s",
+                error.error().code(), error.error().message());
+        HandshakeException ex = new HandshakeException(msg);
+        completeFutureExceptionally(ex);
+        throw ex;
     }
 
     /** 已握手成功？ */
@@ -92,6 +121,23 @@ public final class HandshakeManager {
     /** 重置状态（断线重连时调用）。 */
     public void reset() {
         this.result = null;
+        this.pendingFuture = null;
+    }
+
+    // ---- 内部辅助 ----
+
+    private void completeFuture(HandshakeResult result) {
+        if (pendingFuture != null && !pendingFuture.isDone()) {
+            pendingFuture.complete(result);
+            pendingFuture = null;
+        }
+    }
+
+    private void completeFutureExceptionally(HandshakeException ex) {
+        if (pendingFuture != null && !pendingFuture.isDone()) {
+            pendingFuture.completeExceptionally(ex);
+            pendingFuture = null;
+        }
     }
 
     // ---- 内部类型 ----

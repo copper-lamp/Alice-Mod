@@ -1,8 +1,8 @@
 package io.alice.mod.adapter.tcp;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import io.alice.mod.adapter.tcp.HandshakeManager.HandshakeConfig;
 import io.alice.mod.adapter.tcp.HandshakeManager.HandshakeResult;
 import io.alice.mod.adapter.tcp.JsonRpcCodec.ParseResult;
 import io.alice.mod.adapter.tcp.JsonRpcMessage.Notification;
@@ -19,7 +19,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -51,6 +51,15 @@ public final class TcpClient {
 
     /** TCP 连接超时（毫秒） */
     private static final int CONNECT_TIMEOUT_MS = 5000;
+
+    /** 标准工具调用方法名 */
+    private static final String METHOD_TOOL_CALL = "tool_call";
+
+    /** 批量工具调用方法名 */
+    private static final String METHOD_TOOL_CALL_BATCH = "tool_call_batch";
+
+    /** 移动类工具名称前缀列表（用于批量调用依赖分析） */
+    private static final List<String> MOVEMENT_PREFIXES = List.of("move_to", "ride", "dismount");
 
     /** 读线程名称 */
     private static final String READ_THREAD_NAME = "alice-tcp-read";
@@ -99,7 +108,7 @@ public final class TcpClient {
         this.config = config;
         this.callbacks = callbacks;
 
-        HandshakeConfig hsConfig = new HandshakeConfig(
+        HandshakeManager.HandshakeConfig hsConfig = new HandshakeManager.HandshakeConfig(
                 config.instanceId(),
                 config.authToken(),
                 config.version(),
@@ -136,13 +145,15 @@ public final class TcpClient {
             readThread.setDaemon(true);
             readThread.start();
 
-            // 握手认证
+            // 握手认证（使用 Future 异步等待结果）
             handshakeManager.reset();
-            handshakeManager.handshake((json, id) -> {
-                CompletableFuture<ParseResult> f = new CompletableFuture<>();
-                pendingRequests.put(id, f);
-                sendRaw(json);
-            });
+            handshakeManager.handshake((json, id) -> sendRaw(json))
+              .thenAccept(this::onHandshakeDone)
+              .exceptionally(ex -> {
+                  LOG.error("Handshake failed", ex);
+                  onDisconnected();
+                  return null;
+              });
 
             LOG.info("TCP connected to {}:{}", host, port);
         } catch (IOException e) {
@@ -186,6 +197,11 @@ public final class TcpClient {
     /** 移除连接状态监听器。 */
     public void removeStateListener(Consumer<ConnectionState> listener) {
         stateListeners.remove(listener);
+    }
+
+    /** 获取握手结果。 */
+    public HandshakeResult getHandshakeResult() {
+        return handshakeManager.getResult();
     }
 
     // ---- 发送消息 ----
@@ -274,7 +290,7 @@ public final class TcpClient {
     private void handleIncoming(String line) {
         ParseResult result = JsonRpcCodec.parseBatch(line);
         switch (result) {
-            case ParseResult.RequestResult r -> handleToolCall(r.message());
+            case ParseResult.RequestResult r -> handleIncomingRequest(r.message());
             case ParseResult.ResponseResult r -> handleResponse(r.message());
             case ParseResult.ErrorResult e -> handleError(e.message());
             case ParseResult.NotificationResult n -> handleNotification(n.message());
@@ -283,37 +299,223 @@ public final class TcpClient {
         }
     }
 
-    /** 处理 Agent Core 发来的工具调用请求。 */
+    /** 处理收到的请求（区分 tool_call / tool_call_batch / 其他）。 */
+    private void handleIncomingRequest(JsonRpcMessage.Request request) {
+        switch (request.method()) {
+            case METHOD_TOOL_CALL -> handleToolCall(request);
+            case METHOD_TOOL_CALL_BATCH -> handleToolCallBatch(request);
+            default -> {
+                LOG.warn("Unknown request method: {}", request.method());
+                // 返回 Method Not Found 错误
+                JsonObject errData = new JsonObject();
+                errData.addProperty("reason", "method_not_found");
+                errData.addProperty("detail", "Unknown method: " + request.method());
+                JsonRpcMessage.Error err = new JsonRpcMessage.Error(request.id(),
+                        new JsonRpcMessage.ErrorObject(-32601, "Method not found", errData));
+                sendRaw(JsonRpcCodec.toJson(err));
+            }
+        }
+    }
+
+    /** 处理 Agent Core 发来的单个工具调用请求。 */
     private void handleToolCall(JsonRpcMessage.Request request) {
         LOG.debug("Received tool_call: method={}, id={}", request.method(), request.id());
         callbacks.onToolCall(request, this::sendResponse);
     }
 
-    /** 处理服务端响应（匹配 pending 请求）。 */
+    /**
+     * 处理批量工具调用请求（{@code tool_call_batch} 方法）。
+     * <p>
+     * 按照协议规范：
+     * <ol>
+     *   <li>分析工具间的依赖关系（移动类工具是后续操作的前提）</li>
+     *   <li>无依赖：并行执行</li>
+     *   <li>有依赖：按依赖关系顺序执行</li>
+     *   <li>统一返回结果数组，顺序与请求一致</li>
+     * </ol>
+     */
+    private void handleToolCallBatch(JsonRpcMessage.Request batchRequest) {
+        JsonObject params = batchRequest.params() != null
+                ? batchRequest.params().getAsJsonObject()
+                : new JsonObject();
+
+        JsonArray calls = params.has("calls") && params.get("calls").isJsonArray()
+                ? params.get("calls").getAsJsonArray()
+                : new JsonArray();
+
+        LOG.info("Received tool_call_batch: {} tools", calls.size());
+
+        // 解析所有子调用
+        List<BatchCall> batchCalls = new ArrayList<>();
+        for (int i = 0; i < calls.size(); i++) {
+            JsonObject call = calls.get(i).getAsJsonObject();
+            String toolName = call.has("tool_name") ? call.get("tool_name").getAsString() : "unknown";
+            JsonElement callParams = call.has("parameters") ? call.get("parameters") : new JsonObject();
+            long timeoutMs = call.has("timeout_ms") ? call.get("timeout_ms").getAsLong() : 30000;
+            batchCalls.add(new BatchCall(i, toolName, callParams, timeoutMs));
+        }
+
+        // 分析依赖关系并执行
+        // 使用线程池实现并行执行
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            JsonArray results = new JsonArray();
+            List<BatchCall> remaining = new ArrayList<>(batchCalls);
+
+            while (!remaining.isEmpty()) {
+                // 找出当前批次中无依赖的调用（可并行执行）
+                List<BatchCall> parallelBatch = extractReadyCalls(remaining);
+
+                if (parallelBatch.isEmpty()) {
+                    // 不应该发生，但以防死锁
+                    LOG.warn("Batch execution deadlock detected, executing sequentially");
+                    parallelBatch.add(remaining.removeFirst());
+                }
+
+                // 并行执行当前批次
+                List<CompletableFuture<Void>> futures = new ArrayList<>();
+                Map<Integer, JsonElement> resultMap = new ConcurrentHashMap<>();
+
+                for (BatchCall call : parallelBatch) {
+                    CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                        JsonElement result = executeSingleToolCall(call);
+                        resultMap.put(call.index(), result);
+                    }, executor);
+                    futures.add(future);
+                }
+
+                // 等待当前批次全部完成
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+                // 按原始顺序收集结果
+                for (BatchCall call : parallelBatch) {
+                    results.add(resultMap.getOrDefault(call.index(),
+                            buildToolError("INTERNAL_ERROR", "Execution did not produce a result")));
+                }
+            }
+
+            // 返回结果数组（与批量请求的 id 关联）
+            Response response = new Response(batchRequest.id(), results);
+            sendRaw(JsonRpcCodec.toJson(response));
+        }
+    }
+
+    /**
+     * 从 remaining 中提取可执行的调用（无依赖）。
+     * <p>
+     * 依赖规则：如果当前调用之前有移动类工具（move_to 前缀），
+     * 且当前调用不是移动类工具，则当前调用依赖上一个移动类工具完成。
+     */
+    private List<BatchCall> extractReadyCalls(List<BatchCall> remaining) {
+        List<BatchCall> ready = new ArrayList<>();
+        boolean hasMovementDependency = false;
+
+        for (BatchCall call : remaining) {
+            if (isMovementTool(call.toolName())) {
+                // 移动工具总是在首批执行
+                ready.add(call);
+            } else if (!hasMovementDependency) {
+                // 没有前序移动依赖，可以执行
+                ready.add(call);
+            }
+            // 如果 hasMovementDependency=true，非移动工具需要等移动工具完成
+            if (isMovementTool(call.toolName())) {
+                hasMovementDependency = true;
+            }
+        }
+
+        remaining.removeAll(ready);
+        return ready;
+    }
+
+    /** 判断是否为移动类工具。 */
+    private boolean isMovementTool(String toolName) {
+        for (String prefix : MOVEMENT_PREFIXES) {
+            if (toolName.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 执行单个工具调用（在 {@code tool_call_batch} 上下文中）。 */
+    private JsonElement executeSingleToolCall(BatchCall call) {
+        long start = System.currentTimeMillis();
+        try {
+            // 构建工具调用请求
+            JsonObject callParams = new JsonObject();
+            callParams.addProperty("tool_name", call.toolName());
+            callParams.add("parameters", call.params());
+
+            JsonRpcMessage.Request req = new JsonRpcMessage.Request(
+                    JsonRpcId.of(-call.index()), "tool_call", callParams);
+
+            // 使用 CompletableFuture 同步等待结果
+            CompletableFuture<JsonElement> resultFuture = new CompletableFuture<>();
+            callbacks.onToolCall(req, (id, result) -> resultFuture.complete(result));
+
+            JsonElement result = resultFuture.get(call.timeoutMs(), TimeUnit.MILLISECONDS);
+            // 添加 duration_ms 到结果
+            if (result.isJsonObject()) {
+                result.getAsJsonObject().addProperty("duration_ms",
+                        System.currentTimeMillis() - start);
+            }
+            return result;
+        } catch (TimeoutException e) {
+            return buildToolError("TIMEOUT", "Tool execution timed out after " + call.timeoutMs() + "ms");
+        } catch (Exception e) {
+            return buildToolError("INTERNAL_ERROR", e.getMessage());
+        }
+    }
+
+    /** 构建工具错误响应。 */
+    private JsonElement buildToolError(String reason, String detail) {
+        JsonObject error = new JsonObject();
+        error.addProperty("success", false);
+        error.addProperty("error", reason);
+        error.addProperty("message", detail);
+        return error;
+    }
+
+    /** 握手完成后的回调。 */
+    private void onHandshakeDone(HandshakeResult hsResult) {
+        connected.set(true);
+        setState(ConnectionState.CONNECTED);
+        heartbeatManager.start();
+        callbacks.onHandshakeSuccess(hsResult);
+    }
+
+    /** 处理服务端响应（匹配 pending 请求，或完成握手）。 */
     private void handleResponse(Response response) {
+        // 握手响应（id 为 1）：路由到 HandshakeManager
+        if (response.id().equals(HandshakeManager.HANDSHAKE_ID) && !handshakeManager.isAuthenticated()) {
+            try {
+                handshakeManager.handleResponse(response);
+            } catch (HandshakeManager.HandshakeException e) {
+                LOG.error("Handshake failed: {}", e.getMessage());
+            }
+            return;
+        }
+
+        // 普通请求响应：匹配 pending 请求
         CompletableFuture<ParseResult> future = pendingRequests.remove(response.id());
         if (future != null) {
             future.complete(ParseResult.response(response));
-        }
-
-        // 如果是握手响应（id 为数字 1）
-        if (response.id().isNumber() && response.id().asInt() == 1 && !handshakeManager.isAuthenticated()) {
-            try {
-                HandshakeResult hsResult = handshakeManager.handleResponse(response);
-                connected.set(true);
-                setState(ConnectionState.CONNECTED);
-                heartbeatManager.start();
-                callbacks.onHandshakeSuccess(hsResult);
-            } catch (Exception e) {
-                LOG.error("Handshake failed", e);
-                onDisconnected();
-            }
         }
     }
 
     /** 处理错误响应。 */
     private void handleError(JsonRpcMessage.Error error) {
         LOG.warn("Received error: code={}, message={}", error.error().code(), error.error().message());
+
+        // 如果握手 id 对应的请求收到错误响应，通知 HandshakeManager
+        if (error.id().equals(HandshakeManager.HANDSHAKE_ID) && !handshakeManager.isAuthenticated()) {
+            try {
+                handshakeManager.handleError(error);
+            } catch (HandshakeManager.HandshakeException e) {
+                LOG.error("Handshake rejected by server: {}", e.getMessage());
+            }
+        }
+
         CompletableFuture<ParseResult> future = pendingRequests.remove(error.id());
         if (future != null) {
             future.complete(ParseResult.error(error));
@@ -329,7 +531,7 @@ public final class TcpClient {
         }
     }
 
-    /** 处理批量消息。 */
+    /** 处理批量消息（JSON-RPC 2.0 Batch 格式的请求数组）。 */
     private void handleBatch(JsonRpcMessage.Batch batch) {
         for (JsonElement elem : batch.messages()) {
             handleIncoming(elem.toString());
@@ -396,6 +598,11 @@ public final class TcpClient {
         }
     }
 
+    // ---- 扩展：请求上下文记录 ----
+
+    /** 批量调用中的一个工具调用。 */
+    private record BatchCall(int index, String toolName, JsonElement params, long timeoutMs) {}
+
     // ---- 重连处理器 ----
 
     private class TcpReconnectHandler implements ReconnectHandler {
@@ -436,7 +643,7 @@ public final class TcpClient {
 
         public ClientConfig {
             if (host == null || host.isBlank()) host = DEFAULT_HOST;
-            if (port <= 0) port = DEFAULT_PORT;
+            if (port <= 0 || port > 65535) port = DEFAULT_PORT;
             if (version == null || version.isBlank()) version = DEFAULT_VERSION;
             if (modName == null || modName.isBlank()) modName = DEFAULT_MOD_NAME;
         }

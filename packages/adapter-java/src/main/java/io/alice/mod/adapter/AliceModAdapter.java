@@ -2,6 +2,7 @@ package io.alice.mod.adapter;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.alice.mod.adapter.bot.BotManager;
 import io.alice.mod.adapter.entry.InstanceFileGenerator;
 import io.alice.mod.adapter.status.EventDispatcher;
 import io.alice.mod.adapter.status.StatusCollector;
@@ -12,12 +13,18 @@ import io.alice.mod.adapter.tcp.JsonRpcMessage;
 import io.alice.mod.adapter.tcp.TcpClient;
 import io.alice.mod.adapter.tcp.TcpClient.Callbacks;
 import io.alice.mod.adapter.tcp.TcpClient.ClientConfig;
+import io.alice.mod.adapter.api.AliceToolPlugin;
 import io.alice.mod.adapter.tool.AliceTool;
 import io.alice.mod.adapter.tool.SchemaGenerator;
+import io.alice.mod.adapter.tool.ServiceAccessImpl;
+import io.alice.mod.adapter.tool.ToolPluginDiscoverer;
+import io.alice.mod.adapter.tool.ToolRegistrarImpl;
 import io.alice.mod.adapter.tool.ToolRegistry;
 import io.alice.mod.adapter.tool.ToolResult;
 import io.alice.mod.adapter.tool.ToolScanner;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,7 +32,6 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 import java.util.UUID;
 
-@net.fabricmc.api.Mod("alice-mod")
 public class AliceModAdapter implements ModInitializer {
 
     public static final Logger LOGGER = LoggerFactory.getLogger("alice-mod");
@@ -48,6 +54,25 @@ public class AliceModAdapter implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("Alice Mod Adapter JE initializing...");
 
+        // 初始化 BotAccess（获取 MinecraftServer 实例）
+        io.alice.mod.adapter.ai.BotAccess.init();
+
+        // 注册服务端生命周期事件（BotManager 集成）
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            BotManager.onServerStarted(server);
+            LOGGER.info("BotManager: server started, recovered {} bot entries", 
+                    io.alice.mod.adapter.bot.BotRepository.get(server).size());
+        });
+
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            BotManager.onServerStopped();
+        });
+
+        // 注册服务端 tick 事件（假人重生检查）
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            BotManager.tick();
+        });
+
         // 初始化实例身份
         this.instanceId = UUID.randomUUID().toString();
         this.authToken = "mct_" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
@@ -61,9 +86,27 @@ public class AliceModAdapter implements ModInitializer {
                 "java", "1.21.4"
         );
 
-        // 扫描并注册工具
-        ToolScanner.scanAndRegister("io.alice.mod.adapter.tool.module");
-        LOGGER.info("Tools registered: {}", ToolRegistry.size());
+        // 扫描并注册内建工具（扫描所有工具子包）
+        ToolScanner.scanAndRegister("io.alice.mod.adapter.tool");
+        int builtinCount = ToolRegistry.size();
+        LOGGER.info("Built-in tools registered: {}", builtinCount);
+
+        // 发现并注册附属模组插件工具
+        ServiceAccessImpl serviceAccess = new ServiceAccessImpl();
+        ToolPluginDiscoverer.discover().forEach(plugin -> {
+            ToolRegistrarImpl registrar = new ToolRegistrarImpl();
+            try {
+                plugin.registerTools(registrar, serviceAccess);
+                registrar.deactivate();
+                LOGGER.info("Plugin initialized: {}", plugin.getClass().getName());
+            } catch (Exception e) {
+                LOGGER.error("Plugin '{}' failed during registration: {}",
+                        plugin.getClass().getName(), e.getMessage(), e);
+            }
+        });
+
+        LOGGER.info("Total tools registered: {} (builtin={}, plugin={})",
+                ToolRegistry.size(), builtinCount, ToolRegistry.size() - builtinCount);
 
         // 创建事件分发器
         eventDispatcher = new EventDispatcher(eventJson -> {
@@ -99,6 +142,8 @@ public class AliceModAdapter implements ModInitializer {
         );
 
         tcpClient = new TcpClient(config, new Callbacks() {
+            // 注册 TcpClient 实例供 TcpService 使用
+            io.alice.mod.adapter.tool.service.TcpServiceImpl.setClient(tcpClient);
 
             @Override
             public void onToolCall(JsonRpcMessage.Request request,

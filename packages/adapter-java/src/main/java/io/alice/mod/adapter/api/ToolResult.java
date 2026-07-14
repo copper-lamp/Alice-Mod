@@ -1,11 +1,10 @@
-package io.alice.mod.adapter.tool;
+package io.alice.mod.adapter.api;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 
 import java.util.List;
 import java.util.Map;
@@ -14,7 +13,7 @@ import java.util.Map;
  * 工具执行结果信封。
  * <p>
  * 标准化工具返回格式，供 Agent Core 解析并注入 LLM 上下文。
- * 设计符合 00-工具协议规范.md §3 ResultEnvelope 标准。
+ * 格式符合 00-工具协议规范 §3 ResultEnvelope 标准。
  */
 public record ToolResult(
         boolean success,
@@ -87,30 +86,12 @@ public record ToolResult(
 
     /**
      * 序列化为 LLM 可读的 JSON 字符串。
-     * <p>
-     * 输出格式符合 ResultEnvelope 标准：
-     * <pre>
-     * {
-     *   "success": true,
-     *   "data": { "message": "...", ... },
-     *   "meta": { "duration": 150, "cost": {...} }
-     * }
-     * </pre>
-     * 失败时：
-     * <pre>
-     * {
-     *   "success": false,
-     *   "error": { "code": "...", "message": "...", "details": {...} },
-     *   "meta": { "duration": 150 }
-     * }
-     * </pre>
      */
     public String toJson() {
         JsonObject root = new JsonObject();
         root.addProperty("success", success);
 
         if (success) {
-            // 成功时：data 字段内嵌 message
             JsonObject dataObj = new JsonObject();
             if (message != null && !message.isEmpty()) {
                 dataObj.addProperty("message", message);
@@ -122,7 +103,6 @@ public record ToolResult(
             }
             root.add("data", dataObj);
         } else {
-            // 失败时：error 对象
             JsonObject errorObj = new JsonObject();
             if (errorCode != null) {
                 errorObj.addProperty("code", errorCode);
@@ -140,7 +120,6 @@ public record ToolResult(
             root.add("error", errorObj);
         }
 
-        // meta 字段（成功和失败都有）
         if (meta != null && !meta.isEmpty()) {
             JsonObject metaObj = new JsonObject();
             for (Map.Entry<String, Object> entry : meta.entrySet()) {
@@ -152,9 +131,6 @@ public record ToolResult(
         return GSON.toJson(root);
     }
 
-    /**
-     * 将 Java 对象转换为 JsonElement 并添加到 JsonObject。
-     */
     private static void addJsonElement(JsonObject obj, String key, Object value) {
         if (value == null) return;
         if (value instanceof Number n) {
