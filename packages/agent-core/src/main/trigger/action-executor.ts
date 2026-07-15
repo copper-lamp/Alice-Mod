@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
   AgentEvent,
+  EventTrigger,
   TriggerAction,
   ActionResult,
   ActionExecutorDeps,
@@ -34,7 +35,14 @@ export class ActionExecutor {
     this.deps = deps;
   }
 
-  async execute(action: TriggerAction, event: AgentEvent): Promise<ActionResult> {
+  /**
+   * 执行触发器动作
+   *
+   * @param action 动作配置
+   * @param event 触发事件
+   * @param trigger 触发器实体（V20 新增，用于 send_llm 解析 targetAgentId）
+   */
+  async execute(action: TriggerAction, event: AgentEvent, trigger?: EventTrigger): Promise<ActionResult> {
     try {
       switch (action.type) {
         case 'create_task':
@@ -42,7 +50,7 @@ export class ActionExecutor {
         case 'call_tool':
           return await this.executeCallTool(action.config as CallToolActionConfig, event);
         case 'send_llm':
-          return await this.executeSendLLM(action.config as SendLLMActionConfig, event);
+          return await this.executeSendLLM(action.config as SendLLMActionConfig, event, trigger);
         case 'send_qq':
           return await this.executeSendQQ(action.config as SendQQActionConfig, event);
         case 'store_memory':
@@ -97,9 +105,50 @@ export class ActionExecutor {
     return { success: true, data: result };
   }
 
-  private async executeSendLLM(config: SendLLMActionConfig, event: AgentEvent): Promise<ActionResult> {
+  private async executeSendLLM(
+    config: SendLLMActionConfig,
+    event: AgentEvent,
+    trigger?: EventTrigger,
+  ): Promise<ActionResult> {
+    // V20 优先走 MainAgent 路径（mainAgentProvider + resolveTarget）
+    if (this.deps.mainAgentProvider && this.deps.resolveTarget) {
+      const resolved = this.deps.resolveTarget(config.target, event, trigger);
+      if (!resolved) {
+        return {
+          success: false,
+          error: `无法解析 send_llm target='${config.target}'（trigger=${trigger?.id ?? 'unknown'}）`,
+        };
+      }
+      const agent = this.deps.mainAgentProvider(resolved);
+      if (!agent) {
+        return {
+          success: false,
+          error: `未找到 MainAgent: ${resolved.workspaceId}:${resolved.agentId}`,
+        };
+      }
+
+      const prompt = this.renderTemplate(config.prompt, event);
+      const finalPrompt = config.includeEventContext !== false
+        ? `${prompt}\n\n事件上下文: ${JSON.stringify(event.payload)}`
+        : prompt;
+
+      const result = await agent.handle({
+        source: 'trigger',
+        prompt: finalPrompt,
+        metadata: {
+          eventId: event.id,
+          eventType: event.type,
+          triggerSource: event.source,
+          triggerId: trigger?.id,
+          workspaceId: event.workspaceId,
+        },
+      });
+      return { success: true, data: { response: result } };
+    }
+
+    // 兼容旧式 sendLLM 回调（V20 之前）
     if (!this.deps.sendLLM) {
-      return { success: false, error: 'sendLLM 未配置' };
+      return { success: false, error: 'sendLLM / mainAgentProvider 未配置' };
     }
 
     const prompt = this.renderTemplate(config.prompt, event);

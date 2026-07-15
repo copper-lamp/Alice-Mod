@@ -33,6 +33,7 @@ interface TriggerRow {
   last_triggered_at: number | null;
   created_at: number;
   updated_at: number;
+  target_agent_id: string | null;
 }
 
 interface ScheduleRow {
@@ -62,6 +63,7 @@ function rowToTrigger(row: TriggerRow): EventTrigger {
     lastTriggeredAt: row.last_triggered_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    targetAgentId: row.target_agent_id ?? undefined,
   };
 }
 
@@ -105,15 +107,18 @@ export class TriggerStore {
       triggerCount: 0,
       createdAt: now,
       updatedAt: now,
+      targetAgentId: params.targetAgentId,
     };
 
     this.db.prepare(
       `INSERT INTO event_triggers
         (id, workspace_id, name, description, enabled, source, priority, rule_json, action_json,
-         cooldown_seconds, max_trigger_count, trigger_count, last_triggered_at, created_at, updated_at)
+         cooldown_seconds, max_trigger_count, trigger_count, last_triggered_at, created_at, updated_at,
+         target_agent_id)
        VALUES
         (@id, @workspace_id, @name, @description, @enabled, @source, @priority, @rule_json, @action_json,
-         @cooldown_seconds, @max_trigger_count, @trigger_count, @last_triggered_at, @created_at, @updated_at)`,
+         @cooldown_seconds, @max_trigger_count, @trigger_count, @last_triggered_at, @created_at, @updated_at,
+         @target_agent_id)`,
     ).run({
       id: trigger.id,
       workspace_id: trigger.workspaceId,
@@ -130,6 +135,7 @@ export class TriggerStore {
       last_triggered_at: trigger.lastTriggeredAt ?? null,
       created_at: trigger.createdAt,
       updated_at: trigger.updatedAt,
+      target_agent_id: trigger.targetAgentId ?? null,
     });
 
     if (schedule) {
@@ -154,6 +160,7 @@ export class TriggerStore {
     if (params.action !== undefined) { sets.push('action_json = @action_json'); bindings.action_json = JSON.stringify(params.action); }
     if (params.cooldownSeconds !== undefined) { sets.push('cooldown_seconds = @cooldown_seconds'); bindings.cooldown_seconds = params.cooldownSeconds; }
     if (params.maxTriggerCount !== undefined) { sets.push('max_trigger_count = @max_trigger_count'); bindings.max_trigger_count = params.maxTriggerCount; }
+    if (params.targetAgentId !== undefined) { sets.push('target_agent_id = @target_agent_id'); bindings.target_agent_id = params.targetAgentId ?? null; }
 
     this.db.prepare(`UPDATE event_triggers SET ${sets.join(', ')} WHERE id = @id`).run(bindings);
 

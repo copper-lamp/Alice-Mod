@@ -55,3 +55,51 @@ lombok {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = "UTF-8"
 }
+
+// ── 构建后自动部署到测试服务器 ──
+
+/** 测试服务器 mods 目录。 */
+def serverModsDir = file("../../serverjava/mods")
+
+/**
+ * 自动复制构建产物到测试服务器 mods 目录。
+ * 在 remapJar 之后执行，仅当 jar 文件确实存在时复制。
+ * 如果目标文件被占用（服务器运行中），会尝试覆盖。
+ */
+tasks.register('deployToServer') {
+    dependsOn tasks.named('remapJar')
+    doLast {
+        def jarFile = tasks.named('remapJar').get().archiveFile.get().asFile
+        def targetDir = serverModsDir
+        def targetFile = new File(targetDir, jarFile.name)
+
+        if (!jarFile.exists()) {
+            logger.warn("Jar not found: {}", jarFile)
+            return
+        }
+
+        // 确保目标目录存在
+        targetDir.mkdirs()
+
+        // 如果目标文件存在，先删除旧文件（可能被锁定则跳过）
+        if (targetFile.exists()) {
+            boolean deleted = targetFile.delete()
+            if (!deleted) {
+                logger.warn("Could not delete old jar (server may be running), will overwrite directly")
+            }
+        }
+
+        // 复制新 jar
+        try {
+            java.nio.file.Files.copy(jarFile.toPath(), targetFile.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            logger.lifecycle("Deployed {} -> {}", jarFile.name, targetDir.absolutePath)
+        } catch (Exception e) {
+            logger.error("Failed to deploy jar: {}", e.message)
+            throw new RuntimeException("Deploy failed", e)
+        }
+    }
+}
+
+// 让 build 任务自动部署
+tasks.named('build') { finalizedBy('deployToServer') }

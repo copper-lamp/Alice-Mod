@@ -445,3 +445,9 @@ export function registerWorkspaceHandlers(mainWindow?: BrowserWindow): void {
     }
   })
 }
+
+// ── 导出实例管理器（供 AgentFileExporter 等模块使用） ──
+
+export function getInstanceManager(): InstanceManager {
+  return instanceManager
+}

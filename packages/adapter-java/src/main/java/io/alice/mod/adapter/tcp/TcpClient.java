@@ -151,7 +151,7 @@ public final class TcpClient {
             handshakeManager.handshake((json, id) -> sendRaw(json))
               .thenAccept(this::onHandshakeDone)
               .exceptionally(ex -> {
-                  LOG.error("Handshake failed", ex);
+                  LOG.warn("Handshake failed: {}", ex.getMessage() != null ? ex.getMessage() : ex.toString());
                   onDisconnected();
                   return null;
               });
@@ -496,7 +496,7 @@ public final class TcpClient {
             try {
                 handshakeManager.handleResponse(response);
             } catch (HandshakeManager.HandshakeException e) {
-                LOG.error("Handshake failed: {}", e.getMessage());
+                LOG.warn("Handshake failed: {}", e.getMessage());
             }
             return;
         }
@@ -517,7 +517,7 @@ public final class TcpClient {
             try {
                 handshakeManager.handleError(error);
             } catch (HandshakeManager.HandshakeException e) {
-                LOG.error("Handshake rejected by server: {}", e.getMessage());
+                LOG.warn("Handshake rejected by server: {}", e.getMessage());
             }
         }
 

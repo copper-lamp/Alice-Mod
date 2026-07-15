@@ -1,5 +1,6 @@
 package io.alice.mod.adapter.entry;
 
+import io.alice.mod.adapter.config.AlicePaths;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -10,7 +11,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Instant;
 
 /**
@@ -19,7 +19,7 @@ import java.time.Instant;
  * 在模组首次启动时生成 {@code mcagent_instance.json}，
  * 描述实例的连接信息、认证令牌和数据库路径。
  * <p>
- * 文件位置：{@code config/mcagent/mcagent_instance.json}
+ * 文件位置：{@code Alice/mcagent_instance.json}
  */
 public final class InstanceFileGenerator {
 
@@ -52,10 +52,11 @@ public final class InstanceFileGenerator {
                                  String host, int port,
                                  String edition, String version) {
         try {
-            Path configDir = Paths.get(gameDir, "config", "mcagent");
-            Files.createDirectories(configDir);
+            Path gameDirPath = Path.of(gameDir);
+            Path aliceDir = AlicePaths.aliceDir(gameDirPath);
+            Files.createDirectories(aliceDir);
 
-            Path filePath = configDir.resolve("mcagent_instance.json");
+            Path filePath = AlicePaths.instanceFile(gameDirPath);
 
             JsonObject root = new JsonObject();
             root.addProperty("schema_version", SCHEMA_VERSION);
@@ -89,10 +90,11 @@ public final class InstanceFileGenerator {
             root.add("auth", auth);
 
             // database
+            Path worldDbPath = AlicePaths.worldDbPath(gameDirPath, worldName);
             JsonObject database = new JsonObject();
-            database.addProperty("sqlite_path", configDir.resolve("mcagent.db").toString());
-            database.addProperty("config_path", configDir.resolve("config.json").toString());
-            database.addProperty("log_path", configDir.resolve("logs").toString());
+            database.addProperty("sqlite_path", AlicePaths.worldDbPath(gameDirPath, worldName).toString());
+            database.addProperty("config_path", AlicePaths.configFile(gameDirPath).toString());
+            database.addProperty("log_path", AlicePaths.logsDir(gameDirPath).toString());
             root.add("database", database);
 
             // toolset_info
@@ -119,7 +121,7 @@ public final class InstanceFileGenerator {
      */
     public static void updateOnlineStatus(String gameDir, boolean online, String worldName) {
         try {
-            Path filePath = Paths.get(gameDir, "config", "mcagent", "mcagent_instance.json");
+            Path filePath = AlicePaths.instanceFile(Path.of(gameDir));
             if (!Files.exists(filePath)) {
                 LOG.warn("Instance file not found, skipping status update");
                 return;

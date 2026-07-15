@@ -1,9 +1,16 @@
 # Alice Mod Core V15 — QQ 机器人多账号架构设计
 
-> 版本：v1.0
-> 日期：2026-07-15
+> 版本：v1.1
+> 日期：2026-07-16
 > 版本号：V15（第 18 周）
 > 关联文档：[AC-V10-QQ机器人模块.md](AC-V10-QQ机器人模块.md)、[AC-V10-NapCat托管管理器执行文档.md](AC-V10-NapCat托管管理器执行文档.md)、[AC-V14-事件触发器与QQ完善-架构文档.md](AC-V14-事件触发器与QQ完善-架构文档.md)
+
+> **⚠️ 临时变更（2026-07-16）：** 由于多账号策略在实际运行中存在以下问题，已临时限制为单账号模式：
+> 1. **NapCat launcher.bat 解析异常**：`cmd.exe /c` 传参时 `&` 分隔符被引号包裹导致解析失败，batch 文件中的 `%` 变量被错误展开为命令
+> 2. **进程管理不稳定**：多账号并行启动时进程冲突、端口占用等问题尚未完全解决
+> 3. **WebUI 就绪超时**：多账号场景下依赖的资源竞争导致启动超时
+>
+> 在未彻底解决上述问题前，**代码层面已强制限制为单账号**（见下方第 3.7 节），前端 toggle 操作和自动启动均只允许一个账号启用。
 
 ---
 
@@ -704,3 +711,75 @@ proc.on('exit', (code, signal) => {
 | 3 个账号并行 | 同时启动 | 端口 3001/6099, 3002/6100, 3003/6101 |
 | 手动 kill 1 个 NapCat | 进程管理器 | 只有该账号的 NapCat 重启，其他不受影响 |
 | 手动配置账号 | 添加 manual 账号 | 使用用户配置的 host/port，不受影响 |
+
+### 3.7 临时单账号限制（2026-07-16）
+
+#### 3.7.1 背景
+
+由于多账号策略在实际运行中存在问题（见上方 ⚠️ 说明），已临时回退为单账号模式。
+
+#### 3.7.2 变更文件清单
+
+| 文件 | 变更类型 | 说明 |
+|------|---------|------|
+| `packages/agent-core/src/main/ipc/qq-bot-handler.ts` | 修改 | autoStartQQBotAccounts 只启动第一个账号，toggle-account 增加单账号检查 |
+| `packages/agent-core/src/main/qq-bot/napcat-manager.ts` | 修复 | spawn 命令使用单字符串传参，修复 `&` 分隔符被引号包裹导致 batch 文件解析错误 |
+
+#### 3.7.3 具体变更
+
+##### qq-bot-handler.ts — autoStartQQBotAccounts
+
+```typescript
+// 变更前：并行启动所有已启用的托管账号
+await Promise.allSettled(
+  enabledAccounts.map(async (account) => {
+    await ensureManagedConnection(account)
+  }),
+)
+
+// 变更后：只启动第一个已启用的账号，其余强制禁用
+const firstAccount = enabledAccounts[0]
+if (enabledAccounts.length > 1) {
+  for (const account of enabledAccounts.slice(1)) {
+    account.enabled = false
+    account.status = 'offline'
+    account.error = '临时限制：当前仅支持单账号运行，请先禁用其他账号'
+  }
+  saveAccounts(data.accounts, data.order)
+}
+await ensureManagedConnection(firstAccount)
+```
+
+##### qq-bot-handler.ts — toggle-account handler
+
+```typescript
+// 变更前：直接启用/禁用账号，无数量限制
+// 变更后：启用账号时检查是否有其他账号已启用
+if (enabled) {
+  const otherEnabled = data.accounts.find(
+    a => a.id !== id && a.enabled && a.config.connectionType === 'qr'
+  )
+  if (otherEnabled) {
+    return { success: false, error: '临时限制：当前仅支持单账号运行...' }
+  }
+}
+```
+
+##### napcat-manager.ts — spawnProcess (batch 文件 spawn 修复)
+
+```typescript
+// 变更前：args 作为独立数组元素传入，导致 & 被引号包裹
+spawn('cmd.exe', ['/c', 'chcp 65001 > NUL &', execPath, ...args])
+
+// 变更后：使用单字符串传参，& 作为命令分隔符正确生效
+spawn('cmd.exe', ['/c', `chcp 65001 > NUL & "${execPath}" ${args.join(' ')}`])
+```
+
+#### 3.7.4 恢复计划
+
+当以下问题解决后，可移除单账号限制，恢复多账号策略：
+
+1. **batch 文件解析问题**：确保 `cmd.exe /c` 传参时 `&` 分隔符正确解析
+2. **进程隔离**：确保多个 NapCat 进程使用独立的工作目录和端口，互不干扰
+3. **WebUI 就绪超时**：优化启动等待逻辑，避免资源竞争导致的超时
+4. **端口冲突**：实现端口分配和冲突检测逻辑

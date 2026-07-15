@@ -162,6 +162,10 @@ export interface AgentConfig {
   tools: AgentToolConfig
   qqBinding: QQBinding
   llmConfig: AgentLLMConfig
+  /** V20：workspace 内主 agent（每个 workspace 唯一）；send_llm target='main' 时取此 agent */
+  isMain?: boolean
+  /** V20：agent 所属 workspace（默认 '' 表示全局 / 兼容存量） */
+  workspaceId?: string
   createdAt?: number
   updatedAt?: number
 }

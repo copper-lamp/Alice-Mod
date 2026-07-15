@@ -1017,7 +1017,7 @@ export class NapCatManager {
     const isBatchFile = execPath.toLowerCase().endsWith('.bat');
     const cwd = this.options.workingDir || napcatDir;
     const proc = isBatchFile
-      ? spawn('cmd.exe', ['/c', 'chcp 65001 > NUL &', execPath, ...args], {
+      ? spawn('cmd.exe', ['/c', `chcp 65001 > NUL & "${execPath}" ${args.join(' ')}`], {
           cwd,
           env: {
             ...process.env,

@@ -1,6 +1,10 @@
 package io.alice.mod.adapter.world;
 
 import io.alice.mod.adapter.bot.BotManager;
+import io.alice.mod.adapter.config.AlicePaths;
+import io.alice.mod.adapter.config.ConfigManager;
+import io.alice.mod.adapter.entry.InstanceFileGenerator;
+import io.alice.mod.adapter.persistence.ConfigRepository;
 import io.alice.mod.adapter.persistence.DatabaseManager;
 import io.alice.mod.adapter.persistence.EventLogRepository;
 import io.alice.mod.adapter.persistence.ToolLogRepository;
@@ -20,16 +24,23 @@ import io.alice.mod.adapter.tool.ToolResult;
 import io.alice.mod.adapter.tool.service.TcpServiceImpl;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.alice.mod.adapter.agent.AgentConfig;
+import io.alice.mod.adapter.agent.AgentConfigReader;
+
 import java.nio.file.Path;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -67,6 +78,12 @@ public class WorldContext {
     /** 数据库管理器（V11 新增）。 */
     private final DatabaseManager databaseManager;
 
+    /** 配置管理器（V12 新增）。 */
+    private final ConfigManager configManager;
+
+    /** V21: 当前世界加载的智能体配置列表。 */
+    private List<AgentConfig> agentConfigs = List.of();
+
     /** JSON 序列化。 */
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
@@ -88,6 +105,7 @@ public class WorldContext {
                 }
         );
         this.databaseManager = createDatabaseManager(server, identity);
+        this.configManager = createConfigManager(server);
         this.startTime = System.currentTimeMillis();
     }
 
@@ -112,13 +130,23 @@ public class WorldContext {
             LOG.error("Failed to initialize database for world '{}'", identity.worldName(), e);
         }
 
-        // 3. 注册服务端 tick 事件（假人重生检查）
+        // 3. 初始化配置管理器（V12 新增）
+        configManager.init();
+        LOG.info("ConfigManager initialized for world '{}'", identity.worldName());
+
+        // 5. V21: 加载智能体配置并创建主智能体假人
+        loadAndSpawnAgents();
+
+        // 6. 注册服务端 tick 事件（假人重生检查）
         ServerTickEvents.END_SERVER_TICK.register(s -> botManager.tick());
 
-        // 4. 注册 TcpClient 实例供 TcpService 使用
+        // 7. 注册 TcpClient 实例供 TcpService 使用
         TcpServiceImpl.setClient(tcpClient);
 
-        // 5. 启动 TCP 客户端（连接 Agent Core）
+        // 8. 生成入口 JSON 文件，供 AC 发现实例和校验 auth_token
+        generateInstanceFile(false);
+
+        // 9. 启动 TCP 客户端（连接 Agent Core）
         tcpClient.connect(DEFAULT_HOST, DEFAULT_PORT);
 
         LOG.info("WorldContext initialized: world='{}', uptime={}ms",
@@ -137,16 +165,19 @@ public class WorldContext {
         // 1. 停止状态上报
         statusCollector.stop();
 
-        // 2. 通知 Agent Core 世界下线
+        // 2. 关闭配置管理器（V12 新增）
+        configManager.shutdown();
+
+        // 3. 通知 Agent Core 世界下线
         sendWorldOffline();
 
-        // 3. 断开 TCP
+        // 4. 断开 TCP
         tcpClient.disconnect();
 
-        // 4. 清理 BotManager
+        // 5. 清理 BotManager
         botManager.shutdown();
 
-        // 5. 清理旧日志并关闭数据库
+        // 6. 清理旧日志并关闭数据库
         try {
             databaseManager.cleanOldLogs(10_000, 5_000);
         } catch (Exception e) {
@@ -154,7 +185,7 @@ public class WorldContext {
         }
         databaseManager.close();
 
-        // 6. 清除静态委托
+        // 7. 清除静态委托
         BotManager.clearCurrentContext();
     }
 
@@ -183,6 +214,9 @@ public class WorldContext {
                 LOG.info("Handshake success: session={}, world='{}'",
                         result.sessionId(), identity.worldName());
 
+                // 更新入口文件为在线状态
+                generateInstanceFile(true);
+
                 registerTools();
                 statusCollector.start();
             }
@@ -191,6 +225,9 @@ public class WorldContext {
             public void onDisconnected() {
                 LOG.warn("TCP connection lost for world '{}'", identity.worldName());
                 statusCollector.stop();
+
+                // 更新入口文件为离线状态
+                generateInstanceFile(false);
             }
 
             @Override
@@ -338,22 +375,84 @@ public class WorldContext {
     }
 
     /**
-     * 解析数据库文件路径，与 WorldIdentity 的路径逻辑一致。
+     * 解析数据库文件路径，使用 AlicePaths 工具类。
      * <p>
-     * 单人存档：saves/&lt;WorldName&gt;/config/mcagent/worlds/&lt;WorldName&gt;/mcagent.db
-     * 专用服务器：config/mcagent/worlds/dedicated/mcagent.db
+     * 单人存档：Alice/worlds/&lt;WorldName&gt;/mcagent.db
+     * 专用服务器：Alice/worlds/dedicated/mcagent.db
      */
     private static Path resolveDbPath(MinecraftServer server, WorldIdentity identity) {
-        Path configDir = server.getServerDirectory().resolve("config/mcagent");
-        String worldDirName = sanitizeWorldName(
+        String worldDirName = AlicePaths.sanitize(
                 server.isDedicatedServer() ? "dedicated" : server.getWorldData().getLevelName());
-
-        return configDir.resolve("worlds").resolve(worldDirName).resolve("mcagent.db");
+        return AlicePaths.worldDbPath(server.getServerDirectory(), worldDirName);
     }
 
-    /** 清理世界名中的特殊字符。 */
-    private static String sanitizeWorldName(String name) {
-        return name.replaceAll("[^a-zA-Z0-9_\\-]", "_");
+    /**
+     * 生成入口 JSON 文件（mcagent_instance.json）。
+     * <p>
+     * 在 TCP 连接前生成，确保 AC 能读取到正确的 auth_token 用于握手校验。
+     *
+     * @param online 是否标记为在线状态
+     */
+    private void generateInstanceFile(boolean online) {
+        try {
+            String gameDir = server.getServerDirectory().toString();
+            InstanceFileGenerator.generate(
+                    gameDir,
+                    identity.instanceId(),
+                    identity.authToken(),
+                    online,
+                    identity.worldName(),
+                    DEFAULT_HOST,
+                    DEFAULT_PORT,
+                    "java",
+                    getGameVersion()
+            );
+        } catch (Exception e) {
+            LOG.warn("Failed to generate instance file for world '{}'", identity.worldName(), e);
+        }
+    }
+
+    /** 获取游戏版本号。 */
+    private static String getGameVersion() {
+        return FabricLoader.getInstance()
+                .getModContainer("minecraft")
+                .map(c -> c.getMetadata().getVersion().getFriendlyString())
+                .orElse("unknown");
+    }
+
+    private ConfigManager createConfigManager(MinecraftServer server) {
+        ConfigManager cm = new ConfigManager(server.getServerDirectory(),
+                new ConfigManager.ConfigRepositoryProxy() {
+                    @Override
+                    public Map<String, String> getAll() {
+                        return databaseManager.configs().getAll();
+                    }
+                    @Override
+                    public void set(String key, String value) {
+                        databaseManager.configs().set(key, value);
+                    }
+                });
+
+        // 注册配置变更监听器，通过 TCP 通知 Agent Core
+        cm.addListener(event -> {
+            try {
+                JsonObject params = new JsonObject();
+                JsonArray changes = new JsonArray();
+                JsonObject change = new JsonObject();
+                change.addProperty("key", event.key());
+                change.addProperty("old_value", event.oldValue());
+                change.addProperty("new_value", event.newValue());
+                changes.add(change);
+                params.add("changes", changes);
+                params.addProperty("source", event.source());
+                tcpClient.sendNotification("config_update", params);
+                LOG.debug("Config change notified: {} = {}", event.key(), event.newValue());
+            } catch (Exception e) {
+                LOG.warn("Failed to send config_update notification", e);
+            }
+        });
+
+        return cm;
     }
 
     // ---- 访问器 ---- //
@@ -365,7 +464,49 @@ public class WorldContext {
     public StatusCollector getStatusCollector() { return statusCollector; }
     public EventDispatcher getEventDispatcher() { return eventDispatcher; }
     public DatabaseManager getDatabaseManager() { return databaseManager; }
+    public ConfigManager getConfigManager() { return configManager; }
+    public List<AgentConfig> getAgentConfigs() { return agentConfigs; }
     public long getUptimeMs() { return System.currentTimeMillis() - startTime; }
+
+    // ---- V21: 智能体配置加载与假人生成 ---- //
+
+    /**
+     * 从 Alice/agents/ 目录加载智能体配置，并为 isMain=true 的智能体创建假人。
+     * <p>
+     * 在 {@link #initialize()} 中调用，在 BotManager 初始化之后、TCP 连接之前执行。
+     * 假人将生成在世界出生点位置。
+     */
+    private void loadAndSpawnAgents() {
+        try {
+            Path gameDir = server.getServerDirectory();
+            agentConfigs = AgentConfigReader.readAll(gameDir);
+            LOG.info("Loaded {} agent configs from Alice/agents/", agentConfigs.size());
+
+            int spawned = 0;
+            for (AgentConfig agent : agentConfigs) {
+                if (agent.isMain()) {
+                    String botName = agent.botName();
+                    try {
+                        ServerLevel overworld = server.overworld();
+                        Vec3 spawnPos = new Vec3(
+                                overworld.getSharedSpawnPos().getX() + 0.5,
+                                overworld.getSharedSpawnPos().getY(),
+                                overworld.getSharedSpawnPos().getZ() + 0.5
+                        );
+                        botManager.spawn(botName, overworld, spawnPos);
+                        spawned++;
+                        LOG.info("Spawned main agent bot '{}' (agentId={})", botName, agent.agentId());
+                    } catch (Exception e) {
+                        LOG.warn("Failed to spawn bot for agent '{}' (name={}): {}",
+                                agent.agentId(), botName, e.getMessage());
+                    }
+                }
+            }
+            LOG.info("Spawned {} main agent bots", spawned);
+        } catch (Exception e) {
+            LOG.warn("Failed to load and spawn agents: {}", e.getMessage());
+        }
+    }
 
     @Override
     public String toString() {

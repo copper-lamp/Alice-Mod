@@ -200,6 +200,8 @@ export interface EventTrigger {
   lastTriggeredAt?: number;
   createdAt: number;
   updatedAt: number;
+  /** V20：target='qq_sub_agent' 时指向具体 agent；其他 target 不使用 */
+  targetAgentId?: string;
 }
 
 /** 创建触发器参数 */
@@ -214,6 +216,8 @@ export interface CreateTriggerParams {
   cooldownSeconds?: number;
   maxTriggerCount?: number;
   enabled?: boolean;
+  /** V20：target='qq_sub_agent' 时指定具体 agent */
+  targetAgentId?: string;
 }
 
 /** 更新触发器参数 */
@@ -226,6 +230,8 @@ export interface UpdateTriggerParams {
   action?: TriggerAction;
   cooldownSeconds?: number;
   maxTriggerCount?: number;
+  /** V20：target='qq_sub_agent' 时指定具体 agent */
+  targetAgentId?: string;
 }
 
 /** 触发器匹配结果 */
@@ -387,7 +393,29 @@ export interface ActionExecutorDeps {
     }) => Promise<{ id: string }>;
   };
   callTool?: (workspaceId: string, toolName: string, params: Record<string, unknown>) => Promise<unknown>;
+  /** 旧式 LLM 调用（V20 之后由 mainAgentProvider + resolveTarget 替代，保留兼容） */
   sendLLM?: (target: 'main' | 'qq_sub_agent', prompt: string, event: AgentEvent) => Promise<string>;
   sendQQ?: (target: string, content: string, messageType: 'group' | 'private') => Promise<boolean>;
   storeMemory?: (workspaceId: string, params: StoreMemoryActionConfig) => Promise<void>;
+  /** V20：解析 send_llm target='main' / 'qq_sub_agent' → (workspaceId, agentId) */
+  resolveTarget?: (
+    target: 'main' | 'qq_sub_agent',
+    event: AgentEvent,
+    trigger?: EventTrigger,
+  ) => { workspaceId: string; agentId: string } | undefined;
+  /**
+   * V20：按 (workspaceId, agentId) 拿 MainAgent 实例。
+   * 注：返回类型用结构化形状，避免直接 import 还未创建的 main-agent.ts 模块（循环依赖）。
+   * 实际 MainAgent 类实现见 src/main/agent/main-agent.ts。
+   */
+  mainAgentProvider?: (params: {
+    workspaceId: string;
+    agentId: string;
+  }) => {
+    handle: (event: {
+      source: 'trigger' | 'qq' | 'debug' | 'system';
+      prompt: string;
+      metadata?: Record<string, unknown>;
+    }) => Promise<unknown>;
+  } | undefined;
 }

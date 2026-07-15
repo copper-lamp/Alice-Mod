@@ -193,7 +193,7 @@ export class TriggerEngine {
     let result: ActionResult;
 
     try {
-      result = await this.actionExecutor.execute(trigger.action, event);
+      result = await this.actionExecutor.execute(trigger.action, event, trigger);
     } catch (err) {
       result = {
         success: false,

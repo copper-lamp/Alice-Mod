@@ -23,6 +23,7 @@ import { HeartbeatManager, HeartbeatEvent, type HeartbeatOptions } from './heart
 import { HandshakeHandler } from './handshake';
 import type { ClientVersion } from './types';
 import { ConnectionState } from './types';
+import { AbortError, TimeoutError } from './errors';
 
 /** 连接事件 */
 export enum ConnectionEvent {
@@ -35,6 +36,25 @@ export enum ConnectionEvent {
   Error = 'error',
   WorldOnline = 'world:online',       // 世界上线通知
   WorldOffline = 'world:offline',     // 世界下线通知
+  /** V20：收到未匹配 pendingRequests 的响应（孤儿响应） */
+  OrphanResponse = 'tcp:orphan-response',
+}
+
+/**
+ * V20 §4.3 — 待处理的 server→client JSON-RPC Request。
+ *
+ * 由 sendRequestAndAwait 注册，handleResponse 反查并 resolve/reject。
+ * 连接关闭时 handleClosed 统一 reject 全部 pending。
+ */
+export interface PendingRequest {
+  resolve: (resp: JsonRpcResponse) => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+  method: string;
+  /** abort 监听器（用于清理） */
+  onAbort?: () => void;
+  /** 注册时的 AbortSignal（用于清理） */
+  signal?: AbortSignal;
 }
 
 /** 消息处理器 */
@@ -68,6 +88,11 @@ export class TcpConnection extends EventEmitter {
   private messageHandler: MessageHandler | null = null;
   private readonly connectedAt: number;
   private lastActivity: number;
+
+  /** V20 §4.3：pending server→client 请求（id → PendingRequest） */
+  private readonly pendingRequests = new Map<string | number, PendingRequest>();
+  /** V20 §4.3：自增 request id 序列（Agent Core 作为 Server 发起的 Request） */
+  private requestIdSeq = 0;
 
   constructor(
     socket: Socket,
@@ -137,6 +162,72 @@ export class TcpConnection extends EventEmitter {
    */
   sendJson(obj: unknown): void {
     this.send(JSON.stringify(obj));
+  }
+
+  /**
+   * V20 §4.3 — 主动向已连入的 Adapter Core 发 JSON-RPC Request 并等待 Response。
+   *
+   * 用途：tool_call / tool_call_batch / ping（带 id 形式）等 server→client 场景。
+   *
+   * 实现要点：
+   * - 自增 id 注册到 pendingRequests
+   * - 设置超时定时器 → 超时抛 TimeoutError
+   * - 监听 AbortSignal → 抛 AbortError
+   * - handleResponse 收到对应 id 的响应时 resolve/reject
+   * - handleClosed 时统一 reject 全部 pending
+   *
+   * @throws NotConnectedError 连接未就绪（由调用方包装或 isConnected 检查）
+   * @throws TimeoutError 超时
+   * @throws AbortError 被 AbortSignal 触发
+   */
+  async sendRequestAndAwait(
+    method: string,
+    params: unknown,
+    opts: { timeoutMs?: number; signal?: AbortSignal } = {},
+  ): Promise<JsonRpcResponse> {
+    // 1. 连接就绪检查（握手完成）
+    if (this._state !== ConnectionState.Connected) {
+      throw new Error(`[TcpConnection] cannot send '${method}': connection not ready (state=${this._state})`);
+    }
+
+    // 2. 检查 abort（写之前）
+    if (opts.signal?.aborted) {
+      throw new AbortError(`[TcpConnection] request aborted before send: ${method}`);
+    }
+
+    // 3. 分配 id 并构造 Request
+    const id = ++this.requestIdSeq;
+    const req: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
+    const timeoutMs = opts.timeoutMs ?? 30_000;
+
+    // 4. 注册 pending 并发请求（异步 + Promise 模式）
+    return new Promise<JsonRpcResponse>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+        reject(new TimeoutError(`[TcpConnection] request timeout: ${method} (${timeoutMs}ms)`));
+      }, timeoutMs);
+
+      const onAbort = () => {
+        clearTimeout(timer);
+        this.pendingRequests.delete(id);
+        reject(new AbortError(`[TcpConnection] request aborted: ${method}`));
+      };
+      opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+      this.pendingRequests.set(id, { resolve, reject, timer, method, onAbort, signal: opts.signal });
+
+      // 5. 发送（同步写 socket）
+      try {
+        this.sendJson(req);
+      } catch (err) {
+        // sendJson 内部已 emit Error，这里只需清理 pending
+        clearTimeout(timer);
+        this.pendingRequests.delete(id);
+        if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
   }
 
   /**
@@ -298,8 +389,28 @@ export class TcpConnection extends EventEmitter {
     }
   }
 
-  private handleResponse(_response: JsonRpcResponse): void {
-    this.emit(ConnectionEvent.Response, _response);
+  private handleResponse(response: JsonRpcResponse): void {
+    this.lastActivity = Date.now();
+
+    // V20 §4.3：反查 pendingRequests，匹配则 resolve/reject
+    const pending = this.pendingRequests.get(response.id as string | number);
+    if (pending) {
+      clearTimeout(pending.timer);
+      if (pending.signal && pending.onAbort) {
+        pending.signal.removeEventListener('abort', pending.onAbort);
+      }
+      this.pendingRequests.delete(response.id as string | number);
+      if ('error' in response && response.error) {
+        pending.reject(new Error(`[${response.error.code}] ${response.error.message}`));
+      } else {
+        pending.resolve(response);
+      }
+      return;
+    }
+
+    // 兜底：未知 id 的响应（可能是迟到的响应或对端自发响应）
+    this.emit(ConnectionEvent.Response, response);
+    this.emit(ConnectionEvent.OrphanResponse, response);
   }
 
   private handleNotification(notification: JsonRpcNotification): void {
@@ -364,6 +475,17 @@ export class TcpConnection extends EventEmitter {
 
   private handleClosed(): void {
     this.heartbeat.stop();
+
+    // V20 §4.3：清理所有 pending 请求，避免调用方永久挂起
+    for (const [, p] of this.pendingRequests) {
+      clearTimeout(p.timer);
+      if (p.signal && p.onAbort) {
+        p.signal.removeEventListener('abort', p.onAbort);
+      }
+      p.reject(new Error(`[TcpConnection] connection closed (method=${p.method})`));
+    }
+    this.pendingRequests.clear();
+
     this.transitionTo(ConnectionState.Disconnected);
     this.emit(ConnectionEvent.Closed);
   }

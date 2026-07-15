@@ -685,6 +685,27 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
     const account = data.accounts.find(a => a.id === id)
     if (!account) return { success: false }
 
+    // ⚠ 临时限制：单账号检查
+    // 要启用一个账号时，检查是否已有其他账号已启用
+    if (enabled) {
+      const otherEnabled = data.accounts.find(
+        a => a.id !== id && a.enabled && a.config.connectionType === 'qr'
+      )
+      if (otherEnabled) {
+        const msg = `临时限制：当前仅支持单账号运行。账号 ${otherEnabled.qqNumber} 已启用，请先禁用该账号再启用其他账号`
+        console.log(`[QQBot] ⚠ ${msg}`)
+        account.status = 'error'
+        account.error = msg
+        saveAccounts(data.accounts, data.order)
+        mainWindow?.webContents.send('qq-bot:status-update', {
+          accountId: id,
+          status: 'error',
+          error: msg,
+        })
+        return { success: false, error: msg }
+      }
+    }
+
     account.enabled = enabled
     account.status = enabled ? 'reconnecting' : 'offline'
     account.error = undefined
@@ -960,7 +981,17 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
 }
 
 /**
- * 自动启动所有已启用的托管 QQ 账号
+ * 获取当前已启用且正在运行的账号数
+ * 用于单账号限制检查
+ */
+function getEnabledRunningAccountCount(): number {
+  const data = loadAccounts()
+  return data.accounts.filter(a => a.enabled && a.config.connectionType === 'qr').length
+}
+
+/**
+ * 自动启动第一个已启用的托管 QQ 账号
+ * 临时限制：只启动第一个账号，避免多账号并发启动导致的 NapCat 冲突问题
  * 在应用初始化阶段调用，用户无需手动点击开关
  */
 export async function autoStartQQBotAccounts(): Promise<void> {
@@ -971,44 +1002,54 @@ export async function autoStartQQBotAccounts(): Promise<void> {
     console.log('[QQBot] 没有已启用的托管账号，跳过自动启动')
     return
   }
-  console.log(`[QQBot] 发现 ${enabledAccounts.length} 个已启用的托管账号，开始并行启动...`)
 
-  // 先标记所有账号为 reconnecting，让前端显示正确状态
-  for (const account of enabledAccounts) {
-    account.status = 'reconnecting'
-    account.error = undefined
+  // ⚠ 临时限制：只启动第一个已启用的账号
+  // 多账号策略暂缓，避免 NapCat 进程冲突（launcher.bat 解析问题未解决）
+  const firstAccount = enabledAccounts[0]
+  if (enabledAccounts.length > 1) {
+    console.log(`[QQBot] ⚠ 临时限制：发现 ${enabledAccounts.length} 个已启用账号，只启动第一个 (${firstAccount.qqNumber})`)
+    // 将其他账号标记为 offline，保留一个在启用状态
+    for (const account of enabledAccounts.slice(1)) {
+      account.enabled = false
+      account.status = 'offline'
+      account.error = '临时限制：当前仅支持单账号运行，请先禁用其他账号'
+    }
+    saveAccounts(data.accounts, data.order)
+    // 推送状态更新到前端
+    for (const account of enabledAccounts.slice(1)) {
+      mainWindow?.webContents.send('qq-bot:status-update', {
+        accountId: account.id,
+        status: 'offline',
+        error: '临时限制：当前仅支持单账号运行',
+      })
+    }
   }
+
+  console.log(`[QQBot] 自动启动账号 ${firstAccount.qqNumber}...`)
+  firstAccount.status = 'reconnecting'
+  firstAccount.error = undefined
   saveAccounts(data.accounts, data.order)
-  for (const account of enabledAccounts) {
-    mainWindow?.webContents.send('qq-bot:status-update', {
-      accountId: account.id,
-      status: 'reconnecting',
-    })
-  }
+  mainWindow?.webContents.send('qq-bot:status-update', {
+    accountId: firstAccount.id,
+    status: 'reconnecting',
+  })
 
-  // 并行启动所有账号 — 每个账号使用独立 NapCat 目录，互不冲突
-  await Promise.allSettled(
-    enabledAccounts.map(async (account) => {
-      try {
-        console.log(`[QQBot] 自动启动账号 ${account.qqNumber}...`)
-        await ensureManagedConnection(account)
-      } catch (err) {
-        const data2 = loadAccounts()
-        const acc = data2.accounts.find(a => a.id === account.id)
-        if (acc) {
-          acc.status = 'error'
-          acc.error = err instanceof Error ? err.message : String(err)
-          saveAccounts(data2.accounts, data2.order)
-        }
-        // 推送失败状态到前端
-        mainWindow?.webContents.send('qq-bot:status-update', {
-          accountId: account.id,
-          status: 'error',
-          error: err instanceof Error ? err.message : String(err),
-        })
-        console.error(`[QQBot] 自动启动账号 ${account.qqNumber} 失败:`, err)
-      }
-    }),
-  )
+  try {
+    await ensureManagedConnection(firstAccount)
+  } catch (err) {
+    const data2 = loadAccounts()
+    const acc = data2.accounts.find(a => a.id === firstAccount.id)
+    if (acc) {
+      acc.status = 'error'
+      acc.error = err instanceof Error ? err.message : String(err)
+      saveAccounts(data2.accounts, data2.order)
+    }
+    mainWindow?.webContents.send('qq-bot:status-update', {
+      accountId: firstAccount.id,
+      status: 'error',
+      error: err instanceof Error ? err.message : String(err),
+    })
+    console.error(`[QQBot] 自动启动账号 ${firstAccount.qqNumber} 失败:`, err)
+  }
   console.log('[QQBot] 自动启动完成')
 }

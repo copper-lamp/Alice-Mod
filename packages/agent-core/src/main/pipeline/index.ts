@@ -22,6 +22,10 @@ export { DefaultFallbackManager } from './fallback/fallback-manager';
 export { RetryStrategy } from './fallback/retry-strategy';
 export { DegradeStrategy } from './fallback/degrade-strategy';
 
+// V20 §4.7 Batch 实现（对接 JE tool_call_batch）
+export { BatchToolDispatcher } from './batch-tool-dispatcher';
+export { BatchResultCollector } from './batch-result-collector';
+
 // 内置中间件
 export { LoggerMiddleware } from './middleware/builtin/logger-middleware';
 export { ValidatorMiddleware } from './middleware/builtin/validator-middleware';

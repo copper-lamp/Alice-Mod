@@ -39,3 +39,20 @@ export { DefaultLLMObserver, getLLMObserver, setLLMObserver, resetLLMObserver } 
 export { MemoryObserverStore } from './observer/observer-store';
 export { SqliteObserverStore } from './observer/sqlite-observer-store';
 export type { IObserverStore } from './observer/observer-store';
+
+// V20 §4.2 调度器（令牌桶限流 + 并发上限 + 优先级）
+export { DefaultLlmRequestScheduler } from './scheduler/llm-request-scheduler';
+export type {
+  LlmRequestScheduler,
+  SchedulePriority,
+  ScheduleRequest,
+  SchedulerStatus,
+  SchedulerConfig,
+  ProviderRateLimit,
+  ProviderStat,
+} from './scheduler/types';
+export { PRIORITY_WEIGHT, DEFAULT_SCHEDULER_CONFIG } from './scheduler/types';
+
+// V20 §4.5 启动引导（注册 Provider + 配置 Router）
+export { bootstrapLlmSystem, resolveProviderClass } from './bootstrap';
+export type { BootstrapDeps, BootstrapResult } from './bootstrap';

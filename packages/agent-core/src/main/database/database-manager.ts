@@ -131,8 +131,61 @@ export class DatabaseManager implements IDatabaseManager {
     // 执行 DDL（幂等：所有表使用 CREATE TABLE IF NOT EXISTS）
     db.exec(ddl)
 
+    // V20 主链路组装 — 增量 schema 迁移（ALTER TABLE 不支持 IF NOT EXISTS，需检测列存在性）
+    this.runMigrations(db)
+
     // 记录当前 schema 版本
     this.recordSchemaVersion()
+  }
+
+  /**
+   * V20 主链路组装 — 增量 schema 迁移
+   *
+   * SQLite 不支持 ALTER TABLE ADD COLUMN IF NOT EXISTS，需先 PRAGMA table_info 检测。
+   * 所有迁移必须幂等（重复执行不报错）。
+   */
+  private runMigrations(db: Database.Database): void {
+    // ── V20-1: chat_history 表 ──
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS chat_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workspace_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        source TEXT NOT NULL,
+        event_id TEXT,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tool_calls_json TEXT,
+        tool_call_id TEXT,
+        token_count INTEGER,
+        finish_reason TEXT,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_chat_history_lookup
+        ON chat_history(workspace_id, agent_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_chat_history_event
+        ON chat_history(event_id);
+    `);
+
+    // ── V20-2: agents.is_main 列（标记 workspace 主 agent） ──
+    this.addColumnIfNotExists(db, 'agents', 'is_main', 'INTEGER NOT NULL DEFAULT 0');
+
+    // ── V20-3: event_triggers.target_agent_id 列（send_llm target='qq_sub_agent' 时指定） ──
+    this.addColumnIfNotExists(db, 'event_triggers', 'target_agent_id', 'TEXT');
+  }
+
+  /** 安全添加列（不存在才加），SQLite ALTER TABLE ADD COLUMN 不支持 IF NOT EXISTS */
+  private addColumnIfNotExists(
+    db: Database.Database,
+    table: string,
+    column: string,
+    definition: string,
+  ): void {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    const exists = cols.some(c => c.name === column);
+    if (!exists) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+    }
   }
 
   private recordSchemaVersion(): void {

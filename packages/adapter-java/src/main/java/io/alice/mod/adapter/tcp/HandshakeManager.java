@@ -56,7 +56,13 @@ public final class HandshakeManager {
         JsonObject params = new JsonObject();
         params.addProperty("instance_id", config.instanceId());
         params.addProperty("auth_token", config.authToken());
-        params.addProperty("version", config.version());
+
+        // version 必须是包含 protocol + edition 的对象
+        JsonObject versionObj = new JsonObject();
+        versionObj.addProperty("protocol", config.version());
+        versionObj.addProperty("edition", "java");
+        params.add("version", versionObj);
+
         params.addProperty("mod", config.modName());
 
         // v2 协议扩展：世界身份信息
@@ -91,15 +97,23 @@ public final class HandshakeManager {
             throw ex;
         }
 
-        String sessionId = resultObj.get("session_id").getAsString();
-        String serverVersion = resultObj.get("server_version").getAsString();
+        // AC 返回格式: { success, version, server_name, max_tools }
+        String serverVersion = resultObj.has("version")
+                ? resultObj.get("version").getAsString()
+                : "unknown";
+        String serverName = resultObj.has("server_name")
+                ? resultObj.get("server_name").getAsString()
+                : "unknown";
         int heartbeatInterval = resultObj.has("heartbeat_interval")
                 ? resultObj.get("heartbeat_interval").getAsInt()
                 : 10;
 
+        // 用 server_name + version 模拟 session_id
+        String sessionId = "sess_" + serverName.hashCode() + "_" + serverVersion;
+
         this.result = new HandshakeResult(sessionId, serverVersion, heartbeatInterval);
-        LOG.info("Handshake successful: session_id={}, server_version={}, heartbeat_interval={}s",
-                sessionId, serverVersion, heartbeatInterval);
+        LOG.info("Handshake successful: server='{}', version={}, heartbeat={}s",
+                serverName, serverVersion, heartbeatInterval);
 
         // 完成 Future
         completeFuture(this.result);

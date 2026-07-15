@@ -1,5 +1,6 @@
 package io.alice.mod.adapter.world;
 
+import io.alice.mod.adapter.config.AlicePaths;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -16,7 +17,7 @@ import java.util.UUID;
  * 世界身份 — 每个世界/服务器的唯一身份标识。
  * <p>
  * 每个 Minecraft 世界（存档）或专用服务器拥有独立的实例身份，
- * 存储在对应世界的 {@code config/mcagent/world_identity.json} 中。
+ * 存储在对应世界的 {@code Alice/world_identity.json} 中。
  * 同一个世界每次加载使用相同的 instance_id，确保 Agent Core 可恢复会话上下文。
  */
 public record WorldIdentity(
@@ -31,8 +32,8 @@ public record WorldIdentity(
     /**
      * 根据 MinecraftServer 实例获取对应的世界身份。
      * <p>
-     * 专用服务器：身份文件存储在 {@code ./config/mcagent/world_identity.json}
-     * 集成服务器：身份文件存储在存档目录的 {@code config/mcagent/world_identity.json}
+     * 专用服务器：身份文件存储在 {@code ./Alice/world_identity.json}
+     * 集成服务器：身份文件存储在存档目录的 {@code Alice/world_identity.json}
      */
     public static WorldIdentity forServer(MinecraftServer server) {
         Path identityFile;
@@ -40,18 +41,13 @@ public record WorldIdentity(
 
         if (server.isDedicatedServer()) {
             // 专用服务器
-            identityFile = server.getServerDirectory()
-                    .resolve("config/mcagent/world_identity.json")
-                    .normalize();
+            identityFile = AlicePaths.identityFile(server.getServerDirectory());
             worldTag = "server_dedicated";
         } else {
             // 集成服务器（单人模式）
             String worldDirName = server.getWorldData().getLevelName();
-            identityFile = server.getServerDirectory()
-                    .resolve("saves")
-                    .resolve(sanitizeWorldName(worldDirName))
-                    .resolve("config/mcagent/world_identity.json")
-                    .normalize();
+            identityFile = AlicePaths.worldIdentityFileForSave(
+                    server.getServerDirectory(), worldDirName);
             worldTag = worldDirName;
         }
 
@@ -112,10 +108,5 @@ public record WorldIdentity(
         } catch (IOException e) {
             LOG.error("Failed to save world identity file: {}", identityFile, e);
         }
-    }
-
-    /** 清理世界名中的非法文件名字符。 */
-    private static String sanitizeWorldName(String name) {
-        return name.replaceAll("[\\\\/:*?\"<>|]", "_");
     }
 }

@@ -3,7 +3,7 @@ import path from 'path'
 import fs, { existsSync, mkdirSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { initLogger, getLogger, getLogDb } from './log'
-import { registerAllIpcHandlers, setMemoryManager } from './ipc'
+import { registerAllIpcHandlers, setMemoryManager, bootstrapAndWireAgents, createResolveTarget, getSharedAgentConfigManager } from './ipc'
 import { setLogDb } from './ipc/log-handler'
 import { getToolCallCollector, setToolCallCollector } from './ipc/tool-call-handler'
 import { PipelineEventCollector } from './pipeline/event-collector'
@@ -133,27 +133,27 @@ async function initializeServices(): Promise<void> {
     path.join(process.cwd(), 'Alice', 'mcagent_instance.json'),                   // CWD/Alice/
     path.resolve(process.cwd(), '..', 'bds26.10', 'Alice', 'mcagent_instance.json'), // CWD/../bds26.10/Alice/
     path.resolve(process.cwd(), '..', '..', 'bds26.10', 'Alice', 'mcagent_instance.json'), // CWD/../../bds26.10/Alice/
+    path.resolve(process.cwd(), '..', 'serverjava', 'Alice', 'mcagent_instance.json'), // CWD/../serverjava/Alice/
+    path.resolve(process.cwd(), '..', '..', 'serverjava', 'Alice', 'mcagent_instance.json'), // CWD/../../serverjava/Alice/
   )
 
-  let loadedPath: string | undefined
   for (const p of candidatePaths) {
     try {
       const content = fs.readFileSync(p, 'utf-8')
       const instance = JSON.parse(content)
       if (instance.auth?.token) {
         authTokens.add(instance.auth.token)
-        loadedPath = p
         logger.info('SYSTEM', `已从实例文件加载 auth_token: ${p}`)
-        break
+        // 不 break，继续扫描其他路径以收集所有有效的 auth_token
       }
     } catch {
       continue // 此路径不可读，尝试下一个
     }
   }
 
-  if (!loadedPath) {
+  if (authTokens.size === 0) {
     logger.warn('SYSTEM', '未找到有效的 mcagent_instance.json，TCP 服务端将使用默认 token 认证（仅开发环境）')
-    authTokens = new Set(['mcagent-default-token'])
+    authTokens.add('mcagent-default-token')
   }
 
   tcpServerInstance = new TcpServer({
@@ -287,6 +287,11 @@ async function initializeServices(): Promise<void> {
   }
 
   // 12. 初始化事件触发器模块（V14）
+  // V20：先 bootstrap LLM 子系统 + 构造 MainAgentRegistry，再注入到 TriggerModule
+  const mainAgentRegistry = await bootstrapAndWireAgents(tcpServerInstance)
+  const resolveTarget = createResolveTarget(getSharedAgentConfigManager())
+  logger.info('SYSTEM', 'V20 主链路组装完成（bootstrap + MainAgentRegistry）')
+
   const triggerModule = new TriggerModule(
     {
       db: dbManager.getDb(),
@@ -299,6 +304,9 @@ async function initializeServices(): Promise<void> {
           }
           return dispatcher.callTool(workspaceId, toolName, params)
         },
+        // V20：主链路 MainAgent 注入（trigger send_llm target='main'/'qq_sub_agent' 走此路径）
+        mainAgentProvider: (p) => mainAgentRegistry.getSync(p.workspaceId, p.agentId),
+        resolveTarget,
         sendQQ: async (target, content, messageType) => {
           const { sendQQMessage } = await import('./qq-bot/integration')
           return sendQQMessage(target, content, messageType)
