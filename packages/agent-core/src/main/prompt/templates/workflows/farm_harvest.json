@@ -1,0 +1,80 @@
+{
+  "id": "farm_harvest",
+  "name": "农耕养殖循环",
+  "description": "农业生产的标准流程：检查 → 收割 → 种植 → 喂养 → 收集 → 存储",
+  "applicableScenarios": [
+    "农业发展",
+    "食物生产",
+    "资源再生"
+  ],
+  "steps": [
+    {
+      "name": "检查农场",
+      "description": "巡视农场，检查作物生长状态和动物数量",
+      "toolCategories": [
+        "perception",
+        "movement"
+      ],
+      "exitCondition": "农场状态评估完成"
+    },
+    {
+      "name": "收割作物",
+      "description": "收割成熟作物，保留种子",
+      "toolCategories": [
+        "block",
+        "inventory"
+      ],
+      "exitCondition": "所有成熟作物已收割"
+    },
+    {
+      "name": "重新种植",
+      "description": "翻耕土地，重新播种",
+      "toolCategories": [
+        "block",
+        "inventory"
+      ],
+      "exitCondition": "所有耕地已播种"
+    },
+    {
+      "name": "喂养动物",
+      "description": "给动物喂食，促进繁殖",
+      "toolCategories": [
+        "entity",
+        "inventory"
+      ],
+      "exitCondition": "所有动物已喂养"
+    },
+    {
+      "name": "收集产物",
+      "description": "收集动物产物（牛奶、羊毛、鸡蛋等）",
+      "toolCategories": [
+        "entity",
+        "inventory"
+      ],
+      "exitCondition": "所有产物已收集"
+    },
+    {
+      "name": "整理存储",
+      "description": "将收获物分类存放",
+      "toolCategories": [
+        "inventory",
+        "memory"
+      ],
+      "exitCondition": "物品归类完毕"
+    }
+  ],
+  "rulesOverride": {
+    "strategy": [
+      {
+        "name": "持续生产",
+        "description": "维持稳定的生产节奏",
+        "priority": 80
+      },
+      {
+        "name": "循环利用",
+        "description": "资源循环利用，减少浪费",
+        "priority": 70
+      }
+    ]
+  }
+}

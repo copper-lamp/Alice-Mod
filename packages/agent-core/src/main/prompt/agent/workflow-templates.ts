@@ -6,6 +6,8 @@
  */
 
 import type { WorkflowTemplate, WorkflowStep } from '../types';
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 
 // ════════════════════════════════════════════════════
 // 预定义工作流步骤
@@ -372,6 +374,38 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     },
   },
 ];
+
+// ════════════════════════════════════════════════════
+// JSON 模板加载（优先于硬编码数据）
+// ════════════════════════════════════════════════════
+
+// 注意：以下代码会在模块加载时执行
+// 通过闭包避免 "const" 重新赋值问题
+let _workflowTemplates: WorkflowTemplate[] = [...WORKFLOW_TEMPLATES]
+
+try {
+  const templatesDir = join(__dirname, '..', 'templates', 'workflows')
+  if (existsSync(templatesDir)) {
+    const files = readdirSync(templatesDir).filter(f => f.endsWith('.json'))
+    if (files.length > 0) {
+      const loaded: WorkflowTemplate[] = []
+      for (const file of files) {
+        const content = readFileSync(join(templatesDir, file), 'utf-8')
+        const template = JSON.parse(content) as WorkflowTemplate
+        loaded.push(template)
+      }
+      if (loaded.length > 0) {
+        _workflowTemplates = loaded
+        // 更新 WORKFLOW_TEMPLATES 数组内容
+        WORKFLOW_TEMPLATES.length = 0
+        WORKFLOW_TEMPLATES.push(...loaded)
+        console.info(`[workflow-templates] 从 JSON 加载了 ${loaded.length} 个工作流模板`)
+      }
+    }
+  }
+} catch (err) {
+  console.warn('[workflow-templates] JSON 模板加载失败，使用内置数据:', (err as Error).message)
+}
 
 /** 获取工作流模板 */
 export function getWorkflowTemplate(id: string): WorkflowTemplate | undefined {

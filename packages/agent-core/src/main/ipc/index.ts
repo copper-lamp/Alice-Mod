@@ -14,6 +14,7 @@ import { registerWorldHandlers } from './world-handler'
 import { registerWikiHandlers, setWikiClient, WikiClient } from '../wiki'
 import { registerSearchHandlers, setSearchClient, SearchClient } from '../search'
 import { registerDialogHandlers } from './dialog-handler'
+import { registerTemplateHandlers } from './template-handler'
 
 export { setMemoryManager }
 export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
@@ -31,11 +32,12 @@ export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerDashboardHandlers()
   registerAgentHandlers()
   registerModelHandlers()
-  registerQQBotHandlers()
+  registerQQBotHandlers(mainWindow)
   registerLogHandlers()
   registerToolCallHandlers()
   registerMemoryHandlers()
   registerDialogHandlers()
   registerWorkspaceHandlers(mainWindow)
   registerWorldHandlers(mainWindow)
+  registerTemplateHandlers()
 }

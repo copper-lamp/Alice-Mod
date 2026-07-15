@@ -1,0 +1,86 @@
+{
+  "id": "explore_gather",
+  "name": "探索采集循环",
+  "description": "系统性探索区域并采集资源的标准流程：准备 → 前往 → 探索 → 采集 → 返回 → 整理",
+  "applicableScenarios": [
+    "资源采集",
+    "地图探索",
+    "新手发展"
+  ],
+  "steps": [
+    {
+      "name": "准备出发",
+      "description": "检查装备和补给，确保食物、工具充足",
+      "toolCategories": [
+        "inventory",
+        "survival"
+      ],
+      "exitCondition": "背包有足够食物和工具"
+    },
+    {
+      "name": "前往目标区域",
+      "description": "移动到目标采集区域，沿途记录坐标",
+      "toolCategories": [
+        "movement",
+        "perception",
+        "memory"
+      ],
+      "exitCondition": "到达目标区域"
+    },
+    {
+      "name": "探索区域",
+      "description": "搜索目标区域，标记资源点和重要发现",
+      "toolCategories": [
+        "perception",
+        "memory",
+        "movement"
+      ],
+      "duration": 120,
+      "exitCondition": "发现目标资源或区域已探索完毕"
+    },
+    {
+      "name": "采集资源",
+      "description": "采集目标资源，按优先级选择性采集",
+      "toolCategories": [
+        "block",
+        "inventory",
+        "perception"
+      ],
+      "exitCondition": "背包满或目标资源采集完毕"
+    },
+    {
+      "name": "返回基地",
+      "description": "携带采集物返回基地，整理存放",
+      "toolCategories": [
+        "movement",
+        "inventory",
+        "memory"
+      ],
+      "exitCondition": "到达基地并完成存放"
+    },
+    {
+      "name": "整理汇报",
+      "description": "整理库存，汇报采集成果",
+      "toolCategories": [
+        "inventory",
+        "chat",
+        "memory"
+      ],
+      "exitCondition": "物品归类完毕"
+    }
+  ],
+  "rulesOverride": {
+    "strategy": [
+      {
+        "name": "系统探索",
+        "description": "按区域网格系统化探索，不遗漏",
+        "priority": 80
+      },
+      {
+        "name": "批量采集",
+        "description": "同类资源集中采集，提高效率",
+        "priority": 70
+      }
+    ]
+  }
+}

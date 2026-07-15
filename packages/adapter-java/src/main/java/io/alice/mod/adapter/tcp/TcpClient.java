@@ -158,7 +158,7 @@ public final class TcpClient {
 
             LOG.info("TCP connected to {}:{}", host, port);
         } catch (IOException e) {
-            LOG.error("Failed to connect to {}:{}", host, port, e);
+            LOG.warn("Failed to connect to {}:{} (will retry in background)", host, port, e);
             setState(ConnectionState.DISCONNECTED);
             cleanup();
         }

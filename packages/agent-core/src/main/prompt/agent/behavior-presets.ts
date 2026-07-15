@@ -5,6 +5,8 @@
  * 行为规范分为安全、社交、资源、效率、沟通五大类。
  */
 
+import { readFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { StrategyRule, ConstraintRule } from '../types';
 
 // ════════════════════════════════════════════════════
@@ -277,6 +279,25 @@ export const BEHAVIOR_PRESETS: BehaviorPreset[] = [
     suitableFor: ['default', 'logistics', 'survival_companion', 'killer', 'builder', 'explorer', 'farmer'],
   },
 ];
+
+// ════════════════════════════════════════════════════
+// JSON 加载（优先于硬编码数据）
+// ════════════════════════════════════════════════════
+try {
+  const filePath = join(__dirname, '..', 'templates', 'behaviors', 'behavior-presets.json')
+  if (existsSync(filePath)) {
+    const content = readFileSync(filePath, 'utf-8')
+    const data = JSON.parse(content)
+    if (data.presets && data.presets.length > 0) {
+      // 清空并重新填充
+      BEHAVIOR_PRESETS.length = 0
+      BEHAVIOR_PRESETS.push(...data.presets)
+      console.info(`[behavior-presets] 从 JSON 加载了 ${data.presets.length} 个行为预设`)
+    }
+  }
+} catch (err) {
+  console.warn('[behavior-presets] JSON 加载失败，使用内置数据:', (err as Error).message)
+}
 
 /** 获取行为规范预设 */
 export function getBehaviorPreset(id: string): BehaviorPreset | undefined {

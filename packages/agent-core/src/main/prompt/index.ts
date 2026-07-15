@@ -32,8 +32,9 @@ export { DefaultContextWindowManager } from './context/context-window-manager';
 export { DefaultCacheKeyBuilder } from './context/cache-key-builder';
 export { SlidingWindowTrimStrategy, SummaryTrimStrategy, PriorityTrimStrategy } from './context/trim-strategies';
 
-// 模板注册器
+// 模板注册器 + 模板管理器
 export { DefaultTemplateRegistry } from './template-registry';
+export { PromptTemplateManager } from './prompt-template-manager';
 
 // 工具提示词规范
 export { ACTION_TARGET_SPEC, VERB_FIRST_SPEC, DOMAIN_ACTION_SPEC, TOOL_CATEGORIES, TOOL_DESCRIPTION_TEMPLATES, checkToolDescriptionQuality, checkAllToolsQuality, getToolDescriptionGuide, formatToolForPrompt } from './tools/tool-prompt-spec';

@@ -1,0 +1,81 @@
+{
+  "id": "mine_quarry",
+  "name": "采矿冶炼循环",
+  "description": "矿物采集和加工的标准流程：准备 → 下矿 → 挖掘 → 返回 → 分类 → 冶炼",
+  "applicableScenarios": [
+    "矿物采集",
+    "资源开发",
+    "装备升级"
+  ],
+  "steps": [
+    {
+      "name": "采矿准备",
+      "description": "准备足够的工具（镐、火把、食物）",
+      "toolCategories": [
+        "inventory",
+        "survival"
+      ],
+      "exitCondition": "工具和补给充足"
+    },
+    {
+      "name": "下矿",
+      "description": "前往矿道或下到目标层数",
+      "toolCategories": [
+        "movement",
+        "perception"
+      ],
+      "exitCondition": "到达目标层数"
+    },
+    {
+      "name": "挖掘矿石",
+      "description": "沿矿道挖掘，采集矿石",
+      "toolCategories": [
+        "block",
+        "inventory",
+        "perception"
+      ],
+      "exitCondition": "背包满或工具耗尽"
+    },
+    {
+      "name": "返回地面",
+      "description": "携带矿石返回地面",
+      "toolCategories": [
+        "movement",
+        "memory"
+      ],
+      "exitCondition": "到达地面"
+    },
+    {
+      "name": "选矿分类",
+      "description": "按矿石类型分类，确定哪些需要冶炼",
+      "toolCategories": [
+        "inventory",
+        "memory"
+      ],
+      "exitCondition": "矿石分类完成"
+    },
+    {
+      "name": "冶炼加工",
+      "description": "将矿石放入熔炉冶炼成锭",
+      "toolCategories": [
+        "block",
+        "inventory"
+      ],
+      "exitCondition": "所有矿石已冶炼"
+    }
+  ],
+  "rulesOverride": {
+    "strategy": [
+      {
+        "name": "系统采矿",
+        "description": "按层数系统化开采，不遗漏",
+        "priority": 80
+      },
+      {
+        "name": "工具管理",
+        "description": "多带备用工具，减少中断",
+        "priority": 70
+      }
+    ]
+  }
+}

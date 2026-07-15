@@ -5,6 +5,8 @@
  * 特征按类别分组，并标注了冲突关系以便验证。
  */
 
+import { readFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { PersonalityTrait, PersonalityCategory } from '../types';
 
 // ════════════════════════════════════════════════════
@@ -306,6 +308,33 @@ export const PERSONALITY_BY_CATEGORY: Record<PersonalityCategory, PersonalityTra
 export const PERSONALITY_BY_ID: Record<string, PersonalityTrait> = {};
 for (const trait of PERSONALITY_LIBRARY) {
   PERSONALITY_BY_ID[trait.id] = trait;
+}
+
+// ════════════════════════════════════════════════════
+// JSON 加载（优先于硬编码数据）
+// ════════════════════════════════════════════════════
+try {
+  const filePath = join(__dirname, '..', 'templates', 'personalities', 'personality-library.json')
+  if (existsSync(filePath)) {
+    const content = readFileSync(filePath, 'utf-8')
+    const data = JSON.parse(content)
+    if (data.categories) {
+      // 清空并重新填充分类映射
+      for (const cat of Object.keys(PERSONALITY_BY_CATEGORY)) {
+        delete PERSONALITY_BY_CATEGORY[cat as keyof typeof PERSONALITY_BY_CATEGORY]
+      }
+      for (const [cat, catData] of Object.entries(data.categories)) {
+        const traits = (catData as any).traits as PersonalityTrait[]
+        PERSONALITY_BY_CATEGORY[cat as PersonalityCategory] = traits
+        for (const trait of traits) {
+          PERSONALITY_BY_ID[trait.id] = trait
+        }
+      }
+      console.info(`[personality-library] 从 JSON 加载了性格特征库`)
+    }
+  }
+} catch (err) {
+  console.warn('[personality-library] JSON 加载失败，使用内置数据:', (err as Error).message)
 }
 
 // ════════════════════════════════════════════════════

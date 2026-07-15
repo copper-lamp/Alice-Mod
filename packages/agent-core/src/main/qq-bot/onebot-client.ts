@@ -48,6 +48,7 @@ export class OneBotClient {
   private noticeHandlers: Set<NoticeHandler> = new Set();
   private statusChangeHandlers: Set<StatusChangeHandler> = new Set();
   private pendingApiCalls: Map<string, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }> = new Map();
+  private manualDisconnect = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(config?: Partial<OneBotClientConfig>) {
@@ -76,6 +77,7 @@ export class OneBotClient {
   async connect(): Promise<void> {
     if (this.ws && this.status === 'connected') return;
 
+    this.manualDisconnect = false;
     this.setStatus('connecting');
 
     try {
@@ -105,7 +107,10 @@ export class OneBotClient {
         this.ws!.on('close', () => {
           this.setStatus('disconnected');
           this.stopHeartbeat();
-          this.scheduleReconnect();
+          // 手动断开时不重连（如 disconnect() 主动调用）
+          if (!this.manualDisconnect) {
+            this.scheduleReconnect();
+          }
         });
 
         this.ws!.on('error', (err) => {
@@ -121,6 +126,7 @@ export class OneBotClient {
   }
 
   async disconnect(): Promise<void> {
+    this.manualDisconnect = true;
     this.stopHeartbeat();
     this.cancelReconnect();
     this.ws?.close();
@@ -346,6 +352,7 @@ export class OneBotClient {
   private scheduleReconnect(): void {
     if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
       console.error('[OneBotClient] 已达最大重连次数，停止重连');
+      this.setStatus('disconnected');
       return;
     }
 

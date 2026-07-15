@@ -118,8 +118,11 @@ public class WorldContext {
         // 4. 注册 TcpClient 实例供 TcpService 使用
         TcpServiceImpl.setClient(tcpClient);
 
-        // 5. 启动 TCP 客户端（连接 Agent Core）
-        tcpClient.connect(DEFAULT_HOST, DEFAULT_PORT);
+        // 5. 异步启动 TCP 客户端（连接 Agent Core），不阻塞服务器启动
+        //    连接失败时由 ReconnectManager 自动重试
+        Thread.ofVirtual().name("alice-tcp-init").start(() -> {
+            tcpClient.connect(DEFAULT_HOST, DEFAULT_PORT);
+        });
 
         LOG.info("WorldContext initialized: world='{}', uptime={}ms",
                 identity.worldName(), getUptimeMs());

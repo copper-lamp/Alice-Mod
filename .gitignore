@@ -51,6 +51,7 @@ packages/**/napcat/
 .superpowers/
 .trae-html-share-packages/
 bds26.10/
+serverjava/
 libs/
 
 # TypeScript

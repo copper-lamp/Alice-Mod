@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Spinner } from '@heroui/react'
-import { useQQBotStore } from '../../stores/qqBotStore'
+import { useQQBotStore, type AccountStatusUpdate } from '../../stores/qqBotStore'
 import { AccountListView } from './list/AccountListView'
 import { AccountDetailView } from './detail/AccountDetailView'
 import { AddAccountPanel } from './detail/AddAccountPanel'
@@ -25,6 +25,14 @@ export const RobotPage: React.FC = () => {
   useEffect(() => {
     loadAccounts()
     checkInstallStatus()
+
+    // 监听账号状态推送
+    const unsubscribe = window.electronAPI.on('qq-bot:status-update', (update: unknown) => {
+      useQQBotStore.getState().handleStatusUpdate(update as AccountStatusUpdate)
+    })
+    return () => {
+      unsubscribe?.()
+    }
   }, [loadAccounts])
 
   const checkInstallStatus = async () => {

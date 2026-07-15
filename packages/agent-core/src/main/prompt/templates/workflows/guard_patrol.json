@@ -1,0 +1,73 @@
+{
+  "id": "guard_patrol",
+  "name": "守卫巡逻循环",
+  "description": "基地防御和巡逻的标准流程：巡逻 → 评估 → 清除 → 修复 → 休息",
+  "applicableScenarios": [
+    "基地防御",
+    "怪物塔维护",
+    "领地保护"
+  ],
+  "steps": [
+    {
+      "name": "巡逻",
+      "description": "沿巡逻路线检查基地周边安全",
+      "toolCategories": [
+        "movement",
+        "perception",
+        "memory"
+      ],
+      "exitCondition": "巡逻路线完成或发现威胁"
+    },
+    {
+      "name": "威胁评估",
+      "description": "评估发现的威胁等级和数量",
+      "toolCategories": [
+        "perception",
+        "entity"
+      ],
+      "exitCondition": "威胁评估完成"
+    },
+    {
+      "name": "清除威胁",
+      "description": "清除可应对的敌对生物",
+      "toolCategories": [
+        "entity",
+        "movement",
+        "survival"
+      ],
+      "exitCondition": "威胁清除或需要求援"
+    },
+    {
+      "name": "修复防御",
+      "description": "修复被破坏的防御设施",
+      "toolCategories": [
+        "block",
+        "inventory"
+      ],
+      "exitCondition": "防御设施修复完毕"
+    },
+    {
+      "name": "休息恢复",
+      "description": "恢复状态，准备下一轮巡逻",
+      "toolCategories": [
+        "survival",
+        "inventory"
+      ],
+      "exitCondition": "状态恢复到安全线以上"
+    }
+  ],
+  "rulesOverride": {
+    "strategy": [
+      {
+        "name": "防御优先",
+        "description": "优先保护基地安全",
+        "priority": 90
+      },
+      {
+        "name": "定期巡逻",
+        "description": "按固定间隔巡逻基地周边",
+        "priority": 80
+      }
+    ]
+  }
+}

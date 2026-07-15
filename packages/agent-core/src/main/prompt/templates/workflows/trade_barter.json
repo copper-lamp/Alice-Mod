@@ -1,0 +1,62 @@
+{
+  "id": "trade_barter",
+  "name": "交易补给循环",
+  "description": "与村民等实体交易的标准流程：评估 → 寻找 → 交易 → 整理",
+  "applicableScenarios": [
+    "村民交易",
+    "物资补给",
+    "资源转换"
+  ],
+  "steps": [
+    {
+      "name": "评估库存",
+      "description": "盘点可供交易的商品和需要的物品",
+      "toolCategories": [
+        "inventory",
+        "memory"
+      ],
+      "exitCondition": "交易清单确定"
+    },
+    {
+      "name": "寻找交易对象",
+      "description": "寻找村民或其他可交易实体",
+      "toolCategories": [
+        "perception",
+        "movement",
+        "entity"
+      ],
+      "exitCondition": "找到交易对象"
+    },
+    {
+      "name": "进行交易",
+      "description": "执行交易，确保获得公平收益",
+      "toolCategories": [
+        "entity",
+        "inventory"
+      ],
+      "exitCondition": "交易完成"
+    },
+    {
+      "name": "整理收获",
+      "description": "整理交易所得物品",
+      "toolCategories": [
+        "inventory"
+      ],
+      "exitCondition": "物品归类完毕"
+    }
+  ],
+  "rulesOverride": {
+    "strategy": [
+      {
+        "name": "公平交易",
+        "description": "获得合理收益的交易才执行",
+        "priority": 80
+      },
+      {
+        "name": "储备充足",
+        "description": "交易后保留足够自用的物品",
+        "priority": 70
+      }
+    ]
+  }
+}

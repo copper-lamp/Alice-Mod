@@ -3,6 +3,10 @@
  *
  * 管理内置模板和用户自定义模板的注册、加载、保存功能。
  * 支持身份模板、行为规范模板、工作流模板和完整智能体模板。
+ *
+ * V16 变更：委托 PromptTemplateManager 从 JSON+SQLite 加载模板数据。
+ * 内置模板数据来自 templates/ 目录的 JSON 文件；
+ * 用户自定义模板通过 SQLite 持久化。
  */
 
 import type {
@@ -10,17 +14,12 @@ import type {
   UserTemplate,
   IdentityTemplate,
   WorkflowTemplate,
+  IdentityTemplateId,
+  WorkflowTemplateId,
   ITemplateRegistry,
 } from './types';
 
-import {
-  BUILTIN_IDENTITY_TEMPLATES,
-  listIdentityTemplates,
-  getIdentityTemplate,
-  createProfileFromIdentity,
-} from './agent/identity-templates';
-
-import { WORKFLOW_TEMPLATES, getWorkflowTemplate } from './agent/workflow-templates';
+import { PromptTemplateManager } from './prompt-template-manager';
 
 // ════════════════════════════════════════════════════
 // 默认模板注册器实现
@@ -29,20 +28,24 @@ import { WORKFLOW_TEMPLATES, getWorkflowTemplate } from './agent/workflow-templa
 /**
  * 默认模板注册器
  * 支持：
- * - 获取内置身份模板和工作流模板
+ * - 获取内置身份模板和工作流模板（来自 JSON + SQLite）
  * - 从身份模板创建 AgentProfile
- * - 保存/加载/删除用户自定义模板
+ * - 保存/加载/删除用户自定义模板（SQLite 持久化）
  * - 从自定义模板创建 AgentProfile
  */
 export class DefaultTemplateRegistry implements ITemplateRegistry {
-  private userTemplates: Map<string, UserTemplate> = new Map();
+  private templateManager: PromptTemplateManager;
+
+  constructor() {
+    this.templateManager = PromptTemplateManager.getInstance();
+  }
 
   // ════════════════════════════════════════════════════
   // 内置身份模板管理
   // ════════════════════════════════════════════════════
 
-  getIdentityTemplate(id: string): IdentityTemplate {
-    const template = getIdentityTemplate(id);
+  getIdentityTemplate(id: IdentityTemplateId): IdentityTemplate {
+    const template = this.templateManager.getIdentityTemplate(id);
     if (!template) {
       throw new Error(`身份模板未找到: ${id}`);
     }
@@ -50,15 +53,15 @@ export class DefaultTemplateRegistry implements ITemplateRegistry {
   }
 
   listIdentityTemplates(): IdentityTemplate[] {
-    return listIdentityTemplates();
+    return this.templateManager.listIdentityTemplates();
   }
 
   // ════════════════════════════════════════════════════
   // 内置工作流模板管理
   // ════════════════════════════════════════════════════
 
-  getWorkflowTemplate(id: string): WorkflowTemplate {
-    const template = getWorkflowTemplate(id);
+  getWorkflowTemplate(id: WorkflowTemplateId): WorkflowTemplate {
+    const template = this.templateManager.getWorkflowTemplate(id);
     if (!template) {
       throw new Error(`工作流模板未找到: ${id}`);
     }
@@ -66,7 +69,7 @@ export class DefaultTemplateRegistry implements ITemplateRegistry {
   }
 
   listWorkflowTemplates(): WorkflowTemplate[] {
-    return [...WORKFLOW_TEMPLATES];
+    return this.templateManager.listWorkflowTemplates();
   }
 
   // ════════════════════════════════════════════════════
@@ -77,11 +80,11 @@ export class DefaultTemplateRegistry implements ITemplateRegistry {
     id: string,
     overrides?: Partial<AgentProfile>,
   ): AgentProfile {
-    return createProfileFromIdentity(id, overrides);
+    return this.templateManager.createProfileFromIdentity(id, overrides);
   }
 
   createProfileFromCustom(templateId: string): AgentProfile | undefined {
-    const userTemplate = this.userTemplates.get(templateId);
+    const userTemplate = this.templateManager.getCustomTemplate(templateId);
     if (!userTemplate || userTemplate.type !== 'full_agent') {
       return undefined;
     }
@@ -91,35 +94,23 @@ export class DefaultTemplateRegistry implements ITemplateRegistry {
   }
 
   // ════════════════════════════════════════════════════
-  // 用户自定义模板管理
+  // 用户自定义模板管理（委托到 PromptTemplateManager）
   // ════════════════════════════════════════════════════
 
   save(template: UserTemplate): void {
-    const now = Date.now();
-    const existing = this.userTemplates.get(template.id);
-
-    this.userTemplates.set(template.id, {
-      ...template,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    });
+    this.templateManager.saveCustomTemplate(template);
   }
 
   load(id: string): UserTemplate | undefined {
-    const template = this.userTemplates.get(id);
-    return template ? { ...template } : undefined;
+    return this.templateManager.getCustomTemplate(id);
   }
 
   delete(id: string): void {
-    this.userTemplates.delete(id);
+    this.templateManager.deleteCustomTemplate(id);
   }
 
   list(type?: UserTemplate['type']): UserTemplate[] {
-    const all = Array.from(this.userTemplates.values());
-    if (type) {
-      return all.filter(t => t.type === type);
-    }
-    return all.map(t => ({ ...t }));
+    return this.templateManager.listCustomTemplates(type);
   }
 
   // ════════════════════════════════════════════════════
@@ -171,11 +162,14 @@ export class DefaultTemplateRegistry implements ITemplateRegistry {
 
   /** 获取模板数量 */
   get count(): number {
-    return this.userTemplates.size;
+    return this.templateManager.listCustomTemplates().length;
   }
 
   /** 清空所有自定义模板 */
   clear(): void {
-    this.userTemplates.clear();
+    const templates = this.templateManager.listCustomTemplates();
+    for (const t of templates) {
+      this.templateManager.deleteCustomTemplate(t.id);
+    }
   }
 }

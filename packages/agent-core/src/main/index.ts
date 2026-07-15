@@ -18,6 +18,7 @@ import { TaskManager } from './task'
 import { SQLiteStore } from './memory/sqlite-store'
 import { TriggerModule, setTriggerModule } from './trigger'
 import { initQQBotIntegration } from './qq-bot/integration'
+import { autoStartQQBotAccounts } from './ipc/qq-bot-handler'
 import { DefaultToolDispatcher, setToolDispatcher } from './pipeline/tool-dispatcher'
 import type { JsonRpcRequest, JsonRpcResponse, ToolSchema, JsonRpcNotification } from '@mcagent/shared'
 
@@ -30,20 +31,12 @@ function fixConsoleEncoding(): void {
   if (process.platform !== 'win32') return
 
   // 方法1: 通过 chcp 切换控制台代码页为 UTF-8
+  // 注意: 在 electron-vite dev 的 pipe 模式下此方法不生效（留给 package.json 脚本处理），
+  //       但在生产环境直接启动 Electron 时可正确设置。
   try {
-    execSync('chcp 65001 > NUL 2>&1', { stdio: 'ignore' })
+    execSync('chcp 65001', { timeout: 3000 })
   } catch {
-    // chcp 命令不可用时忽略（如 Windows Server Core、Wine 等环境）
-  }
-
-  // 方法2: Node.js 层面确保 stdout/stderr 使用 UTF-8 编码
-  // 当 stdout 被 pipe 时（如 electron-vite 开发模式），chcp 可能不生效，
-  // 因此直接设置 process.stdout/stderr 的编码为 UTF-8
-  try {
-    process.stdout.setDefaultEncoding?.('utf-8')
-    process.stderr.setDefaultEncoding?.('utf-8')
-  } catch {
-    // 某些环境下 setDefaultEncoding 可能不可用
+    // chcp 命令不可用时忽略
   }
 }
 
@@ -353,9 +346,12 @@ async function initializeServices(): Promise<void> {
   try {
     const qqIntegration = initQQBotIntegration({ taskManager })
     qqIntegration.bindEventBus(triggerModule.getEventBus())
-    // TODO: 从配置中读取 QQ 配置并启动
-    // await qqIntegration.start()
     logger.info('SYSTEM', 'QQ 机器人集成初始化完成')
+
+    // 自动启动已启用的托管 QQ 账号
+    autoStartQQBotAccounts().catch(err =>
+      logger.warn('SYSTEM', `QQ 账号自动启动失败: ${(err as Error).message}`)
+    )
   } catch (err) {
     logger.warn('SYSTEM', `QQ 机器人集成初始化失败: ${(err as Error).message}`)
   }

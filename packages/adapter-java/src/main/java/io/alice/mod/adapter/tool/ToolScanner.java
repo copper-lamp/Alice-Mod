@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +18,7 @@ import java.util.Map;
  * <p>
  * 在模组初始化时扫描指定包路径，收集所有标注了 {@link ToolModule} 的类，
  * 将其中的 {@link ToolMethod} 方法注册为 {@link AliceTool}。
+ * 同时支持 {@code file:} 协议（开发环境）和 {@code jar:} 协议（生产环境）。
  */
 public final class ToolScanner {
 
@@ -26,13 +28,6 @@ public final class ToolScanner {
 
     /**
      * 扫描指定包路径中的所有类，注册工具。
-     * <p>
-     * 扫描逻辑：
-     * <ol>
-     *   <li>枚举指定包下所有标注了 {@link ToolModule} 的类</li>
-     *   <li>对每个类，枚举其 public 方法中标注了 {@link ToolMethod} 的方法</li>
-     *   <li>将每个方法包装为 {@link AliceTool} 实例并注册到 {@link ToolRegistry}</li>
-     * </ol>
      *
      * @param packageName 要扫描的包名（如 "io.alice.mod.adapter.tool"）
      * @return 成功注册的工具数量
@@ -52,9 +47,6 @@ public final class ToolScanner {
 
     /**
      * 将标注了 {@link ToolModule} 的类中的工具方法注册到注册表。
-     *
-     * @param clazz 工具模块类
-     * @return 注册的工具数量
      */
     public static int registerModule(Class<?> clazz) {
         ToolModule moduleAnnotation = clazz.getAnnotation(ToolModule.class);
@@ -63,7 +55,6 @@ public final class ToolScanner {
         String category = moduleAnnotation.category();
         int registered = 0;
 
-        // 获取模块的单例实例（枚举类或持有 INSTANCE 字段的类）
         Object moduleInstance = getModuleInstance(clazz);
         if (moduleInstance == null) {
             LOG.warn("Cannot get instance of {}: no INSTANCE field or enum", clazz.getName());
@@ -74,7 +65,6 @@ public final class ToolScanner {
             ToolMethod methodAnnotation = method.getAnnotation(ToolMethod.class);
             if (methodAnnotation == null) continue;
 
-            // 构造 AliceTool 包装器
             AliceTool tool = buildTool(moduleInstance, method, category, methodAnnotation);
             try {
                 ToolRegistry.register(tool);
@@ -88,13 +78,9 @@ public final class ToolScanner {
         return registered;
     }
 
-    /**
-     * 从标注了 {@link ToolModule} 的类构建 {@link AliceTool} 包装器。
-     */
     private static AliceTool buildTool(
             Object instance, Method method, String category, ToolMethod annotation) {
 
-        // 构建参数 Schema
         Map<String, Object> schema = buildSchema(annotation);
 
         return new AliceTool() {
@@ -129,7 +115,6 @@ public final class ToolScanner {
         };
     }
 
-    /** 从注解元数据构建 JSON Schema。 */
     private static Map<String, Object> buildSchema(ToolMethod annotation) {
         Map<String, Object> schema = new java.util.LinkedHashMap<>();
         schema.put("type", "object");
@@ -153,15 +138,6 @@ public final class ToolScanner {
         return schema;
     }
 
-    /**
-     * 获取工具模块类的单例实例。
-     * <p>
-     * 支持两种模式：
-     * <ul>
-     *   <li>枚举类：返回枚举常量</li>
-     *   <li>普通类：查找名为 {@code INSTANCE} 的静态字段</li>
-     * </ul>
-     */
     private static Object getModuleInstance(Class<?> clazz) {
         if (clazz.isEnum()) {
             return clazz.getEnumConstants()[0];
@@ -178,12 +154,6 @@ public final class ToolScanner {
         return null;
     }
 
-    /**
-     * 扫描包路径下的所有类。
-     * <p>
-     * 使用 Fabric 的 ClassFinder API 或反射搜索。
-     * 这里使用 Java 原生的包扫描方式（适用于 Fabric 环境）。
-     */
     private static List<Class<?>> scanPackage(String packageName) {
         List<Class<?>> result = new ArrayList<>();
         try {
@@ -192,11 +162,14 @@ public final class ToolScanner {
             var resources = classLoader.getResources(path);
             while (resources.hasMoreElements()) {
                 var resource = resources.nextElement();
-                if (resource.getProtocol().equals("file")) {
+                String protocol = resource.getProtocol();
+                if ("file".equals(protocol)) {
                     java.io.File dir = new java.io.File(resource.toURI());
                     if (dir.isDirectory()) {
-                        scanDirectory(dir, packageName, result, classLoader);
+                        scanDirectory(dir, packageName, result);
                     }
+                } else if ("jar".equals(protocol)) {
+                    scanJar(resource, packageName, result);
                 }
             }
         } catch (Exception e) {
@@ -205,15 +178,49 @@ public final class ToolScanner {
         return result;
     }
 
-    /** 递归扫描目录，收集 .class 文件。 */
+    /** 扫描 JAR 包中的类，寻找标注了 {@link ToolModule} 的类。 */
+    private static void scanJar(URL resource, String packageName, List<Class<?>> classes) {
+        String urlPath = resource.getPath();
+        int bangIndex = urlPath.indexOf('!');
+        if (bangIndex < 0) return;
+        // URL 格式: file:/path/to/jar!/package/path
+        String jarPath = urlPath.substring(5, bangIndex);
+        try (java.util.jar.JarFile jar = new java.util.jar.JarFile(
+                java.net.URLDecoder.decode(jarPath, java.nio.charset.StandardCharsets.UTF_8))) {
+            String packagePath = packageName.replace('.', '/');
+            var entries = jar.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                String entryName = entry.getName();
+                if (entryName.startsWith(packagePath)
+                        && entryName.endsWith(".class")
+                        && entryName.indexOf('$') < 0
+                        && !entryName.equals(packagePath + "/module-info.class")
+                        && !entryName.equals(packagePath + "/package-info.class")) {
+                    String className = entryName.replace('/', '.').replace(".class", "");
+                    try {
+                        Class<?> clazz = Class.forName(className);
+                        if (clazz.isAnnotationPresent(ToolModule.class)) {
+                            classes.add(clazz);
+                        }
+                    } catch (ClassNotFoundException | NoClassDefFoundError ignored) {
+                        // skip
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to scan jar: {}", jarPath, e);
+        }
+    }
+
     private static void scanDirectory(java.io.File dir, String packageName,
-                                       List<Class<?>> classes, ClassLoader classLoader) {
+                                       List<Class<?>> classes) {
         java.io.File[] files = dir.listFiles();
         if (files == null) return;
 
         for (java.io.File file : files) {
             if (file.isDirectory()) {
-                scanDirectory(file, packageName + "." + file.getName(), classes, classLoader);
+                scanDirectory(file, packageName + "." + file.getName(), classes);
             } else if (file.getName().endsWith(".class")) {
                 String className = packageName + "." + file.getName().replace(".class", "");
                 try {
@@ -222,7 +229,7 @@ public final class ToolScanner {
                         classes.add(clazz);
                     }
                 } catch (ClassNotFoundException ignored) {
-                    // 部分类可能无法加载（如内部类），跳过
+                    // skip
                 }
             }
         }

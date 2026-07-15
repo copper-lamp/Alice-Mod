@@ -149,6 +149,7 @@ export class DatabaseManager implements IDatabaseManager {
       { version: 1, module: 'qq', description: 'QQ 表：qq_bot_config, qq_msg_history' },
       { version: 1, module: 'trigger', description: '事件触发器表：event_triggers, trigger_logs, trigger_schedule' },
       { version: 1, module: 'future', description: '预留表：knowledge_base, skill_registry' },
+      { version: 1, module: 'prompt', description: '提示词模板表：prompt_templates' },
     ]
 
     const insertStmt = db.prepare(`

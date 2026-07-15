@@ -1,0 +1,83 @@
+{
+  "id": "build_construct",
+  "name": "建造施工循环",
+  "description": "建筑和红石施工的标准流程：规划 → 备料 → 采集 → 施工 → 完善 → 验收",
+  "applicableScenarios": [
+    "建筑设计",
+    "红石工程",
+    "基地扩建"
+  ],
+  "steps": [
+    {
+      "name": "规划设计",
+      "description": "确定建筑或红石机械的设计方案和材料清单",
+      "toolCategories": [
+        "memory",
+        "perception"
+      ],
+      "exitCondition": "设计方案确定，材料清单完成"
+    },
+    {
+      "name": "检查材料",
+      "description": "检查库存中已有材料，列出缺少的材料清单",
+      "toolCategories": [
+        "inventory",
+        "memory"
+      ],
+      "exitCondition": "材料缺口清单确定"
+    },
+    {
+      "name": "采集材料",
+      "description": "采集缺少的建材，按优先级采集",
+      "toolCategories": [
+        "block",
+        "inventory",
+        "movement"
+      ],
+      "exitCondition": "材料齐备或无法继续采集"
+    },
+    {
+      "name": "施工建造",
+      "description": "按照设计方案进行施工",
+      "toolCategories": [
+        "block",
+        "inventory",
+        "movement"
+      ],
+      "exitCondition": "建筑主体完成或材料耗尽"
+    },
+    {
+      "name": "细节完善",
+      "description": "添加装饰细节，完善功能",
+      "toolCategories": [
+        "block",
+        "inventory"
+      ],
+      "exitCondition": "建筑达到预期效果"
+    },
+    {
+      "name": "验收汇报",
+      "description": "检查建筑质量，向玩家汇报结果",
+      "toolCategories": [
+        "perception",
+        "chat",
+        "memory"
+      ],
+      "exitCondition": "验收完成"
+    }
+  ],
+  "rulesOverride": {
+    "strategy": [
+      {
+        "name": "规划先行",
+        "description": "施工前先确定完整方案",
+        "priority": 90
+      },
+      {
+        "name": "材料齐备",
+        "description": "材料备齐后再开工",
+        "priority": 80
+      }
+    ]
+  }
+}

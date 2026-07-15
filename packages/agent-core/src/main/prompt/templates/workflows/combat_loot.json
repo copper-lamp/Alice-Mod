@@ -1,0 +1,81 @@
+{
+  "id": "combat_loot",
+  "name": "战斗搜刮循环",
+  "description": "战斗和搜刮的标准流程：准备 → 搜索 → 接战 → 搜刮 → 恢复 → 评估",
+  "applicableScenarios": [
+    "怪物清理",
+    "刷怪塔运营",
+    "资源获取"
+  ],
+  "steps": [
+    {
+      "name": "战斗准备",
+      "description": "检查装备（武器、盔甲、弓箭），确保状态良好",
+      "toolCategories": [
+        "inventory",
+        "survival"
+      ],
+      "exitCondition": "装备齐全，状态满"
+    },
+    {
+      "name": "搜索目标",
+      "description": "搜索目标区域内的敌对生物",
+      "toolCategories": [
+        "perception",
+        "movement"
+      ],
+      "exitCondition": "发现敌对生物"
+    },
+    {
+      "name": "接战",
+      "description": "与目标交战，保持距离，利用地形优势",
+      "toolCategories": [
+        "entity",
+        "movement",
+        "survival"
+      ],
+      "exitCondition": "目标被消灭或需要撤退"
+    },
+    {
+      "name": "搜刮战利品",
+      "description": "收集掉落物，检查是否有稀有物品",
+      "toolCategories": [
+        "inventory",
+        "perception"
+      ],
+      "exitCondition": "所有掉落物已收集"
+    },
+    {
+      "name": "状态恢复",
+      "description": "检查自身状态，进食回血，修复装备",
+      "toolCategories": [
+        "survival",
+        "inventory"
+      ],
+      "exitCondition": "状态恢复到安全线以上"
+    },
+    {
+      "name": "评估继续或撤退",
+      "description": "根据状态和战利品评估是否继续战斗",
+      "toolCategories": [
+        "perception",
+        "memory"
+      ],
+      "exitCondition": "决定继续战斗或返回基地"
+    }
+  ],
+  "rulesOverride": {
+    "strategy": [
+      {
+        "name": "先手优势",
+        "description": "发现敌对生物后优先主动攻击",
+        "priority": 90
+      },
+      {
+        "name": "逐个击破",
+        "description": "拉怪分批处理，避免被群殴",
+        "priority": 80
+      }
+    ]
+  }
+}

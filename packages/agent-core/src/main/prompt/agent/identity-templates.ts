@@ -5,6 +5,8 @@
  * 每个模板包含完整的身份描述、个性特征、行为规则和偏好设置。
  */
 
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import type { IdentityTemplate, AgentProfile, BehaviorRules, AgentPreferences, SecurityRules, ToolDiscipline } from '../types';
 
 // ════════════════════════════════════════════════════
@@ -666,6 +668,34 @@ export const BUILTIN_IDENTITY_TEMPLATES: Record<string, IdentityTemplate> = {
   explorer: EXPLORER_TEMPLATE,
   farmer: FARMER_TEMPLATE,
 };
+
+// ════════════════════════════════════════════════════
+// JSON 模板加载（优先于硬编码数据）
+// 必须位于 BUILTIN_IDENTITY_TEMPLATES 定义之后
+// ════════════════════════════════════════════════════
+
+try {
+  const templatesDir = join(__dirname, '..', 'templates', 'identities')
+  if (existsSync(templatesDir)) {
+    const files = readdirSync(templatesDir).filter(f => f.endsWith('.json'))
+    if (files.length > 0) {
+      const loadedTemplates: Record<string, IdentityTemplate> = {}
+      for (const file of files) {
+        const content = readFileSync(join(templatesDir, file), 'utf-8')
+        const template = JSON.parse(content) as IdentityTemplate
+        loadedTemplates[template.id] = template
+      }
+      // 覆盖 BUILTIN_IDENTITY_TEMPLATES 中的条目
+      for (const [id, template] of Object.entries(loadedTemplates)) {
+        BUILTIN_IDENTITY_TEMPLATES[id] = template
+      }
+      console.info(`[identity-templates] 从 JSON 加载了 ${files.length} 个身份模板`)
+    }
+  }
+} catch (err) {
+  // JSON 加载失败，使用硬编码 Fallback
+  console.warn('[identity-templates] JSON 模板加载失败，使用内置数据:', (err as Error).message)
+}
 
 /** 获取身份模板列表 */
 export function listIdentityTemplates(): IdentityTemplate[] {
