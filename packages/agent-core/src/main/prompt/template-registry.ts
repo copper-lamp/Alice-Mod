@@ -83,8 +83,8 @@ export class DefaultTemplateRegistry implements ITemplateRegistry {
     return this.templateManager.createProfileFromIdentity(id, overrides);
   }
 
-  createProfileFromCustom(templateId: string): AgentProfile | undefined {
-    const userTemplate = this.templateManager.getCustomTemplate(templateId);
+  async createProfileFromCustom(templateId: string): Promise<AgentProfile | undefined> {
+    const userTemplate = await this.templateManager.getCustomTemplate(templateId);
     if (!userTemplate || userTemplate.type !== 'full_agent') {
       return undefined;
     }
@@ -97,20 +97,20 @@ export class DefaultTemplateRegistry implements ITemplateRegistry {
   // 用户自定义模板管理（委托到 PromptTemplateManager）
   // ════════════════════════════════════════════════════
 
-  save(template: UserTemplate): void {
-    this.templateManager.saveCustomTemplate(template);
+  async save(template: UserTemplate): Promise<void> {
+    await this.templateManager.saveCustomTemplate(template);
   }
 
-  load(id: string): UserTemplate | undefined {
-    return this.templateManager.getCustomTemplate(id);
+  async load(id: string): Promise<UserTemplate | undefined> {
+    return await this.templateManager.getCustomTemplate(id);
   }
 
-  delete(id: string): void {
-    this.templateManager.deleteCustomTemplate(id);
+  async delete(id: string): Promise<void> {
+    await this.templateManager.deleteCustomTemplate(id);
   }
 
-  list(type?: UserTemplate['type']): UserTemplate[] {
-    return this.templateManager.listCustomTemplates(type);
+  async list(type?: UserTemplate['type']): Promise<UserTemplate[]> {
+    return await this.templateManager.listCustomTemplates(type);
   }
 
   // ════════════════════════════════════════════════════
@@ -118,12 +118,12 @@ export class DefaultTemplateRegistry implements ITemplateRegistry {
   // ════════════════════════════════════════════════════
 
   /** 保存 AgentProfile 为用户自定义模板 */
-  saveProfileAsTemplate(
+  async saveProfileAsTemplate(
     profile: AgentProfile,
     name: string,
     description: string,
     tags: string[] = [],
-  ): UserTemplate {
+  ): Promise<UserTemplate> {
     const template: UserTemplate = {
       id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       name,
@@ -135,25 +135,25 @@ export class DefaultTemplateRegistry implements ITemplateRegistry {
       tags,
     };
 
-    this.save(template);
+    await this.save(template);
     return template;
   }
 
   /** 导出模板为 JSON 字符串 */
-  exportTemplate(id: string): string | undefined {
-    const template = this.load(id);
+  async exportTemplate(id: string): Promise<string | undefined> {
+    const template = await this.load(id);
     if (!template) return undefined;
     return JSON.stringify(template, null, 2);
   }
 
   /** 从 JSON 字符串导入模板 */
-  importTemplate(json: string): UserTemplate | undefined {
+  async importTemplate(json: string): Promise<UserTemplate | undefined> {
     try {
       const data = JSON.parse(json) as UserTemplate;
       if (!data.id || !data.name || !data.type) {
         throw new Error('无效的模板格式');
       }
-      this.save(data);
+      await this.save(data);
       return data;
     } catch {
       return undefined;
@@ -161,15 +161,16 @@ export class DefaultTemplateRegistry implements ITemplateRegistry {
   }
 
   /** 获取模板数量 */
-  get count(): number {
-    return this.templateManager.listCustomTemplates().length;
+  async count(): Promise<number> {
+    const templates = await this.templateManager.listCustomTemplates();
+    return templates.length;
   }
 
   /** 清空所有自定义模板 */
-  clear(): void {
-    const templates = this.templateManager.listCustomTemplates();
+  async clear(): Promise<void> {
+    const templates = await this.templateManager.listCustomTemplates();
     for (const t of templates) {
-      this.templateManager.deleteCustomTemplate(t.id);
+      await this.templateManager.deleteCustomTemplate(t.id);
     }
   }
 }

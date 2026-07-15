@@ -15,6 +15,9 @@ import { registerWikiHandlers, setWikiClient, WikiClient } from '../wiki'
 import { registerSearchHandlers, setSearchClient, SearchClient } from '../search'
 import { registerDialogHandlers } from './dialog-handler'
 import { registerTemplateHandlers } from './template-handler'
+import { registerPresetHandlers } from './preset-handler'
+import { registerToolHandlers } from './tool-handler'
+import { registerDebugHandlers } from './debug-handler'
 
 export { setMemoryManager }
 export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
@@ -39,5 +42,8 @@ export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerDialogHandlers()
   registerWorkspaceHandlers(mainWindow)
   registerWorldHandlers(mainWindow)
+  registerPresetHandlers()
+  registerToolHandlers()
   registerTemplateHandlers()
+  registerDebugHandlers()
 }

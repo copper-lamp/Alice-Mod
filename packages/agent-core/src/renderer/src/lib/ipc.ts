@@ -181,3 +181,24 @@ export const memoryApi = {
   similar: (query: string, type?: string, limit?: number) =>
     window.electronAPI?.invoke('memory:similar', { query, type, limit }) as Promise<{ memories: any[] }>
 }
+
+// ==========================================
+// V16: 人设预设 & 工具 API
+// ==========================================
+
+import type { PersonaPreset, ToolInfo } from './types'
+
+export const presetApi = {
+  list: () => window.electronAPI.invoke('preset:list') as Promise<PersonaPreset[]>,
+  get: (id: string) => window.electronAPI.invoke('preset:get', { id }) as Promise<PersonaPreset | null>,
+  create: (preset: Omit<PersonaPreset, 'id' | 'isBuiltin' | 'createdAt'>) =>
+    window.electronAPI.invoke('preset:create', preset) as Promise<{ id: string; success: boolean }>,
+  update: (id: string, preset: Partial<PersonaPreset>) =>
+    window.electronAPI.invoke('preset:update', { id, preset }) as Promise<{ success: boolean }>,
+  delete: (id: string) =>
+    window.electronAPI.invoke('preset:delete', { id }) as Promise<{ success: boolean }>,
+}
+
+export const toolApi = {
+  listAll: () => window.electronAPI.invoke('tool:list-all') as Promise<ToolInfo[]>,
+}

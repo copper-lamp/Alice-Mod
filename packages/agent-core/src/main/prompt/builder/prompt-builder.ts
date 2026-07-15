@@ -21,6 +21,8 @@ import type {
   ISystemPromptBuilder,
   IStateInjector,
   ICacheKeyBuilder,
+  StrategyRule,
+  ConstraintRule,
 } from '../types';
 import { DEFAULT_AGENT_PROFILE } from '../types';
 import { DefaultToolPromptAssembler } from '../tools/tool-prompt-assembler';
@@ -75,6 +77,9 @@ export class PromptBuilder implements IPromptBuilder {
       fragments: [...this.profile.fragments, ...this.customFragments],
     };
 
+    // 1b. 从 extraContext 注入用户配置（V19 新增）
+    this.injectExtraContext(mergedProfile, params);
+
     // 2. 构建系统提示词（静态部分 — Region 1）
     let systemPrompt: string;
     let systemHash: string;
@@ -99,9 +104,12 @@ export class PromptBuilder implements IPromptBuilder {
     }
 
     // 2. 组装工具列表（半静态部分 — Region 2）
+    // 从 extraContext 获取 agent 指定的禁用工具列表
+    const excludeTools = params.extraContext?.excludeTools as string[] | undefined;
     const tools = await this.assembler.assemble(params.workspaceId, {
       groupByCategory: true,
       verbosity: this.profile.preferences.verbosity >= 2 ? 'detailed' : 'standard',
+      excludeTools,
     });
     const toolsHash = this.cacheKeyBuilder.hashToolDefinitions(tools);
 
@@ -207,6 +215,56 @@ export class PromptBuilder implements IPromptBuilder {
 
   getCacheStats(): CacheStats {
     return { ...this.stats };
+  }
+
+  /**
+   * 从 extraContext 注入用户配置到 mergedProfile（V19 新增）
+   * 支持：expertise、workflowDescription、behaviorRules、communicationStyle、boundaries
+   */
+  private injectExtraContext(profile: AgentProfile, params: BuildParams): void {
+    if (!params.extraContext) return;
+
+    // 注入 expertise → 追加到 identity + 设置 profile.expertise
+    const expertise = params.extraContext.expertise as string[] | undefined;
+    if (expertise && expertise.length > 0) {
+      profile.expertise = expertise;
+      // 只在 identity 末尾追加，不覆盖已有内容
+      if (!profile.identity.endsWith(`擅长：${expertise.join('、')}。`)) {
+        profile.identity += `\n擅长：${expertise.join('、')}。`;
+      }
+    }
+
+    // 注入 workflowDescription → 优先覆盖 workApproach
+    const workflowDesc = params.extraContext.workflowDescription as string | undefined;
+    if (workflowDesc) {
+      profile.workflowDescription = workflowDesc;
+    }
+
+    // 注入 behaviorRules → 覆盖 rules
+    const behaviorRules = params.extraContext.behaviorRules as {
+      core: string[];
+      strategy: StrategyRule[];
+      constraints: ConstraintRule[];
+    } | undefined;
+    if (behaviorRules) {
+      profile.rules = {
+        core: behaviorRules.core ?? [],
+        strategy: (behaviorRules.strategy ?? []).map(s => ({ ...s })),
+        constraints: (behaviorRules.constraints ?? []).map(c => ({ ...c })),
+      };
+    }
+
+    // 注入 communicationStyle
+    const commStyle = params.extraContext.communicationStyle as string[] | undefined;
+    if (commStyle && commStyle.length > 0) {
+      profile.communicationStyle = [...commStyle];
+    }
+
+    // 注入 boundaries
+    const boundaries = params.extraContext.boundaries as string[] | undefined;
+    if (boundaries && boundaries.length > 0) {
+      profile.boundaries = [...boundaries];
+    }
   }
 
   /** 获取所有片段（profile + custom） */

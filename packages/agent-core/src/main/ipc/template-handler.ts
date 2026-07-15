@@ -58,16 +58,16 @@ export function registerTemplateHandlers(): void {
   // ════════════════════════════════════════════════════
 
   ipcMain.handle('template:custom-list', async (_event, { type }) => {
-    return templateManager.listCustomTemplates(type)
+    return await templateManager.listCustomTemplates(type)
   })
 
   ipcMain.handle('template:custom-get', async (_event, { id }) => {
-    return templateManager.getCustomTemplate(id) ?? null
+    return await templateManager.getCustomTemplate(id) ?? null
   })
 
   ipcMain.handle('template:custom-save', async (_event, template) => {
     try {
-      const saved = templateManager.saveCustomTemplate(template)
+      const saved = await templateManager.saveCustomTemplate(template)
       return { success: true, template: saved }
     } catch (err) {
       return { success: false, error: (err as Error).message }
@@ -75,7 +75,7 @@ export function registerTemplateHandlers(): void {
   })
 
   ipcMain.handle('template:custom-delete', async (_event, { id }) => {
-    const success = templateManager.deleteCustomTemplate(id)
+    const success = await templateManager.deleteCustomTemplate(id)
     return { success }
   })
 
@@ -86,7 +86,7 @@ export function registerTemplateHandlers(): void {
   ipcMain.handle('template:reload', async () => {
     try {
       templateManager.reloadBuiltinTemplates()
-      templateManager.reloadCustomTemplates()
+      await templateManager.reloadCustomTemplates()
       return { success: true }
     } catch (err) {
       return { success: false, error: (err as Error).message }

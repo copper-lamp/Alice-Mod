@@ -7,6 +7,7 @@
  * - 工作区离线时保留工具列表（等待重连后重新注册）
  */
 
+import { createHash } from 'node:crypto';
 import type { ToolSchema } from '@mcagent/shared';
 
 /**
@@ -18,13 +19,28 @@ import type { ToolSchema } from '@mcagent/shared';
 export class ToolRegistry {
   /** workspaceId → ToolSchema[] */
   private readonly registry: Map<string, ToolSchema[]> = new Map();
+  /** workspaceId → content hash */
+  private readonly hashes: Map<string, string> = new Map();
 
   /**
    * 注册/替换工作区的工具列表
-   * 注意：这是全量替换，不是增量追加
+   * @returns true=有变更已更新, false=无变更跳过
    */
-  register(workspaceId: string, tools: ToolSchema[]): void {
+  register(workspaceId: string, tools: ToolSchema[]): boolean {
+    const newHash = computeToolsHash(tools);
+    const oldHash = this.hashes.get(workspaceId);
+    
+    // 无变更则跳过
+    if (oldHash === newHash && oldHash !== undefined) return false;
+    
     this.registry.set(workspaceId, [...tools]);
+    this.hashes.set(workspaceId, newHash);
+    return true;
+  }
+
+  /** 获取工作区工具列表的 hash */
+  getHash(workspaceId: string): string | undefined {
+    return this.hashes.get(workspaceId);
   }
 
   /**
@@ -83,5 +99,16 @@ export class ToolRegistry {
    */
   clear(): void {
     this.registry.clear();
+    this.hashes.clear();
   }
+}
+
+/**
+ * 计算工具列表的 hash
+ * 按工具名排序确保顺序稳定
+ */
+function computeToolsHash(tools: ToolSchema[]): string {
+  const sorted = [...tools].sort((a, b) => a.name.localeCompare(b.name));
+  const json = JSON.stringify(sorted);
+  return createHash('sha256').update(json).digest('hex').slice(0, 16);
 }

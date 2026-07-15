@@ -51,6 +51,8 @@ export interface AgentProfile {
   name: string;
   /** 智能体身份描述 */
   identity: string;
+  /** 专业领域标签（V19 新增，由 wizard 的 expertise 多选标签生成） */
+  expertise?: string[];
   /** 个性特征 */
   personality: string[];
   /** 行为规则 */
@@ -63,6 +65,8 @@ export interface AgentProfile {
   communicationStyle?: string[];
   /** 工作方式（参考 ANTHROPIC 工作流） */
   workApproach?: string[];
+  /** 工作流模板描述（V19 新增，由 workflowId 生成） */
+  workflowDescription?: string;
   /** 行为边界（参考 DEVIN 安全红线） */
   boundaries?: string[];
   /** 信息保密规则（参考 DEVIN 数据安全 + ANTHROPIC 不透露机制） */

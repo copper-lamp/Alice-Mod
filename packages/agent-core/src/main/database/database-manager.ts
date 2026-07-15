@@ -149,7 +149,8 @@ export class DatabaseManager implements IDatabaseManager {
       { version: 1, module: 'qq', description: 'QQ 表：qq_bot_config, qq_msg_history' },
       { version: 1, module: 'trigger', description: '事件触发器表：event_triggers, trigger_logs, trigger_schedule' },
       { version: 1, module: 'future', description: '预留表：knowledge_base, skill_registry' },
-      { version: 1, module: 'prompt', description: '提示词模板表：prompt_templates' },
+      { version: 1, module: 'agent', description: '智能体表：agents, persona_presets' },
+      { version: 1, module: 'tool', description: '工具注册表：tool_registry' },
     ]
 
     const insertStmt = db.prepare(`
@@ -586,6 +587,51 @@ export class DatabaseManager implements IDatabaseManager {
       );
       CREATE INDEX IF NOT EXISTS idx_skill_category ON skill_registry(category);
       CREATE INDEX IF NOT EXISTS idx_skill_active ON skill_registry(is_active);
+
+      -- ════════════════════════════════════════════════════════════
+      -- 12. 智能体实例 + 人设预设
+      -- ════════════════════════════════════════════════════════════
+      CREATE TABLE IF NOT EXISTS agents (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        alias TEXT,
+        skin_data TEXT,
+        persona_json TEXT NOT NULL,
+        tools_json TEXT NOT NULL,
+        qq_binding_json TEXT NOT NULL,
+        llm_config_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_agents_name ON agents(name);
+
+      CREATE TABLE IF NOT EXISTS persona_presets (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        identity TEXT NOT NULL,
+        expertise_json TEXT NOT NULL,
+        personality_json TEXT NOT NULL,
+        workflow_id TEXT NOT NULL,
+        behavior_rules_json TEXT,
+        recommended_tool_categories_json TEXT,
+        is_builtin INTEGER DEFAULT 0,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_persona_presets_name ON persona_presets(name);
+      CREATE INDEX IF NOT EXISTS idx_persona_presets_builtin ON persona_presets(is_builtin);
+
+      -- ════════════════════════════════════════════════════════════
+      -- 13. 工具注册持久化
+      -- ════════════════════════════════════════════════════════════
+      CREATE TABLE IF NOT EXISTS tool_registry (
+        workspace_id TEXT PRIMARY KEY,
+        tool_hash TEXT NOT NULL,
+        tool_json TEXT NOT NULL,
+        tool_count INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_tool_registry_updated ON tool_registry(updated_at);
     `
   }
 }

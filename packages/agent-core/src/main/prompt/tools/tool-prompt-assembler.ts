@@ -115,7 +115,7 @@ export class DefaultToolPromptAssembler implements IToolPromptAssembler {
 
   private schemaToPromptDef(schema: ToolSchema): ToolPromptDefinition {
     const params: Record<string, ToolParamPrompt> = {};
-    for (const [key, def] of Object.entries(schema.parameters)) {
+    for (const [key, def] of Object.entries(schema.parameters ?? {})) {
       params[key] = {
         type: def.type,
         description: def.description || '',

@@ -17,6 +17,7 @@ import { ToolRegistry } from './tool-registry';
 import { WorkspaceStore } from './workspace-store';
 import { WIKI_TOOL_SCHEMAS } from '../wiki';
 import { SEARCH_TOOL_SCHEMAS } from '../search';
+import { getDatabaseManager } from '../database';
 
 /** 工作区管理器事件 */
 export enum WorkspaceEvent {
@@ -206,20 +207,29 @@ export class WorkspaceManager extends EventEmitter {
 
   /**
    * 注册工具列表到工作区
+   * 通过 hash 检测跳过无变更的注册，有变更时持久化到 SQLite
    */
-  registerTools(workspaceId: string, tools: ToolSchema[]): void {
+  registerTools(workspaceId: string, tools: ToolSchema[]): boolean {
     const workspace = this.workspaces.get(workspaceId);
-    if (!workspace) return;
+    if (!workspace) return false;
 
     // 自动注入内置工具（Wiki 等）
     const allTools = [...tools, ...WIKI_TOOL_SCHEMAS, ...SEARCH_TOOL_SCHEMAS];
 
+    // hash 变更检测：无变更则不更新
+    const changed = this.toolRegistry.register(workspaceId, allTools);
+    if (!changed) return true; // 无变更，跳过后续操作
+
     workspace.updateTools(allTools);
-    this.toolRegistry.register(workspaceId, allTools);
+
+    // 持久化到 SQLite
+    this.persistTools(workspaceId, allTools);
 
     this.emitEvent(WorkspaceEvent.ToolsUpdated, workspaceId, workspace.instanceId, {
       toolCount: allTools.length,
     });
+
+    return true;
   }
 
   /** 获取工作区的工具列表 */
@@ -230,6 +240,20 @@ export class WorkspaceManager extends EventEmitter {
   /** 获取 ToolRegistry 引用 */
   getToolRegistry(): ToolRegistry {
     return this.toolRegistry;
+  }
+
+  /** 将工具列表持久化到 SQLite */
+  private persistTools(workspaceId: string, tools: ToolSchema[]): void {
+    try {
+      const db = getDatabaseManager().getDb();
+      const hash = this.toolRegistry.getHash(workspaceId) ?? '';
+      db.prepare(`
+        INSERT OR REPLACE INTO tool_registry (workspace_id, tool_hash, tool_json, tool_count, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(workspaceId, hash, JSON.stringify(tools), tools.length, Date.now());
+    } catch (err) {
+      console.error('[WorkspaceManager] 持久化工具列表失败:', err);
+    }
   }
 
   // ── 生命周期 ──

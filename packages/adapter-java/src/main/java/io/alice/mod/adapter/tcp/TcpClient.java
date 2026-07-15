@@ -161,6 +161,10 @@ public final class TcpClient {
             LOG.warn("Failed to connect to {}:{} (will retry in background)", host, port, e);
             setState(ConnectionState.DISCONNECTED);
             cleanup();
+            // 初始连接失败，启动后台重连
+            if (config.autoReconnect()) {
+                reconnectManager.startFresh();
+            }
         }
     }
 

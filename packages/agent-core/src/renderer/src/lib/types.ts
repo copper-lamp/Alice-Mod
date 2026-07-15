@@ -155,42 +155,20 @@ export interface AgentSummary {
 export interface AgentConfig {
   id?: string
   name: string
+  alias?: string
   skinData?: string
-  modelId?: string
-  identity: AgentIdentity
+  persona: AgentPersona
+  personaPresetId?: string
   tools: AgentToolConfig
-  memory: AgentMemoryConfig
-  executionRules: ExecutionRule[]
   qqBinding: QQBinding
-  schedule: AgentSchedule
+  llmConfig: AgentLLMConfig
   createdAt?: number
   updatedAt?: number
 }
 
-/** 身份/提示词配置 */
-export interface AgentIdentity {
-  selectedFragments: string[]
-  customPrompt?: string
-}
-
 /** 工具配置 */
 export interface AgentToolConfig {
-  categorySelection: Record<string, boolean>
-  customToolIds?: string[]
-}
-
-/** 记忆配置 */
-export interface AgentMemoryConfig {
-  mode: 'sqlite' | 'chroma' | 'both'
-}
-
-/** 执行规则 */
-export interface ExecutionRule {
-  id: string
-  name: string
-  description: string
-  enabled: boolean
-  params?: Record<string, unknown>
+  enabledTools: Record<string, boolean>
 }
 
 /** QQ 绑定 */
@@ -198,14 +176,6 @@ export interface QQBinding {
   enabled: boolean
   accountId?: string
   groupIds?: string[]
-}
-
-/** 智能体启用时间 */
-export interface AgentSchedule {
-  mode: 'always' | 'scheduled'
-  startTime?: string
-  endTime?: string
-  timezone?: string
 }
 
 /** 模型配置（UI 管理用） */
@@ -324,4 +294,106 @@ declare global {
   interface Window {
     electronAPI: ElectronAPI
   }
+}
+
+// ==========================================
+// V16 智能体创建向导 — 新增类型
+// ==========================================
+
+/** 向导表单数据 */
+export interface WizardFormData {
+  name: string
+  alias: string
+  skinData?: string
+  personaMode: 'preset' | 'advanced'
+  personaPresetId?: string
+  persona: AgentPersona
+  enabledTools: Record<string, boolean>
+  qqBinding: QQBinding
+  llmConfig: AgentLLMConfig
+}
+
+/** 人设配置 */
+export interface AgentPersona {
+  identity: string
+  expertise: string[]
+  personality: string[]
+  workflowId: string
+  behaviorRules?: {
+    core: string[]
+    strategy: StrategyRule[]
+    constraints: ConstraintRule[]
+  }
+  /** 沟通风格（V19 新增，高级模式自定义） */
+  communicationStyle?: string[]
+  /** 行为边界（V19 新增，高级模式自定义） */
+  boundaries?: string[]
+}
+
+/** 人设预设 */
+export interface PersonaPreset {
+  id: string
+  name: string
+  description: string
+  identity: string
+  expertise: string[]
+  personality: string[]
+  workflowId: string
+  behaviorRules: {
+    core: string[]
+    strategy: StrategyRule[]
+    constraints: ConstraintRule[]
+  }
+  recommendedToolCategories: string[]
+  isBuiltin: boolean
+  createdAt?: number
+}
+
+/** LLM 模型配置 */
+export interface AgentLLMConfig {
+  mainModel: ModelSelection
+  qqBotModel: ModelSelection
+  compressionModel: ModelSelection
+}
+
+/** 模型选择 */
+export interface ModelSelection {
+  providerId: string
+  modelId: string
+  modelName: string
+  sameAsMain?: boolean
+}
+
+/** 工具展示信息 */
+export interface ToolInfo {
+  name: string
+  displayName: string
+  description: string
+  category: string
+  categoryLabel: string
+  parameters: ToolParamInfo[]
+  example?: string
+}
+
+/** 工具参数信息 */
+export interface ToolParamInfo {
+  name: string
+  type: string
+  description: string
+  required: boolean
+  defaultValue?: unknown
+}
+
+/** 策略规则 */
+export interface StrategyRule {
+  name: string
+  description: string
+  priority: number
+}
+
+/** 约束规则 */
+export interface ConstraintRule {
+  name: string
+  description: string
+  consequence: 'warning' | 'block' | 'replan'
 }

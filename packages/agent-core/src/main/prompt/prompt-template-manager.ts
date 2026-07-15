@@ -35,13 +35,14 @@ export class PromptTemplateManager {
   private personalityLibrary: Map<PersonalityCategory, PersonalityTrait[]> = new Map();
   private behaviorPresets: Map<string, BehaviorPreset> = new Map();
 
-  // 用户自定义模板（从 SQLite 加载）
+  // 用户自定义模板（从 SQLite 加载，惰性加载）
   private customTemplates: Map<string, UserTemplate> = new Map();
+  private customLoaded = false;
 
   private constructor() {
     this.templatesDir = join(__dirname, 'templates');
     this.loadAllBuiltinTemplates();
-    this.loadCustomTemplates();
+    // 注意：loadCustomTemplates 改为惰性加载，避免在 DB 未初始化时调用
   }
 
   static getInstance(): PromptTemplateManager {
@@ -170,8 +171,10 @@ export class PromptTemplateManager {
     }
   }
 
-  /** 从 SQLite 加载用户自定义模板 */
-  private loadCustomTemplates(): void {
+  /** 确保自定义模板已从 SQLite 加载（惰性加载） */
+  private async ensureCustomLoaded(): Promise<void> {
+    if (this.customLoaded) return;
+    this.customLoaded = true;
     try {
       const db = getDatabaseManager().getDb();
       const rows = db.prepare('SELECT * FROM prompt_templates WHERE is_builtin = 0').all() as Array<{
@@ -199,8 +202,7 @@ export class PromptTemplateManager {
       }
       console.info(`[PromptTemplateManager] 从 SQLite 加载了 ${this.customTemplates.size} 个用户自定义模板`);
     } catch (err) {
-      // 表可能还不存在，忽略
-      console.warn('[PromptTemplateManager] 加载自定义模板失败（表可能不存在）:', err);
+      console.warn('[PromptTemplateManager] 加载自定义模板失败（数据库可能尚未初始化）:', err);
     }
   }
 
@@ -259,8 +261,8 @@ export class PromptTemplateManager {
       communicationStyle: overrides?.communicationStyle ?? (template.communicationStyle ? [...template.communicationStyle] : undefined),
       workApproach: overrides?.workApproach ?? (template.workApproach ? [...template.workApproach] : undefined),
       boundaries: overrides?.boundaries ?? (template.boundaries ? [...template.boundaries] : undefined),
-      securityRules: overrides?.securityRules ?? template.securityRules ? { ...template.securityRules } : undefined,
-      toolDiscipline: overrides?.toolDiscipline ?? template.toolDiscipline ? { ...template.toolDiscipline } : undefined,
+      securityRules: overrides?.securityRules ?? (template.securityRules ? { ...template.securityRules } : undefined),
+      toolDiscipline: overrides?.toolDiscipline ?? (template.toolDiscipline ? { ...template.toolDiscipline } : undefined),
     };
     return profile;
   }
@@ -341,7 +343,8 @@ export class PromptTemplateManager {
    * 保存用户自定义模板
    * @param template 模板数据（不含时间戳）
    */
-  saveCustomTemplate(template: Omit<UserTemplate, 'createdAt' | 'updatedAt'>): UserTemplate {
+  async saveCustomTemplate(template: Omit<UserTemplate, 'createdAt' | 'updatedAt'>): Promise<UserTemplate> {
+    await this.ensureCustomLoaded();
     const now = Date.now();
     const full: UserTemplate = {
       ...template,
@@ -357,7 +360,8 @@ export class PromptTemplateManager {
    * 获取用户自定义模板
    * @param id 模板标识
    */
-  getCustomTemplate(id: string): UserTemplate | undefined {
+  async getCustomTemplate(id: string): Promise<UserTemplate | undefined> {
+    await this.ensureCustomLoaded();
     return this.customTemplates.get(id);
   }
 
@@ -366,7 +370,8 @@ export class PromptTemplateManager {
    * @param id 模板标识
    * @returns 是否成功删除
    */
-  deleteCustomTemplate(id: string): boolean {
+  async deleteCustomTemplate(id: string): Promise<boolean> {
+    await this.ensureCustomLoaded();
     const existed = this.customTemplates.delete(id);
     if (existed) {
       try {
@@ -383,7 +388,8 @@ export class PromptTemplateManager {
    * 列出用户自定义模板
    * @param type 按类型筛选（可选）
    */
-  listCustomTemplates(type?: UserTemplate['type']): UserTemplate[] {
+  async listCustomTemplates(type?: UserTemplate['type']): Promise<UserTemplate[]> {
+    await this.ensureCustomLoaded();
     const all = Array.from(this.customTemplates.values());
     return type ? all.filter(t => t.type === type) : all;
   }
@@ -423,8 +429,9 @@ export class PromptTemplateManager {
   }
 
   /** 重新加载用户自定义模板（从 SQLite） */
-  reloadCustomTemplates(): void {
+  async reloadCustomTemplates(): Promise<void> {
     this.customTemplates.clear();
-    this.loadCustomTemplates();
+    this.customLoaded = false;
+    await this.ensureCustomLoaded();
   }
 }

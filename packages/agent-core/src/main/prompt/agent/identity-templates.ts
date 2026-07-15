@@ -750,6 +750,8 @@ export function createProfileFromIdentity(
     communicationStyle: overrides?.communicationStyle ?? (template.communicationStyle ? [...template.communicationStyle] : undefined),
     workApproach: overrides?.workApproach ?? (template.workApproach ? [...template.workApproach] : undefined),
     boundaries: overrides?.boundaries ?? (template.boundaries ? [...template.boundaries] : undefined),
+    securityRules: overrides?.securityRules ?? (template.securityRules ? { ...template.securityRules } : undefined),
+    toolDiscipline: overrides?.toolDiscipline ?? (template.toolDiscipline ? { ...template.toolDiscipline } : undefined),
   };
 
   return profile;
