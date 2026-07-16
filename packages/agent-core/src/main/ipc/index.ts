@@ -1,4 +1,5 @@
 import { BrowserWindow } from 'electron'
+import { join } from 'node:path'
 import { registerChatHandlers } from './chat-handler'
 import { registerConfigHandlers } from './config-handler'
 import { registerWindowHandlers } from './window-handler'
@@ -38,6 +39,21 @@ import { getDatabaseManager } from '../database'
 import { getWorkspaceManager } from '../workspace'
 import type { TcpServer } from '../tcp'
 import type { AgentEvent, EventTrigger } from '../trigger/types'
+
+// V22 元编排层
+import type { MainAgent } from '../agent/main-agent'
+import type { OrchestrationSQLiteStore } from '../orchestration/types'
+import {
+  PlanStore,
+  PlanManager,
+  ProgressStateManager,
+  MemoryCompressor,
+  SkillInjector,
+  TaskMemoryStore,
+  MemoryBackedLongTermMemoryHook,
+  Orchestrator,
+} from '../orchestration'
+import { getMemoryManager } from './memory-handler'
 
 export { setMemoryManager, getSharedAgentConfigManager }
 
@@ -81,6 +97,14 @@ let _scheduler: DefaultLlmRequestScheduler | null = null
 let _historyStore: SqliteChatHistoryStore | null = null
 let _connectionResolver: ConnectionResolver | null = null
 
+// V22 元编排层共享单例
+let _orchStore: OrchestrationSQLiteStore | null = null
+let _planStore: PlanStore | null = null
+let _planManager: PlanManager | null = null
+let _memoryCompressor: MemoryCompressor | null = null
+let _skillInjector: SkillInjector | null = null
+let _progressStateManager: ProgressStateManager | null = null
+
 /**
  * V20 §4.5 + §4.9：启动时引导 LLM 子系统 + 构造 MainAgentRegistry。
  *
@@ -119,6 +143,9 @@ export async function bootstrapAndWireAgents(tcpServer: TcpServer): Promise<Main
   const toolRegistry = getWorkspaceManager().getToolRegistry()
   const observer = getLLMObserver()
 
+  // 3a. V22：构造元编排层共享组件
+  const orchestratorFactory = buildOrchestratorFactory()
+
   _agentRegistry = new MainAgentRegistry({
     agentConfigManager,
     toolRegistry,
@@ -131,9 +158,104 @@ export async function bootstrapAndWireAgents(tcpServer: TcpServer): Promise<Main
     pipelineFactory: () => new FunctionCallingPipeline(),
     promptBuilderFactory: (reg) => new PromptBuilder({ toolRegistry: reg }),
     maxRounds: 5,
+    orchestratorFactory,
   })
 
   return _agentRegistry
+}
+
+// ════════════════════════════════════════════════════════════════
+// V22 元编排层 wiring
+// ════════════════════════════════════════════════════════════════
+
+/**
+ * 把 better-sqlite3 Database 适配为 OrchestrationSQLiteStore。
+ *
+ * OrchestrationSQLiteStore 要求 queryAll + execute；better-sqlite3 提供
+ * prepare(sql).all() / prepare(sql).run()。这里做一层薄包装。
+ */
+function createOrchestrationStore(): OrchestrationSQLiteStore {
+  const db = getDatabaseManager().getDb()
+  return {
+    queryAll<T = Record<string, unknown>>(sql: string, params?: Record<string, unknown>): T[] {
+      const stmt = db.prepare(sql)
+      return (params ? stmt.all(params) : stmt.all()) as T[]
+    },
+    execute(sql: string, params?: Record<string, unknown>): void {
+      const stmt = db.prepare(sql)
+      if (params) {
+        stmt.run(params)
+      } else {
+        stmt.run()
+      }
+    },
+  }
+}
+
+/**
+ * 构造 V22 共享组件 + Orchestrator 工厂。
+ *
+ * 共享组件（PlanStore / PlanManager / MemoryCompressor / SkillInjector /
+ * ProgressStateManager）在首次调用时懒加载，所有 agent 复用同一实例。
+ *
+ * Orchestrator 工厂每 agent 创建一个新 Orchestrator（因 TaskMemoryStore
+ * 绑定 workspaceId + agentId）。
+ */
+function buildOrchestratorFactory(): (mainAgent: MainAgent) => Orchestrator {
+  // 懒加载共享组件
+  if (!_orchStore) {
+    _orchStore = createOrchestrationStore()
+  }
+  if (!_planStore) {
+    _planStore = new PlanStore(_orchStore)
+  }
+  if (!_planManager) {
+    _planManager = new PlanManager({ store: _planStore })
+  }
+  if (!_memoryCompressor) {
+    _memoryCompressor = new MemoryCompressor()
+  }
+  if (!_skillInjector) {
+    // skills 目录：编译产物位于 main/orchestration/skills/
+    const skillsDir = join(__dirname, 'orchestration', 'skills')
+    _skillInjector = new SkillInjector({ skillsDir })
+  }
+  if (!_progressStateManager) {
+    _progressStateManager = new ProgressStateManager({
+      planManager: _planManager,
+      compressor: _memoryCompressor,
+    })
+  }
+
+  const sharedDeps = {
+    planManager: _planManager,
+    progressStateManager: _progressStateManager,
+    skillInjector: _skillInjector,
+    memoryCompressor: _memoryCompressor,
+  }
+
+  return (mainAgent: MainAgent): Orchestrator => {
+    // per-agent TaskMemoryStore
+    const workspaceId = mainAgent.getWorkspaceId()
+    const agentId = mainAgent.getAgentId()
+    const taskMemoryStore = new TaskMemoryStore(_orchStore!, workspaceId, agentId)
+
+    // V11/V12 长期记忆桥接器：若 MemoryManager 已初始化则接入，否则降级为 NoOp
+    const memory = getMemoryManager()
+    const longTermMemoryHook = memory
+      ? new MemoryBackedLongTermMemoryHook(memory, { writeKeyOutcomes: true })
+      : undefined
+
+    return new Orchestrator({
+      mainAgent: {
+        handle: (event) => mainAgent.handle(event),
+        abort: () => mainAgent.abort(),
+      },
+      taskMemoryStore,
+      longTermMemoryHook,
+      ...sharedDeps,
+    })
+  }
 }
 
 /** 获取已构造的 MainAgentRegistry（未构造时抛错） */

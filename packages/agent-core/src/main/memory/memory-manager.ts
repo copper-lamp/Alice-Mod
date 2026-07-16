@@ -354,6 +354,59 @@ export class MemoryManager {
   }
 
   // ══════════════════════════════════════════════════════════════
+  // V23: 共享 LTM 方法
+  // ══════════════════════════════════════════════════════════════
+
+  /**
+   * V23: 加载玩家事实（player_fact 类型），按 key 去重取 importance 最高的一条
+   * @param keys 可选，只查询指定 key 列表
+   */
+  async loadPlayerFacts(
+    workspaceId: string,
+    opts: { keys?: string[]; limit?: number } = {},
+  ): Promise<Memory[]> {
+    const result = this.sqlite.query({
+      type: 'player_fact' as any,
+      workspaceId,
+      limit: opts.limit ?? 100,
+    });
+
+    // 按 content.key 去重，保留 importance 最高的一条
+    const dedup = new Map<string, Memory>();
+    for (const mem of result.memories) {
+      const key = String(mem.content.key ?? '');
+      if (!key) continue;
+      if (opts.keys && !opts.keys.includes(key)) continue;
+      const existing = dedup.get(key);
+      if (!existing || mem.importance > existing.importance) {
+        dedup.set(key, mem);
+      }
+    }
+    return Array.from(dedup.values());
+  }
+
+  /**
+   * V23: 加载 peer 记忆（按 type 过滤、按 importance 排序）
+   * 排除特定 agent 的记忆（通过 tags 中的 agent:xxx 过滤）
+   */
+  async loadPeerMemories(
+    workspaceId: string,
+    excludeAgentId: string,
+    opts: { types?: string[]; minImportance?: number; limit?: number } = {},
+  ): Promise<Memory[]> {
+    const result = this.sqlite.query({
+      type: (opts.types && opts.types.length > 0) ? opts.types[0] as any : undefined,
+      workspaceId,
+      minImportance: opts.minImportance,
+      limit: opts.limit ?? 50,
+    });
+
+    // 过滤：排除指定 agent 的记忆（通过 tags 判断）
+    const excludeTag = `agent:${excludeAgentId}`;
+    return result.memories.filter(m => !m.tags.includes(excludeTag));
+  }
+
+  // ══════════════════════════════════════════════════════════════
   // 统计
   // ══════════════════════════════════════════════════════════════
 

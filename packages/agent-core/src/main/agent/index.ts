@@ -17,3 +17,12 @@ export type {
   MainAgentRegistryDeps,
   RegistryEntry,
 } from './main-agent-registry';
+
+// V23: 汇报机制
+export { AgentReportBus } from './agent-report-bus';
+export { ReportStore } from './report-store';
+export type { AgentReport, ReportType } from './report-store';
+
+// V23: 玩家身份映射
+export { PlayerIdentityStore } from './player-identity';
+export type { PlayerIdentity } from './player-identity';

@@ -250,24 +250,17 @@ public class WorldContext {
         LOG.info("Registering {} tools with Agent Core (world='{}')",
                 tools.size(), identity.worldName());
 
-        tcpClient.sendRequest("register_tools", payload)
-                .thenAccept(result -> result.asResponse().ifPresentOrElse(
-                        response -> {
-                            JsonObject data = response.result().getAsJsonObject();
-                            int count = data.get("registered_count").getAsInt();
-                            LOG.info("Tools registered: {} (confirmed by Agent Core, world='{}')",
-                                    count, identity.worldName());
-                        },
-                        () -> LOG.warn("register_tools response not received")
-                ))
-                .exceptionally(e -> {
-                    LOG.error("Failed to register tools for world '{}'",
-                            identity.worldName(), e);
-                    return null;
-                });
+        // 协议契约：register_tools 走 Notification（无需响应）
+        // 历史曾误用 sendRequest，AC 端按 Notification 处理，导致方法名被拒绝，工具从未注册
+        tcpClient.sendNotification("register_tools", payload);
+        LOG.info("Tools registration notification sent: {} tools (world='{}')",
+                tools.size(), identity.worldName());
     }
 
     // ---- 工具调用 ---- //
+
+    /** 复用的 Gson 实例，用于 JSON 参数解析 */
+    private static final Gson ARGS_GSON = new GsonBuilder().setLenient().create();
 
     private void handleToolCall(JsonRpcMessage.Request request,
                                 TcpClient.BiConsumer<JsonRpcId, JsonElement> respond) {
@@ -280,12 +273,9 @@ public class WorldContext {
 
         LOG.info("Tool call: tool={}, world='{}'", toolName, identity.worldName());
 
-        // 解析参数
+        // 解析参数（修复：原代码三元两支都返回 Map.of()，导致所有参数丢失）
         JsonElement paramsElement = params.get("parameters");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> args = paramsElement != null
-                ? Map.of()
-                : Map.of();
+        Map<String, Object> args = parseJsonArgs(paramsElement);
 
         // 查找并执行工具
         AliceTool tool = ToolRegistry.get(toolName);
@@ -350,6 +340,29 @@ public class WorldContext {
 
     private void sendEvent(JsonObject eventJson) {
         tcpClient.sendNotification("event", eventJson);
+    }
+
+    // ---- 参数解析 ---- //
+
+    /**
+     * 将 JSON 参数节点解析为 Java Map。
+     * <p>
+     * 修复原 WorldContext.handleToolCall 中三元表达式两支相同导致参数丢失的 bug。
+     * 支持：null / JsonObject / 其它 JsonElement（视为空参数）。
+     * 数字保持为 Double，布尔为 Boolean，字符串为 String，对象为嵌套 Map，数组为 List。
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseJsonArgs(JsonElement element) {
+        if (element == null || element.isJsonNull()) {
+            return Map.of();
+        }
+        if (!element.isJsonObject()) {
+            LOG.warn("Expected JsonObject for tool parameters, got {}",
+                    element.getClass().getSimpleName());
+            return Map.of();
+        }
+        Map<String, Object> map = ARGS_GSON.fromJson(element, Map.class);
+        return map != null ? map : Map.of();
     }
 
     // ---- 状态采集 ---- //

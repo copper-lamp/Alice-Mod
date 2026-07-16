@@ -103,6 +103,26 @@ export class PromptBuilder implements IPromptBuilder {
       systemHash = this.cacheKeyBuilder.hashAgentProfile(mergedProfile);
     }
 
+    // 1b. V23：注入 peer_context（跨 Agent 上下文）
+    // 放在 system prompt 末尾，作为附加的上下文信息
+    const peerContextStr = this.formatPeerContext(params.peerContext);
+    if (peerContextStr) {
+      systemPrompt += '\n\n' + peerContextStr;
+      systemHash = this.hashString(systemPrompt); // 刷新 hash（peerContext 变化时 cache 失效）
+    }
+
+    // 1c. V22：注入区域 7（任务进展）和区域 8（当前技能）
+    const progressText = params.extraContext?.progress as string | undefined;
+    const skillsText = params.extraContext?.skills as string | undefined;
+    if (progressText) {
+      systemPrompt += '\n\n## 任务进展\n' + progressText;
+      systemHash = this.hashString(systemPrompt);
+    }
+    if (skillsText) {
+      systemPrompt += '\n\n## 当前技能\n' + skillsText;
+      systemHash = this.hashString(systemPrompt);
+    }
+
     // 2. 组装工具列表（半静态部分 — Region 2）
     // 从 extraContext 获取 agent 指定的禁用工具列表
     const excludeTools = params.extraContext?.excludeTools as string[] | undefined;
@@ -355,6 +375,49 @@ export class PromptBuilder implements IPromptBuilder {
       hash = hash & hash;
     }
     return Math.abs(hash).toString(36);
+  }
+
+  /**
+   * V23：格式化 peer_context 为可读的提示词片段
+   * 格式：
+   *   ## 跨 Agent 上下文
+   *   ### 对端（qq）最近对话
+   *   [timestamp] role: content
+   *   ### 共享玩家事实
+   *   - player_name: 小明
+   *   ### 待消费汇报
+   *   - [task_completed] 任务已完成
+   */
+  private formatPeerContext(ctx?: BuildParams['peerContext']): string {
+    if (!ctx) return '';
+
+    const parts: string[] = ['## 跨 Agent 上下文'];
+
+    if (ctx.peerHistory && ctx.peerHistory.length > 0) {
+      const label = ctx.peerSource === 'qq' ? 'QQ' : '游戏';
+      parts.push(`\n### 对端（${label}）最近对话\n`);
+      for (const entry of ctx.peerHistory.slice(-5)) {
+        const ts = new Date(entry.createdAt).toLocaleTimeString('zh-CN', { hour12: false });
+        parts.push(`[${ts}] ${entry.role === 'user' ? '玩家' : entry.role === 'assistant' ? 'Alice' : entry.role}: ${entry.content.slice(0, 200)}`);
+      }
+    }
+
+    if (ctx.sharedFacts && ctx.sharedFacts.length > 0) {
+      parts.push(`\n### 共享玩家事实\n`);
+      for (const fact of ctx.sharedFacts) {
+        parts.push(`- ${fact.key}: ${fact.value}`);
+      }
+    }
+
+    if (ctx.pendingReports && ctx.pendingReports.length > 0) {
+      parts.push(`\n### 待消费汇报\n`);
+      for (const report of ctx.pendingReports) {
+        const ts = new Date(report.timestamp).toLocaleTimeString('zh-CN', { hour12: false });
+        parts.push(`- [${report.reportType}] ${report.summary}（${ts}）`);
+      }
+    }
+
+    return parts.join('\n');
   }
 
   private updateHitRate(): void {

@@ -172,6 +172,107 @@ export class DatabaseManager implements IDatabaseManager {
 
     // ── V20-3: event_triggers.target_agent_id 列（send_llm target='qq_sub_agent' 时指定） ──
     this.addColumnIfNotExists(db, 'event_triggers', 'target_agent_id', 'TEXT');
+
+    // ── V23: agent_reports 表（汇报持久化） ──
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS agent_reports (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        source_agent_id TEXT NOT NULL,
+        target_agent_id TEXT NOT NULL,
+        report_type TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        details TEXT,
+        metadata_json TEXT,
+        request_id TEXT,
+        timestamp INTEGER NOT NULL,
+        consumed_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_reports_target
+        ON agent_reports(target_agent_id, consumed_at, timestamp DESC);
+    `);
+
+    // ── V23: player_identities 表（QQ↔Game 玩家映射） ──
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS player_identities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        workspace_id TEXT NOT NULL,
+        player_uuid TEXT NOT NULL,
+        player_name TEXT NOT NULL,
+        qq_user_id TEXT,
+        qq_group_ids TEXT NOT NULL DEFAULT '[]',
+        main_agent_id TEXT NOT NULL,
+        qq_agent_id TEXT NOT NULL,
+        bound_at INTEGER NOT NULL,
+        UNIQUE(workspace_id, player_uuid),
+        UNIQUE(workspace_id, qq_user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_player_identities_qq
+        ON player_identities(qq_user_id);
+    `);
+
+    // ── V23: chat_history 按 source 索引（loadWithPeer 查询加速） ──
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_chat_history_source
+        ON chat_history(workspace_id, agent_id, source, created_at DESC);
+    `);
+
+    // ── V23: agents.workspace_id 列（V16 兼容，部分存量数据可能缺） ──
+    this.addColumnIfNotExists(db, 'agents', 'workspace_id', 'TEXT NOT NULL DEFAULT \'\'');
+
+    // ── V22: 元编排层 — 执行计划文档 + 任务记忆 ──
+    // PlanStore / TaskMemoryStore 构造时也会 initSchema，这里统一在启动时创建
+    // 避免运行时 DDL 与并发写入冲突。
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS orch_plans (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        event_id TEXT,
+        goal TEXT NOT NULL,
+        constraints_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_orch_plans_lookup
+        ON orch_plans(workspace_id, agent_id, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_orch_plans_event
+        ON orch_plans(event_id);
+
+      CREATE TABLE IF NOT EXISTS orch_plan_todos (
+        plan_id TEXT NOT NULL,
+        todo_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        description TEXT NOT NULL,
+        expected_tools_json TEXT,
+        depends_on_json TEXT,
+        completed_at INTEGER,
+        failure_reason TEXT,
+        PRIMARY KEY (plan_id, todo_id),
+        FOREIGN KEY (plan_id) REFERENCES orch_plans(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_orch_plan_todos_plan
+        ON orch_plan_todos(plan_id);
+
+      CREATE TABLE IF NOT EXISTS task_memories (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        plan_id TEXT NOT NULL,
+        goal TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        key_outcomes_json TEXT NOT NULL,
+        failure_reasons_json TEXT,
+        artifacts_json TEXT,
+        duration_ms INTEGER NOT NULL,
+        total_tokens INTEGER NOT NULL,
+        committed_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_memories_lookup
+        ON task_memories(workspace_id, agent_id, committed_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_task_memories_plan
+        ON task_memories(plan_id);
+    `);
   }
 
   /** 安全添加列（不存在才加），SQLite ALTER TABLE ADD COLUMN 不支持 IF NOT EXISTS */
@@ -204,6 +305,7 @@ export class DatabaseManager implements IDatabaseManager {
       { version: 1, module: 'future', description: '预留表：knowledge_base, skill_registry' },
       { version: 1, module: 'agent', description: '智能体表：agents, persona_presets' },
       { version: 1, module: 'tool', description: '工具注册表：tool_registry' },
+      { version: 1, module: 'orchestration', description: 'V22 元编排层：orch_plans, orch_plan_todos, task_memories' },
     ]
 
     const insertStmt = db.prepare(`

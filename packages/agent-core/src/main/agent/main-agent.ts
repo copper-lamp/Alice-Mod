@@ -95,6 +95,8 @@ export interface MainAgentResult {
   durationMs: number;
   error?: 'ABORTED' | 'WORLD_OFFLINE' | 'DISPATCHER_NOT_CONFIGURED' | 'PROVIDER_NOT_FOUND' | 'MAX_ROUNDS_EXCEEDED' | string;
   truncated?: boolean;
+  /** V23：透传 metadata（用于 QQ Agent 获取 requestId、details 等） */
+  metadata?: Record<string, unknown>;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -249,7 +251,7 @@ function getPriority(source: MainAgentEvent['source']): SchedulePriority {
 // ════════════════════════════════════════════════════════════════
 
 export class MainAgent {
-  private readonly deps: MainAgentDeps;
+  protected readonly deps: MainAgentDeps;
   private abortController: AbortController | null = null;
 
   constructor(deps: MainAgentDeps) {
@@ -307,7 +309,14 @@ export class MainAgent {
         history,
         state: this.getPlaceholderPlayerState(),
         source: toBuildSource(event.source),
-        extraContext: { excludeTools },
+        extraContext: {
+          excludeTools,
+          // V22：透传 Orchestrator 注入的进展状态与技能文本
+          progress: event.metadata?.progress,
+          skills: event.metadata?.skills,
+        },
+        // V23：从 metadata 中透传 peerContext（QQ Agent 在 handleQQMessage 中注入）
+        peerContext: event.metadata?.peerContext as BuildParams['peerContext'] | undefined,
       };
 
       const promptResult = await this.deps.promptBuilder.build(buildParams);
@@ -458,6 +467,8 @@ export class MainAgent {
         durationMs: Date.now() - startTime,
         truncated,
         error: truncated ? 'MAX_ROUNDS_EXCEEDED' : pipelineError,
+        // V23：透传 event.metadata（不含 peerContext 避免膨胀）
+        metadata: event.metadata ? { ...event.metadata, peerContext: undefined } : undefined,
       };
 
     } catch (err) {
@@ -491,6 +502,16 @@ export class MainAgent {
   /** 中止当前 handle/stream 调用 */
   abort(): void {
     this.abortController?.abort();
+  }
+
+  /** V22：获取 workspaceId（供 Orchestrator 工厂使用） */
+  getWorkspaceId(): string {
+    return this.deps.workspaceId;
+  }
+
+  /** V22：获取 agentId（供 Orchestrator 工厂使用） */
+  getAgentId(): string {
+    return this.deps.agentId;
   }
 
   // ════════════════════════════════════════════════════════════

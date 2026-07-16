@@ -173,10 +173,12 @@ export class DefaultToolDispatcher implements IToolDispatcher {
     this.ensureListening(connection, connectionId);
 
     const requestId = crypto.randomUUID();
+    // 协议契约：与 JE 端 METHOD_TOOL_CALL = "tool_call" 对齐
+    // 历史上误写为 "call_tool"（与 action 类型同名），会导致 JE 端返回 Method Not Found
     const request: JsonRpcRequest = {
       jsonrpc: '2.0',
       id: requestId,
-      method: 'call_tool',
+      method: 'tool_call',
       params: {
         tool_name: toolName,
         parameters,

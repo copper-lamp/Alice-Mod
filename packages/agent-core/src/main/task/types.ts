@@ -284,6 +284,10 @@ export interface TaskRunner {
 export interface DecomposeParams {
   taskDescription: string;
   context?: Record<string, any>;
+  /** 最多分解多少个子任务（默认 10） */
+  maxSubtasks?: number;
+  /** 分解策略 */
+  strategy?: 'sequential' | 'parallel' | 'mixed';
 }
 
 /** 分解返回的子任务 */

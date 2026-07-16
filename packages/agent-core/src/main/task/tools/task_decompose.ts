@@ -13,18 +13,25 @@ export const TASK_DECOMPOSE_TOOL: ToolSchema = {
   parameters: {
     task_description: { type: 'string', description: '要分解的任务描述', required: true },
     context: { type: 'object', description: '上下文信息（当前资源、位置等）', required: false },
+    max_subtasks: { type: 'number', description: '最多分解多少个子任务（默认 10，防止过度拆分）', required: false },
+    strategy: {
+      type: 'string', description: '分解策略（默认 sequential）',
+      enum: ['sequential', 'parallel', 'mixed'], required: false,
+    },
   },
 }
 
 export async function taskDecompose(
   manager: TaskManager,
-  params: { task_description: string; context?: Record<string, any> },
+  params: { task_description: string; context?: Record<string, any>; max_subtasks?: number; strategy?: string },
 ): Promise<ToolResult<unknown>> {
   const start = Date.now()
   try {
     const result = await manager.decompose({
       taskDescription: params.task_description,
       context: params.context,
+      maxSubtasks: params.max_subtasks,
+      strategy: params.strategy as 'sequential' | 'parallel' | 'mixed' | undefined,
     })
     return { success: true, data: result, duration: Date.now() - start }
   } catch (err) {

@@ -17,8 +17,8 @@ export interface ChatHistoryEntry {
   id?: number;
   workspaceId: string;
   agentId: string;
-  /** 触发来源 */
-  source: 'trigger' | 'qq' | 'debug' | 'system';
+  /** 触发来源（V23 新增 'game' 用于主 Agent 自然动作，与 'trigger' 区分） */
+  source: 'trigger' | 'qq' | 'debug' | 'system' | 'game';
   /** 关联的 trigger event id（可空） */
   eventId?: string;
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -47,12 +47,36 @@ export interface ChatHistoryStats {
   totalTokens: number;
 }
 
+export interface ChatHistoryLoadWithPeerOptions extends ChatHistoryLoadOptions {
+  /** 对端 source（QQ Agent 调用时传 'game'，主 Agent 调用时传 'qq'） */
+  peerSource?: ChatHistoryEntry['source'];
+  /** 对端历史条数上限（默认 5） */
+  peerLimit?: number;
+}
+
 export interface ChatHistoryStore {
   append(entry: ChatHistoryEntry): Promise<number>;
   load(
     workspaceId: string,
     agentId: string,
     opts?: ChatHistoryLoadOptions,
+  ): Promise<ChatHistoryEntry[]>;
+  /**
+   * V23：加载 agent 自身历史 + peer 历史的合并结果
+   * 返回 { self, peer } 分别给 PromptBuilder 做 peer_context 注入
+   */
+  loadWithPeer(
+    workspaceId: string,
+    agentId: string,
+    opts?: ChatHistoryLoadWithPeerOptions,
+  ): Promise<{ self: ChatHistoryEntry[]; peer: ChatHistoryEntry[] }>;
+  /**
+   * V23：加载跨 source 的合并时间线（按时间排序，self/peer 通过 source 区分）
+   */
+  loadMerged(
+    workspaceId: string,
+    agentId: string,
+    opts?: ChatHistoryLoadWithPeerOptions,
   ): Promise<ChatHistoryEntry[]>;
   clear(
     workspaceId: string,
@@ -124,6 +148,63 @@ export class SqliteChatHistoryStore implements ChatHistoryStore {
 
     // 时间倒序取的，load 出来按时间正序返回（便于 MainAgent 拼到 history 数组）
     return rows.reverse().map(rowToEntry);
+  }
+
+  // ── V23 共享历史 ──
+
+  async loadWithPeer(
+    workspaceId: string,
+    agentId: string,
+    opts: ChatHistoryLoadWithPeerOptions = {},
+  ): Promise<{ self: ChatHistoryEntry[]; peer: ChatHistoryEntry[] }> {
+    const selfLimit = opts.limit ?? 20;
+    const peerLimit = opts.peerLimit ?? 5;
+    const peerSource = opts.peerSource;
+
+    const [self, peer] = await Promise.all([
+      this.load(workspaceId, agentId, { limit: selfLimit, beforeId: opts.beforeId }),
+      peerSource
+        ? this.loadBySource(workspaceId, agentId, peerSource, peerLimit)
+        : Promise.resolve([]),
+    ]);
+
+    return { self, peer };
+  }
+
+  async loadMerged(
+    workspaceId: string,
+    agentId: string,
+    opts: ChatHistoryLoadWithPeerOptions = {},
+  ): Promise<ChatHistoryEntry[]> {
+    const selfLimit = opts.limit ?? 20;
+    const peerLimit = opts.peerLimit ?? 5;
+    const peerSource = opts.peerSource;
+
+    const [self, peer] = await Promise.all([
+      this.load(workspaceId, agentId, { limit: selfLimit, beforeId: opts.beforeId }),
+      peerSource
+        ? this.loadBySource(workspaceId, agentId, peerSource, peerLimit)
+        : Promise.resolve([]),
+    ]);
+
+    // 合并并按时间排序
+    const merged = [...self, ...peer];
+    merged.sort((a, b) => a.createdAt - b.createdAt);
+    return merged;
+  }
+
+  private loadBySource(
+    workspaceId: string,
+    agentId: string,
+    source: ChatHistoryEntry['source'],
+    limit: number,
+  ): ChatHistoryEntry[] {
+    return this.db.prepare(
+      `SELECT * FROM chat_history
+       WHERE workspace_id = ? AND agent_id = ? AND source = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+    ).all(workspaceId, agentId, source, limit).reverse().map(rowToEntry as (row: unknown) => ChatHistoryEntry);
   }
 
   async clear(

@@ -248,6 +248,22 @@ export class OneBotClient {
     }
   }
 
+  /**
+   * 通用发送消息（V23：供 QQAgent 调用）
+   * 根据 messageType 自动路由到 sendGroupMsg 或 sendPrivateMsg
+   */
+  async sendMessage(target: string, content: string, messageType: 'group' | 'private'): Promise<boolean> {
+    try {
+      const result = messageType === 'private'
+        ? await this.sendPrivateMsg(target, content)
+        : await this.sendGroupMsg(target, content);
+      return result.success;
+    } catch (err) {
+      console.error('[OneBotClient] 发送消息失败:', err instanceof Error ? err.message : String(err));
+      return false;
+    }
+  }
+
   async deleteMsg(messageId: string): Promise<SendResult> {
     try {
       await this.callApi('delete_msg', { message_id: parseInt(messageId) });

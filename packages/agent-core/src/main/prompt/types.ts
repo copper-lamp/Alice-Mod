@@ -163,6 +163,31 @@ export interface BuildParams {
   systemOverride?: string;
   /** 注入的自定义上下文（可选，供中间件使用） */
   extraContext?: Record<string, unknown>;
+  /**
+   * V23：跨 Agent 上下文（peer_context）
+   * 主 Agent 注入 QQ 端最近对话，QQ Agent 注入游戏端最近对话
+   */
+  peerContext?: {
+    /** 对端 source */
+    peerSource: 'game' | 'qq';
+    /** 对端最近对话历史（来自 ChatHistoryStore.loadWithPeer） */
+    peerHistory: Array<{
+      role: string;
+      content: string;
+      createdAt: number;
+    }>;
+    /** 共享玩家事实（来自 MemoryManager.loadPlayerFacts） */
+    sharedFacts?: Array<{
+      key: string;
+      value: string;
+    }>;
+    /** 待消费汇报（仅 QQ Agent，来自 AgentReportBus.consumePending） */
+    pendingReports?: Array<{
+      reportType: string;
+      summary: string;
+      timestamp: number;
+    }>;
+  };
 }
 
 /** 玩家状态 */

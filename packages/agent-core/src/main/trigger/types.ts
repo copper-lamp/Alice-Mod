@@ -202,6 +202,8 @@ export interface EventTrigger {
   updatedAt: number;
   /** V20：target='qq_sub_agent' 时指向具体 agent；其他 target 不使用 */
   targetAgentId?: string;
+  /** V22：是否强制使用复杂模式（plan-execute 闭环） */
+  complex?: boolean;
 }
 
 /** 创建触发器参数 */
@@ -413,6 +415,20 @@ export interface ActionExecutorDeps {
     agentId: string;
   }) => {
     handle: (event: {
+      source: 'trigger' | 'qq' | 'debug' | 'system';
+      prompt: string;
+      metadata?: Record<string, unknown>;
+    }) => Promise<unknown>;
+  } | undefined;
+  /**
+   * V22：按 (workspaceId, agentId) 拿 Orchestrator 实例（优先于 mainAgentProvider）。
+   * Orchestrator 包装 MainAgent.handle，增加 plan/progress/skill 注入。
+   */
+  orchestratorProvider?: (params: {
+    workspaceId: string;
+    agentId: string;
+  }) => {
+    dispatch: (event: {
       source: 'trigger' | 'qq' | 'debug' | 'system';
       prompt: string;
       metadata?: Record<string, unknown>;

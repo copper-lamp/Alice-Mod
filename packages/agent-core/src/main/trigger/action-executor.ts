@@ -110,7 +110,39 @@ export class ActionExecutor {
     event: AgentEvent,
     trigger?: EventTrigger,
   ): Promise<ActionResult> {
-    // V20 优先走 MainAgent 路径（mainAgentProvider + resolveTarget）
+    // V22 优先走 Orchestrator 路径
+    if (this.deps.orchestratorProvider && this.deps.resolveTarget) {
+      const resolved = this.deps.resolveTarget(config.target, event, trigger);
+      if (!resolved) {
+        return {
+          success: false,
+          error: `无法解析 send_llm target='${config.target}'（trigger=${trigger?.id ?? 'unknown'}）`,
+        };
+      }
+      const orch = this.deps.orchestratorProvider(resolved);
+      if (orch) {
+        const prompt = this.renderTemplate(config.prompt, event);
+        const finalPrompt = config.includeEventContext !== false
+          ? `${prompt}\n\n事件上下文: ${JSON.stringify(event.payload)}`
+          : prompt;
+
+        const result = await orch.dispatch({
+          source: 'trigger',
+          prompt: finalPrompt,
+          metadata: {
+            eventId: event.id,
+            eventType: event.type,
+            triggerSource: event.source,
+            triggerId: trigger?.id,
+            workspaceId: event.workspaceId,
+            complex: trigger?.complex ?? false,
+          },
+        });
+        return { success: true, data: { response: result } };
+      }
+    }
+
+    // V20 fallback：走 MainAgent 路径（mainAgentProvider + resolveTarget）
     if (this.deps.mainAgentProvider && this.deps.resolveTarget) {
       const resolved = this.deps.resolveTarget(config.target, event, trigger);
       if (!resolved) {

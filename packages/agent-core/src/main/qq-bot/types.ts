@@ -14,7 +14,7 @@ import type { ConversationMessage, AgentProfile } from '../prompt/types';
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
 /** Sub-Agent 状态 */
-export type SubAgentStatus = 'idle' | 'thinking' | 'waiting_main_agent' | 'error';
+export type SubAgentStatus = 'idle' | 'processing' | 'thinking' | 'waiting_main_agent' | 'error';
 
 // ════════════════════════════════════════════════════════════════
 // 2. QQ 消息类型 (OneBot 协议)

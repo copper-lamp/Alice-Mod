@@ -33,6 +33,7 @@ import type { IModelRouter, IProviderRegistry, ILLMObserver } from '../llm/types
 import type { LlmRequestScheduler } from '../llm/scheduler/types';
 import type { ChatHistoryStore } from '../chat-history/chat-history-store';
 import type { ToolRegistry } from '../workspace/tool-registry';
+import type { Orchestrator, MainAgentHandle } from '../orchestration/orchestrator';
 
 import { MainAgent } from './main-agent';
 import { BatchToolDispatcher } from '../pipeline/batch-tool-dispatcher';
@@ -55,6 +56,8 @@ export interface MainAgentRegistryDeps {
   pipelineFactory: () => FunctionCallingPipeline;
   /** PromptBuilder 工厂（每 agent 独立实例） */
   promptBuilderFactory: (toolRegistry: ToolRegistry) => PromptBuilder;
+  /** V22：Orchestrator 工厂（每 agent 独立实例，包装 MainAgent） */
+  orchestratorFactory?: (mainAgent: MainAgent) => Orchestrator;
   /** 多轮迭代上限，默认 5 */
   maxRounds?: number;
 }
@@ -70,6 +73,8 @@ const DEFAULT_MAX_ROUNDS = 5;
 export class MainAgentRegistry {
   /** cache key = `${workspaceId}:${agentId}` → MainAgent */
   private readonly cache = new Map<string, MainAgent>();
+  /** V22：cache key → Orchestrator（与 MainAgent 1:1 绑定） */
+  private readonly orchCache = new Map<string, Orchestrator>();
   /** agentId → cache key 反向索引（供 refresh(agentId) 使用） */
   private readonly agentIndex = new Map<string, string>();
   /** 异步构造 in-flight 标记，避免并发重复构造 */
@@ -107,6 +112,13 @@ export class MainAgentRegistry {
         const agent = this.constructAgent(workspaceId, agentId, agentConfig);
         this.cache.set(key, agent);
         this.agentIndex.set(agentId, key);
+
+        // V22：同步创建 Orchestrator（1:1 绑定）
+        if (this.deps.orchestratorFactory) {
+          const orch = this.deps.orchestratorFactory(agent);
+          this.orchCache.set(key, orch);
+        }
+
         return agent;
       } catch (err) {
         console.warn(
@@ -134,6 +146,16 @@ export class MainAgentRegistry {
   }
 
   /**
+   * V22：同步获取 Orchestrator（仅查缓存）。
+   *
+   * 若 orchestratorFactory 未配置或 Orchestrator 尚未构造，返回 undefined。
+   * ActionExecutor 优先使用此方法；fallback 到 getSync。
+   */
+  getOrchestratorSync(workspaceId: string, agentId: string): Orchestrator | undefined {
+    return this.orchCache.get(makeKey(workspaceId, agentId));
+  }
+
+  /**
    * 失效指定 agentId 的缓存（agent 配置变更后调用）。
    * 不区分 workspaceId —— 假设 agentId 全局唯一。
    */
@@ -141,6 +163,7 @@ export class MainAgentRegistry {
     const key = this.agentIndex.get(agentId);
     if (!key) return;
     this.cache.delete(key);
+    this.orchCache.delete(key);
     this.agentIndex.delete(agentId);
   }
 
@@ -148,6 +171,7 @@ export class MainAgentRegistry {
   invalidate(workspaceId: string, agentId: string): void {
     const key = makeKey(workspaceId, agentId);
     this.cache.delete(key);
+    this.orchCache.delete(key);
     this.agentIndex.delete(agentId);
   }
 
@@ -164,6 +188,7 @@ export class MainAgentRegistry {
   /** 清空所有缓存（测试 / 热重载用） */
   clear(): void {
     this.cache.clear();
+    this.orchCache.clear();
     this.agentIndex.clear();
     this.inflight.clear();
   }
