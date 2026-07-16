@@ -164,6 +164,7 @@ export class WorkspaceManager extends EventEmitter {
 
     const oldState = workspace.state;
     workspace.goOnline();
+    workspace.connectionId = connectionId; // 修复：同步更新 connectionId
     this.connectionIndex.set(connectionId, workspace.id);
     this.store?.save(workspace.toJSON());
 

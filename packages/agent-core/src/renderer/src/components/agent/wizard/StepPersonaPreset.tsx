@@ -53,7 +53,7 @@ const StepPersonaPreset: React.FC = () => {
       behaviorRules: {
         core: preset.rules.core,
         strategy: preset.rules.strategy,
-        constraints: preset.rules.constraints,
+        constraints: preset.rules.constraints as Array<{ name: string; description: string; consequence: 'warning' | 'block' | 'replan' }>,
       },
     })
   }

@@ -1,6 +1,7 @@
 package io.alice.mod.adapter.ai;
 
 import carpet.patches.EntityPlayerMPFake;
+import io.alice.mod.adapter.world.WorldContext;
 import io.alice.mod.adapter.world.WorldContextManager;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.server.MinecraftServer;
@@ -38,11 +39,18 @@ public final class BotAccess {
 
     /**
      * 获取当前 MinecraftServer 实例。
+     * <p>
+     * 优先返回 {@link #init()} 中 SERVER_STARTED 事件设置的引用，
+     * 兜底从活跃的 WorldContext 获取。
      *
      * @return MinecraftServer 实例，或 null（如果服务器未启动）
      */
     public static MinecraftServer getServer() {
-        return server;
+        if (server != null) return server;
+        // 兜底：从活跃的 WorldContext 获取
+        WorldContext ctx = WorldContextManager.getActive();
+        if (ctx != null) return ctx.getServer();
+        return null;
     }
 
     /**

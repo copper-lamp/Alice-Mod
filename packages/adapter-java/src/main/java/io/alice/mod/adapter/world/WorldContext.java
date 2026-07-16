@@ -310,14 +310,13 @@ public class WorldContext {
         response.addProperty("message", result.message());
         response.addProperty("duration_ms", duration);
         if (result.data() != null && !result.data().isEmpty()) {
-            JsonObject dataObj = new JsonObject();
-            for (Map.Entry<String, Object> entry : result.data().entrySet()) {
-                Object v = entry.getValue();
-                if (v instanceof Number n) dataObj.addProperty(entry.getKey(), n);
-                else if (v instanceof Boolean b) dataObj.addProperty(entry.getKey(), b);
-                else if (v != null) dataObj.addProperty(entry.getKey(), v.toString());
+            // 使用 Gson 将复杂嵌套对象（如 Map）正确序列化为 JSON
+            JsonElement dataJson = ARGS_GSON.toJsonTree(result.data());
+            if (dataJson.isJsonObject()) {
+                response.add("data", dataJson.getAsJsonObject());
+            } else {
+                response.add("data", dataJson);
             }
-            response.add("data", dataObj);
         }
 
         respond.accept(request.id(), response);

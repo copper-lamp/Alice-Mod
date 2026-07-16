@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS event_triggers (
   trigger_count INTEGER NOT NULL DEFAULT 0,
   last_triggered_at INTEGER,
   created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
-  updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+  target_agent_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS trigger_logs (

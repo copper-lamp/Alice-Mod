@@ -725,13 +725,13 @@ export interface UserTemplate {
 /** 模板注册器接口 */
 export interface ITemplateRegistry {
   /** 保存自定义模板 */
-  save(template: UserTemplate): void;
+  save(template: UserTemplate): Promise<void>;
   /** 加载模板 */
-  load(id: string): UserTemplate | undefined;
+  load(id: string): Promise<UserTemplate | undefined>;
   /** 删除模板 */
-  delete(id: string): void;
+  delete(id: string): Promise<void>;
   /** 列出所有模板 */
-  list(type?: UserTemplate['type']): UserTemplate[];
+  list(type?: UserTemplate['type']): Promise<UserTemplate[]>;
   /** 获取内置身份模板 */
   getIdentityTemplate(id: IdentityTemplateId): IdentityTemplate;
   /** 获取所有内置身份模板 */
@@ -743,7 +743,7 @@ export interface ITemplateRegistry {
   /** 从身份模板创建 AgentProfile */
   createProfileFromIdentity(id: IdentityTemplateId, overrides?: Partial<AgentProfile>): AgentProfile;
   /** 从自定义模板创建 AgentProfile */
-  createProfileFromCustom(templateId: string): AgentProfile | undefined;
+  createProfileFromCustom(templateId: string): Promise<AgentProfile | undefined>;
 }
 
 // ════════════════════════════════════════════════════

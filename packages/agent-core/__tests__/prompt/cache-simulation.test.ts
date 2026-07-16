@@ -333,7 +333,7 @@ describe('V5 缓存命中模拟', () => {
     // 验证三区域结构
     expect(result.messages[0].role).toBe('system');
     expect(result.messages[0].content).toContain('McAgent');
-    expect(result.messages[0].content).toContain('核心行为规范');
-    expect(result.messages[0].content).toContain('信息格式规范');
+    expect(result.messages[0].content).toContain('行为准则');
+    expect(result.messages[0].content).toContain('性格特点');
   });
 });

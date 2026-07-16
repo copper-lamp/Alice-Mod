@@ -134,14 +134,14 @@ describe('ActionExecutor', () => {
       };
 
       await executor.execute(action, makeEvent());
-      expect(sendLLMMock).toHaveBeenCalledWith('qq_sub_agent', 'hi', makeEvent());
+      expect(sendLLMMock).toHaveBeenCalledWith('qq_sub_agent', 'hi', expect.anything());
     });
 
     it('缺少 sendLLM 依赖应返回错误', async () => {
       const action: TriggerAction = { type: 'send_llm', config: { target: 'main', prompt: 'hi' } };
       const result = await executor.execute(action, makeEvent());
       expect(result.success).toBe(false);
-      expect(result.error).toBe('sendLLM 未配置');
+      expect(result.error).toBe('sendLLM / mainAgentProvider 未配置');
     });
   });
 

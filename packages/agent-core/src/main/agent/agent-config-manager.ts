@@ -45,7 +45,7 @@ export class AgentConfigManager {
     if (existed) {
       try {
         const db = getDatabaseManager().getDb()
-        db.run('DELETE FROM agents WHERE id = ?', [id])
+        db.prepare('DELETE FROM agents WHERE id = ?').run(id)
       } catch { /* 忽略 */ }
 
       // V21: 删除对应的配置文件
@@ -150,13 +150,16 @@ export class AgentConfigManager {
   private saveToDb(id: string, config: AgentConfig): void {
     try {
       const db = getDatabaseManager().getDb()
+      // V24: 提取 qq_binding_account_id 以支持索引加速查找
+      const qqBindingAccountId = config.qqBinding?.enabled ? (config.qqBinding.accountId ?? null) : null
       db.prepare(
-        `INSERT OR REPLACE INTO agents (id, name, alias, skin_data, persona_json, tools_json, qq_binding_json, llm_config_json, is_main, workspace_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO agents (id, name, alias, skin_data, persona_json, tools_json, qq_binding_json, qq_binding_account_id, llm_config_json, is_main, workspace_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         id, config.name, config.alias ?? null, config.skinData ?? null,
         JSON.stringify(config.persona), JSON.stringify(config.tools),
-        JSON.stringify(config.qqBinding), JSON.stringify(config.llmConfig),
+        JSON.stringify(config.qqBinding), qqBindingAccountId,
+        JSON.stringify(config.llmConfig),
         config.isMain ? 1 : 0, config.workspaceId ?? null,
         config.createdAt ?? Date.now(), config.updatedAt ?? Date.now(),
       )

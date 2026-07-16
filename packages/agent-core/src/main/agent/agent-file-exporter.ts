@@ -68,14 +68,11 @@ export class AgentFileExporter {
    * 写入智能体配置文件到 Alice/agents/<agentId>.json
    */
   static async export(config: AgentConfig): Promise<void> {
-    const aliceDir = this.resolveAliceDir()
-    if (!aliceDir) {
-      // 未连接任何实例，跳过导出（不报错）
+    const agentsDir = this.ensureAgentsDir()
+    if (!agentsDir) {
+      // 无法确定 agents 目录，跳过导出（不报错）
       return
     }
-
-    const agentsDir = path.join(aliceDir, AGENTS_DIR)
-    fs.mkdirSync(agentsDir, { recursive: true })
 
     const filePath = path.join(agentsDir, `${config.id}.json`)
     const exported = this.toExportedConfig(config)
@@ -86,14 +83,43 @@ export class AgentFileExporter {
    * 删除 Alice/agents/<agentId>.json
    */
   static async remove(agentId: string): Promise<void> {
-    const aliceDir = this.resolveAliceDir()
-    if (!aliceDir) return
+    const agentsDir = this.ensureAgentsDir()
+    if (!agentsDir) return
 
-    const filePath = path.join(aliceDir, AGENTS_DIR, `${agentId}.json`)
+    const filePath = path.join(agentsDir, `${agentId}.json`)
     try {
       fs.unlinkSync(filePath)
     } catch {
       // 文件不存在，忽略
+    }
+  }
+
+  /**
+   * V24: 确保 Alice/agents/ 目录存在，并返回目录路径
+   *
+   * 优先使用已注册实例的 file_path 确定 Alice 目录；
+   * 若未连接任何实例，使用 CWD/Alice/ 作为兜底目录。
+   * 无论哪种方式，始终创建 agents 子目录。
+   */
+  static ensureAgentsDir(): string | null {
+    // 1. 尝试通过已注册实例确定 Alice 目录
+    const aliceDir = this.resolveAliceDir()
+    if (aliceDir) {
+      const agentsDir = path.join(aliceDir, AGENTS_DIR)
+      fs.mkdirSync(agentsDir, { recursive: true })
+      return agentsDir
+    }
+
+    // 2. 兜底：使用 CWD/Alice/ 作为 Alice 目录
+    const defaultDir = path.join(process.cwd(), 'Alice')
+    try {
+      fs.mkdirSync(defaultDir, { recursive: true })
+      const agentsDir = path.join(defaultDir, AGENTS_DIR)
+      fs.mkdirSync(agentsDir, { recursive: true })
+      return agentsDir
+    } catch {
+      console.warn('[AgentFileExporter] 无法创建默认 agents 目录:', defaultDir)
+      return null
     }
   }
 

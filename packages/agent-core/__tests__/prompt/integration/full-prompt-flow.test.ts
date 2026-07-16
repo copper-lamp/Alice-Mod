@@ -84,8 +84,8 @@ describe('完整提示词构建流程', () => {
     // 校验 system prompt 区域
     const systemContent = result.messages[0].content;
     expect(systemContent).toContain('McAgent');
-    expect(systemContent).toContain('核心行为规范');
-    expect(systemContent).toContain('信息格式规范');
+    expect(systemContent).toContain('行为准则');
+    expect(systemContent).toContain('性格特点');
 
     // 校验 user message 包含状态注入
     const userContent = result.messages[result.messages.length - 1].content;

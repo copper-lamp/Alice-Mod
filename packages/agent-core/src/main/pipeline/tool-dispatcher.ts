@@ -89,12 +89,14 @@ class ResponseMatcher {
           clearTimeout(entry.timer);
           pending.delete(resp.id.toString());
 
+          // 业务层 success 判断：JSON-RPC 无 error 且 result.success 不为 false
+          const businessSuccess = !resp.result || resp.result.success !== false
           const result: ToolCallResult = {
             id: resp.id.toString(),
             toolName: entry.toolName,
-            success: !resp.error,
+            success: !resp.error && businessSuccess,
             data: resp.result?.data || resp.result,
-            error: resp.error?.message,
+            error: resp.error?.message || (resp.result?.success === false ? resp.result?.message : undefined),
             errorCode: resp.error?.code?.toString(),
             durationMs: resp.result?.duration_ms || 0,
           };

@@ -182,11 +182,12 @@ function createOrchestrationStore(): OrchestrationSQLiteStore {
       return (params ? stmt.all(params) : stmt.all()) as T[]
     },
     execute(sql: string, params?: Record<string, unknown>): void {
-      const stmt = db.prepare(sql)
       if (params) {
+        const stmt = db.prepare(sql)
         stmt.run(params)
       } else {
-        stmt.run()
+        // 无参数时使用 db.exec 支持多语句 DDL
+        db.exec(sql)
       }
     },
   }

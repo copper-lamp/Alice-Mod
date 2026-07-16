@@ -107,7 +107,7 @@ export class PersonaPresetManager {
     if (existed) {
       try {
         const db = getDatabaseManager().getDb()
-        db.run('DELETE FROM persona_presets WHERE id = ?', [id])
+        db.prepare('DELETE FROM persona_presets WHERE id = ?').run(id)
       } catch { /* 忽略 */ }
     }
     return existed

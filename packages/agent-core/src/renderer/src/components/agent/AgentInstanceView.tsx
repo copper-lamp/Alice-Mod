@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Tabs } from '@heroui/react'
 import { useUIStore } from '../../stores/uiStore'
 import { useAgentStore } from '../../stores/agentStore'
@@ -20,11 +20,31 @@ function formatTime(ts: number): string {
 const AgentInstanceView: React.FC = () => {
   const { agentViewTab, setAgentViewTab } = useUIStore()
   const { currentAgent, fetchAgent, agents, currentAgentId } = useAgentStore()
+  const [qqStatus, setQqStatus] = useState<string>('disconnected')
 
   useEffect(() => {
     if (currentAgentId && !currentAgent) {
       fetchAgent(currentAgentId)
     }
+  }, [currentAgentId])
+
+  // V24: 获取 Agent 运行时状态（含 QQ 连接状态）
+  useEffect(() => {
+    if (!currentAgentId) return
+    const fetchStatus = async () => {
+      try {
+        const result = await window.electronAPI.invoke('agent:get-status', { id: currentAgentId }) as {
+          status: string
+          qqStatus: string
+        }
+        setQqStatus(result.qqStatus ?? 'disconnected')
+      } catch {
+        // agent:get-status 可能未注册
+      }
+    }
+    fetchStatus()
+    const interval = setInterval(fetchStatus, 30000) // 每30秒刷新
+    return () => clearInterval(interval)
   }, [currentAgentId])
 
   const currentSummary = agents.find(a => a.id === currentAgentId)
@@ -73,6 +93,13 @@ const AgentInstanceView: React.FC = () => {
             <span className="text-xs text-gray-400 ml-3">
               {currentSummary.lastActiveAt ? `最后活跃: ${formatTime(currentSummary.lastActiveAt)}` : '未运行'}
             </span>
+            {/* V24: QQ 连接状态 */}
+            {currentAgent?.qqBinding?.enabled && (
+              <span className={`ml-3 inline-flex items-center gap-1 text-xs ${qqStatus === 'connected' ? 'text-green-500' : 'text-gray-400'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${qqStatus === 'connected' ? 'bg-green-500' : 'bg-gray-300'}`} />
+                QQ: {qqStatus === 'connected' ? '在线' : qqStatus === 'connecting' ? '连接中' : '离线'}
+              </span>
+            )}
           </div>
         </div>
         <Tabs

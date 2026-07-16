@@ -139,8 +139,13 @@ const StepTools: React.FC = () => {
                     isSelected={!!formData.enabledTools[tool.name]}
                     onChange={() => toggleTool(tool.name)}
                   />
-                  <Tooltip
-                    content={
+                  <Tooltip>
+                    <Tooltip.Trigger>
+                      <span className="text-sm text-gray-700 cursor-help hover:text-blue-600 transition-colors">
+                        {tool.displayName}
+                      </span>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content>
                       <div className="max-w-xs space-y-1">
                         <p className="font-medium text-sm">{tool.displayName} ({tool.name})</p>
                         <p className="text-xs text-gray-300">{tool.description}</p>
@@ -158,12 +163,7 @@ const StepTools: React.FC = () => {
                           <p className="text-xs text-gray-400 mt-1">示例: {tool.example}</p>
                         )}
                       </div>
-                    }
-                    placement="right"
-                  >
-                    <span className="text-sm text-gray-700 cursor-help hover:text-blue-600 transition-colors">
-                      {tool.displayName}
-                    </span>
+                    </Tooltip.Content>
                   </Tooltip>
                   <span className="text-xs text-gray-400 ml-auto">{tool.categoryLabel}</span>
                 </div>

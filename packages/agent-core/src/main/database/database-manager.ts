@@ -220,6 +220,19 @@ export class DatabaseManager implements IDatabaseManager {
     // ── V23: agents.workspace_id 列（V16 兼容，部分存量数据可能缺） ──
     this.addColumnIfNotExists(db, 'agents', 'workspace_id', 'TEXT NOT NULL DEFAULT \'\'');
 
+    // ── V24: agents 表 QQ 绑定索引（加速 routeQQMessageToAgent 查找） ──
+    // 添加独立列 qq_binding_account_id，避免 JSON 表达式索引的兼容性问题
+    this.addColumnIfNotExists(db, 'agents', 'qq_binding_account_id', 'TEXT');
+    // 索引列存在性依赖 addColumnIfNotExists，需在 addColumn 之后执行
+    try {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_agents_qq_binding
+          ON agents(qq_binding_account_id);
+      `);
+    } catch (err) {
+      console.warn('[DatabaseManager] 创建 QQ 绑定索引失败:', (err as Error).message);
+    }
+
     // ── V22: 元编排层 — 执行计划文档 + 任务记忆 ──
     // PlanStore / TaskMemoryStore 构造时也会 initSchema，这里统一在启动时创建
     // 避免运行时 DDL 与并发写入冲突。

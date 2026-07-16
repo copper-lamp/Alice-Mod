@@ -1,5 +1,6 @@
 package io.alice.mod.adapter;
 
+import io.alice.mod.adapter.ai.BotAccess;
 import io.alice.mod.adapter.world.WorldContextManager;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -23,6 +24,9 @@ public class AliceModServer implements DedicatedServerModInitializer {
     @Override
     public void onInitializeServer() {
         LOG.info("Alice Mod Server initializing...");
+
+        // 初始化 BotAccess（注册 SERVER_STARTED/STOPPED 事件监听）
+        BotAccess.init();
 
         // 注册服务端启动事件 → 激活世界上下文
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {

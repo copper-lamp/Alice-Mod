@@ -6,6 +6,7 @@ import { app } from 'electron'
 import WebSocket from 'ws'
 import { NapCatManager } from '../qq-bot/napcat-manager'
 import { OneBotClient } from '../qq-bot/onebot-client'
+import { routeQQMessageToAgent } from '../qq-bot/message-router'
 import type { QQMessage } from '../qq-bot/types'
 
 // ── 类型 ──
@@ -117,7 +118,7 @@ interface ManagedNapCatInstance {
 
 /** 多账号 NapCat 实例 Map，key = accountId (QQAccount.id) */
 const napCatInstances = new Map<string, ManagedNapCatInstance>()
-const activeClients = new Map<string, OneBotClient>()
+export const activeClients = new Map<string, OneBotClient>()
 
 /** 并发锁：防止 ensureManagedConnection 被重复调用 */
 const pendingAccountConnections = new Set<string>()
@@ -504,6 +505,11 @@ async function connectOneBot(account: QQAccount): Promise<void> {
       acc.stats.messagesReceived++
       saveAccounts(data.accounts, data.order)
     }
+
+    // V24: 路由消息到绑定的 Agent 实例
+    routeQQMessageToAgent(account.id, msg, client).catch((err) =>
+      console.error(`[QQBot] 路由消息到 Agent 失败:`, err),
+    )
   })
 
   client.onStatusChange((status) => {

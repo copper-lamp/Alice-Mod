@@ -53,6 +53,7 @@ packages/**/napcat/
 bds26.10/
 serverjava/
 libs/
+SERVER/
 
 # TypeScript
 *.tsbuildinfo

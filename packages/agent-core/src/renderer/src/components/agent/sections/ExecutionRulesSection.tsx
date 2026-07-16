@@ -1,6 +1,12 @@
 import React from 'react'
 import { Switch, Description } from '@heroui/react'
-import type { ExecutionRule } from '../../../lib/types'
+
+interface ExecutionRule {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+}
 
 interface ExecutionRulesSectionProps {
   rules: ExecutionRule[]

@@ -27,7 +27,6 @@ const StepBasicInfo: React.FC = () => {
         onChange={(val) => updateFormData({ name: val })}
         isRequired
         isInvalid={formData.name.trim().length === 0}
-        errorMessage="智能体名称不能为空"
       >
         <Label>智能体名称</Label>
         <Input placeholder="输入智能体名称，如：Chili6668267" />
