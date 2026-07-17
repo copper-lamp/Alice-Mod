@@ -1,13 +1,11 @@
 /**
- * @deprecated 使用 DockerContainerManager 替代
- *
- * NapCatManager — NapCat 托管进程管理器
+ * NapCatManager — NapCat 桌面版进程管理器
  *
  * 负责 NapCat 子进程的下载、配置、启动、停止、健康监控和崩溃恢复。
  * 通过 NapCat 内置 WebUI API 获取真实二维码和登录状态。
  *
- * 该模块已废弃，请使用 DockerContainerManager（./docker-container-manager.ts）替代。
- * Docker 方案提供跨平台支持、更强稳定性、天然多账号隔离，无需手动管理进程。
+ * 桌面版方案适用于未安装 Docker 或已有 NapCat 使用经验的用户。
+ * 如需更好的跨平台支持和稳定性，推荐使用 DockerContainerManager。
  */
 
 import * as fs from 'fs';

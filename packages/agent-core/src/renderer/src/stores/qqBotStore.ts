@@ -43,6 +43,7 @@ export interface QQAccountConfig {
   connectionType: 'qr' | 'manual'
   manual?: ManualConnectionParams
   qr?: { sessionToken: string }
+  deploymentMode: 'docker' | 'desktop'
   authorization: {
     defaultPermission: 0 | 1 | 2 | 3
     cooldownSeconds: number

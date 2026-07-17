@@ -159,8 +159,9 @@ export const modelApi = {
     window.electronAPI.invoke('model:update', { id, config }) as Promise<{ success: boolean }>
 }
 
-/** IPC 调用封装 - 记忆系统 */
+/** IPC 调用封装 — 记忆系统（v2.0 重构版） */
 export const memoryApi = {
+  // v1.0 旧接口（向后兼容）
   list: (params: { type?: string; branch?: string; tags?: string[]; keywords?: string; limit?: number; offset?: number }) =>
     window.electronAPI?.invoke('memory:list', params) as Promise<{ memories: any[]; total: number; limit: number; offset: number }>,
 
@@ -179,7 +180,50 @@ export const memoryApi = {
     window.electronAPI?.invoke('memory:forget', { id }) as Promise<{ success: boolean; error?: string }>,
 
   similar: (query: string, type?: string, limit?: number) =>
-    window.electronAPI?.invoke('memory:similar', { query, type, limit }) as Promise<{ memories: any[] }>
+    window.electronAPI?.invoke('memory:similar', { query, type, limit }) as Promise<{ memories: any[] }>,
+
+  // v2.0 新接口
+  memoryList: (params: { type?: string; tags?: string[]; limit?: number; offset?: number }) =>
+    window.electronAPI?.invoke('memory:list', params) as Promise<{ memories: any[]; total: number }>,
+
+  memoryQuery: (params: { keywords?: string[]; query?: string; type?: string; limit?: number }) =>
+    window.electronAPI?.invoke('memory:list', params) as Promise<{ memories: any[]; total: number }>,
+
+  memoryEdit: (params: { action: 'create' | 'update' | 'delete'; id?: string; type?: string; name?: string; content?: string; tags?: string[]; importance?: number }) =>
+    window.electronAPI?.invoke('memory:edit', params) as Promise<{ success: boolean; id?: string; error?: string }>,
+}
+
+/** IPC 调用封装 — 地图路径点（v2.0 新增） */
+export const mapsApi = {
+  list: (params: { keywords?: string[]; x?: number; z?: number; radius?: number; dimension?: string; limit?: number }) =>
+    window.electronAPI?.invoke('maps:list', params) as Promise<{ waypoints: any[]; total: number }>,
+
+  create: (params: { dimension: string; x: number; y: number; z: number; name: string; description?: string; tags?: string[] }) =>
+    window.electronAPI?.invoke('maps:create', params) as Promise<{ id: string }>,
+
+  update: (params: { id: string; name?: string; description?: string; tags?: string[] }) =>
+    window.electronAPI?.invoke('maps:update', params) as Promise<{ success: boolean }>,
+
+  delete: (id: string) =>
+    window.electronAPI?.invoke('maps:delete', { id }) as Promise<{ success: boolean }>,
+}
+
+/** IPC 调用封装 — 目标任务（v2.0 新增） */
+export const aimApi = {
+  list: (params?: { type?: string; status?: string }) =>
+    window.electronAPI?.invoke('aim:list', params ?? {}) as Promise<{ tasks: any[] }>,
+
+  get: (id: string) =>
+    window.electronAPI?.invoke('aim:get', { id }) as Promise<{ task: any }>,
+
+  update: (params: { id: string; item_id: string; done: boolean }) =>
+    window.electronAPI?.invoke('aim:update', params) as Promise<{ task: any }>,
+}
+
+/** IPC 调用封装 — 知识库（v2.0 新增） */
+export const knowledgeApi = {
+  query: (params: { query: string; limit?: number }) =>
+    window.electronAPI?.invoke('knowledge:query', params) as Promise<{ results: any[] }>,
 }
 
 // ==========================================

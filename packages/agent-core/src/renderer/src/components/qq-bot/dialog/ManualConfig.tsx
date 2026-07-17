@@ -34,6 +34,7 @@ export const ManualConfig: React.FC = () => {
     setSaving(true)
     const success = await addAccount({
       connectionType: 'manual',
+      deploymentMode: 'docker',
       manual: {
         host,
         port: parseInt(port, 10),

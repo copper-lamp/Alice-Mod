@@ -100,6 +100,42 @@ export const PermissionPanel: React.FC<Props> = ({ account }) => {
         </Switch>
       </div>
 
+      {/* ── 部署方式 ── */}
+      <div className="pt-4 border-t border-gray-100">
+        <label className="text-sm font-medium text-gray-700 block mb-1">部署方式</label>
+        <p className="text-xs text-gray-400 mb-2">
+          选择 NapCat 运行方式：Docker 容器（推荐）或桌面版进程
+        </p>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant={account.config.deploymentMode === 'docker' ? 'primary' : 'secondary'}
+            onPress={async () => {
+              if (account.config.deploymentMode === 'docker') return
+              await saveConfig(account.id, {
+                ...account.config,
+                deploymentMode: 'docker',
+              })
+            }}
+          >
+            Docker 容器
+          </Button>
+          <Button
+            size="sm"
+            variant={account.config.deploymentMode === 'desktop' ? 'primary' : 'secondary'}
+            onPress={async () => {
+              if (account.config.deploymentMode === 'desktop') return
+              await saveConfig(account.id, {
+                ...account.config,
+                deploymentMode: 'desktop',
+              })
+            }}
+          >
+            桌面版进程
+          </Button>
+        </div>
+      </div>
+
       {/* ── 数据存储目录 ── */}
       <div className="pt-4 border-t border-gray-100">
         <label className="text-sm font-medium text-gray-700 block mb-1">数据存储目录</label>

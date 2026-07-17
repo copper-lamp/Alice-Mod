@@ -45,6 +45,9 @@ export enum ToolCategory {
   QQ = 'qq',
   Memory = 'memory',
   Task = 'task',
+  Knowledge = 'knowledge',
+  Maps = 'maps',
+  Aim = 'aim',
 }
 
 /** 工具调用结果 */

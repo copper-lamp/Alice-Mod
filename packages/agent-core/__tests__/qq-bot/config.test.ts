@@ -13,7 +13,7 @@ describe('QQ Bot 配置管理', () => {
 
   it('默认配置应包含完整结构', () => {
     expect(DEFAULT_QQ_BOT_CONFIG.enabled).toBe(true);
-    expect(DEFAULT_QQ_BOT_CONFIG.mode).toBe('docker');
+    expect(DEFAULT_QQ_BOT_CONFIG.mode).toBe('desktop');
     expect(DEFAULT_QQ_BOT_CONFIG.docker).toBeDefined();
     expect(DEFAULT_QQ_BOT_CONFIG.docker!.account).toBe('');
     expect(DEFAULT_QQ_BOT_CONFIG.docker!.autoStart).toBe(false);
@@ -58,6 +58,7 @@ describe('QQ Bot 配置管理', () => {
   it('Docker 模式应使用自定义端口', () => {
     const config = {
       ...DEFAULT_QQ_BOT_CONFIG,
+      mode: 'docker' as const,
       docker: { account: '123456', autoStart: true, autoUpdate: false, oneBotPort: 3002 },
     };
     expect(buildWsUrl(config)).toBe('ws://127.0.0.1:3002');
@@ -80,6 +81,7 @@ describe('QQ Bot 配置管理', () => {
   it('Docker 模式 buildOneBotConfig 应使用 docker 配置中的 Token', () => {
     const config = {
       ...DEFAULT_QQ_BOT_CONFIG,
+      mode: 'docker' as const,
       docker: { account: '123456', autoStart: true, autoUpdate: false, accessToken: 'dockertoken' },
     };
 
@@ -105,7 +107,11 @@ describe('QQ Bot 配置管理', () => {
   });
 
   it('Docker 模式应校验 QQ 号', () => {
-    const errors = validateConfig(DEFAULT_QQ_BOT_CONFIG);
+    const config = {
+      ...DEFAULT_QQ_BOT_CONFIG,
+      mode: 'docker' as const,
+    };
+    const errors = validateConfig(config);
     expect(errors).toContain('Docker 模式下 QQ 号不能为空');
   });
 
@@ -136,7 +142,7 @@ describe('QQ Bot 配置管理', () => {
       managed: { account: '', autoStart: true, autoUpdate: false },
     };
     const errors = validateConfig(config);
-    expect(errors).toContain('managed 模式已废弃，请使用 docker 模式');
+    expect(errors).toContain('managed 模式已废弃，请使用 docker 或 desktop 模式');
   });
 
   it('应校验冷却时间', () => {

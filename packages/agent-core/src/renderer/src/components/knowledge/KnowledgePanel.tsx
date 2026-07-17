@@ -1,19 +1,30 @@
+/**
+ * KnowledgePanel — 知识面板 UI（v2.0 重构）
+ *
+ * Tab 结构（5 个）：
+ *   database → 资料库（知识库管理）
+ *   memory   → 记忆（经验记忆）
+ *   maps     → 地图路径点
+ *   skill    → 技能配置
+ *   aim      → 目标任务
+ */
+
 import React from 'react'
 import { Card, Tabs } from '@heroui/react'
 import { useKnowledgeStore } from '../../stores/knowledgeStore'
 import type { KnowledgeTab } from '../../stores/knowledgeStore'
 import DatabaseView from './DatabaseView'
-import MapIndexView from './MapIndexView'
-import ExpertView from './ExpertView'
-import ExperienceView from './ExperienceView'
+import MemoryView from './MemoryView'
+import MapsView from './MapsView'
 import SkillsView from './SkillsView'
+import AimView from './AimView'
 
 const tabs = [
   { key: 'database' as const, label: '资料库' },
-  { key: 'map-index' as const, label: '地图索引' },
-  { key: 'expert' as const, label: '专家' },
-  { key: 'experience' as const, label: '经验' },
+  { key: 'memory' as const, label: '记忆' },
+  { key: 'maps' as const, label: '地图路径点' },
   { key: 'skill' as const, label: '技能' },
+  { key: 'aim' as const, label: '目标任务' },
 ]
 
 const KnowledgePanel: React.FC = () => {
@@ -46,17 +57,17 @@ const KnowledgePanel: React.FC = () => {
               <Tabs.Panel id="database">
                 <DatabaseView />
               </Tabs.Panel>
-              <Tabs.Panel id="map-index">
-                <MapIndexView />
+              <Tabs.Panel id="memory">
+                <MemoryView />
               </Tabs.Panel>
-              <Tabs.Panel id="expert">
-                <ExpertView />
-              </Tabs.Panel>
-              <Tabs.Panel id="experience">
-                <ExperienceView />
+              <Tabs.Panel id="maps">
+                <MapsView />
               </Tabs.Panel>
               <Tabs.Panel id="skill">
                 <SkillsView />
+              </Tabs.Panel>
+              <Tabs.Panel id="aim">
+                <AimView />
               </Tabs.Panel>
             </div>
           </Tabs>

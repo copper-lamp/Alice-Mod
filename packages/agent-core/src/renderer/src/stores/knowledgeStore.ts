@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
-export type KnowledgeTab = 'database' | 'map-index' | 'expert' | 'experience' | 'skill' | 'agent-memory'
+// v2.0 记忆与学习工具 Tab 类型
+export type KnowledgeTab = 'database' | 'memory' | 'maps' | 'skill' | 'aim'
 
 interface KnowledgeState {
   activeTab: KnowledgeTab

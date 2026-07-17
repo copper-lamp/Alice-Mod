@@ -6,6 +6,8 @@ import { app } from 'electron'
 import WebSocket from 'ws'
 import { DockerContainerManager } from '../qq-bot/docker-container-manager'
 import type { ContainerStatus } from '../qq-bot/docker-container-manager'
+import { NapCatManager } from '../qq-bot/napcat-manager'
+import type { NapCatStatus } from '../qq-bot/napcat-manager'
 import { OneBotClient } from '../qq-bot/onebot-client'
 import { routeQQMessageToAgent } from '../qq-bot/message-router'
 import type { QQMessage } from '../qq-bot/types'
@@ -28,6 +30,8 @@ interface QQAccountConfig {
   connectionType: 'qr' | 'manual'
   manual?: { host: string; port: number; protocol: 'ws' | 'wss'; token?: string }
   qr?: { sessionToken: string }
+  /** 部署模式：docker（Docker 容器方案）| desktop（桌面版 NapCat 进程管理） */
+  deploymentMode: 'docker' | 'desktop'
   authorization: { defaultPermission: number; cooldownSeconds: number; allowPrivate: boolean }
   bridges: BridgeConfig[]
   /** 自动分配的 OneBot 端口（多账号时每个账号独立端口） */
@@ -110,18 +114,25 @@ function appendLog(accountId: string, entry: LogEntry): void {
 
 const DEFAULT_AUTH = { defaultPermission: 1 as const, cooldownSeconds: 3, allowPrivate: true }
 
-// ── Docker / OneBot 运行时管理 ──
+// ── 运行时管理 ──
 
 interface ManagedDockerInstance {
   qqNumber: string
   manager: DockerContainerManager
 }
 
+interface ManagedNapcatInstance {
+  qqNumber: string
+  manager: NapCatManager
+}
+
 /** 多账号 Docker 实例 Map，key = accountId (QQAccount.id) */
 const dockerContainers = new Map<string, ManagedDockerInstance>()
+/** 多账号 NapCat 桌面版实例 Map，key = accountId (QQAccount.id) */
+const napcatInstances = new Map<string, ManagedNapcatInstance>()
 export const activeClients = new Map<string, OneBotClient>()
 
-/** 并发锁：防止 ensureDockerConnection 被重复调用 */
+/** 并发锁：防止 ensureManagedConnection 被重复调用 */
 const pendingAccountConnections = new Set<string>()
 
 /** 端口分配基础 */
@@ -129,8 +140,9 @@ const BASE_ONE_BOT_PORT = 3001
 const BASE_WEB_UI_PORT = 6099
 const MAX_PORT_OFFSET = 50
 
-/** 临时扫码登录的 Docker 管理器（不与已托管账号冲突） */
+/** 临时扫码登录的管理器（Docker 或 NapCat） */
 let qrLoginManager: DockerContainerManager | null = null
+let qrLoginNapcatManager: NapCatManager | null = null
 
 /**
  * 为临时扫码登录分配一个不与已托管账号冲突的端口
@@ -161,6 +173,7 @@ function delay(ms: number): Promise<void> {
 /**
  * 为账号分配唯一端口（OneBot + WebUI）
  * 优先使用已持久化的端口，否则自动分配最小可用端口
+ * 同时考虑 Docker 和 NapCat 桌面版实例
  */
 function assignPorts(
   account: QQAccount,
@@ -175,10 +188,13 @@ function assignPorts(
     return { oneBot: account.config.assignedPort, webUi: account.config.assignedWebUiPort }
   }
 
-  // 收集所有已占用端口
+  // 收集所有已占用端口（Docker + NapCat 桌面版）
   const usedPorts = new Set<number>()
   for (const inst of dockerContainers.values()) {
     usedPorts.add(inst.manager.getOneBotPort())
+    usedPorts.add(inst.manager.getWebUiPort())
+  }
+  for (const inst of napcatInstances.values()) {
     usedPorts.add(inst.manager.getWebUiPort())
   }
 
@@ -194,12 +210,69 @@ function assignPorts(
 }
 
 /**
+ * 获取或创建托管连接管理器（Docker 或 NapCat 桌面版）
+ * 根据 account.config.deploymentMode 选择方案
+ */
+function getOrCreateManagedContainer(
+  account: QQAccount,
+  onProgress?: (p: { percent: number; stage: string; message: string }) => void,
+): DockerContainerManager | NapCatManager {
+  if (account.config.deploymentMode === 'desktop') {
+    return getOrCreateNapcatContainer(account, onProgress)
+  }
+  return getOrCreateDockerContainer(account, onProgress)
+}
+
+/**
+ * 获取或创建 NapCat 桌面版管理器
+ */
+function getOrCreateNapcatContainer(
+  account: QQAccount,
+  _onProgress?: (p: { percent: number; stage: string; message: string }) => void,
+): NapCatManager {
+  const existing = napcatInstances.get(account.id)
+  if (existing) return existing.manager
+
+  const ports = assignPorts(account)
+  const installDir = account.config.dataDir || path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-install')
+  const userDataPath = account.config.dataDir || path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-data', account.id.slice(0, 8))
+
+  const manager = new NapCatManager({
+    installDir,
+    userDataPath,
+    account: account.qqNumber,
+    oneBotPort: ports.oneBot,
+    webUiPort: ports.webUi,
+    onLog: (line) => {
+      console.log(`[NapCat(${account.qqNumber})] ${line}`)
+    },
+    onStatusChange: (status) => {
+      console.log(`[NapCatManager(${account.qqNumber})] status: ${status}`)
+    },
+  })
+
+  // 持久化端口
+  account.config.assignedPort = ports.oneBot
+  account.config.assignedWebUiPort = ports.webUi
+  const data = loadAccounts()
+  const acc = data.accounts.find(a => a.id === account.id)
+  if (acc) {
+    acc.config.assignedPort = ports.oneBot
+    acc.config.assignedWebUiPort = ports.webUi
+    saveAccounts(data.accounts, data.order)
+  }
+
+  napcatInstances.set(account.id, { qqNumber: account.qqNumber, manager })
+  return manager
+}
+
+/**
  * 获取或创建 Docker 容器管理器
  * 每个托管账号使用独立的 Docker 容器
  */
 function getOrCreateDockerContainer(
   account: QQAccount,
-  onProgress?: (p: { percent: number; stage: string; message: string }) => void,
+  _onProgress?: (p: { percent: number; stage: string; message: string }) => void,
 ): DockerContainerManager {
   const existing = dockerContainers.get(account.id)
   if (existing) return existing.manager
@@ -237,17 +310,29 @@ function getOrCreateDockerContainer(
   return manager
 }
 
-function destroyDockerContainer(accountId?: string): void {
+function destroyManagedContainer(accountId?: string): void {
   if (accountId) {
-    const inst = dockerContainers.get(accountId)
-    if (inst) {
-      inst.manager.remove().catch(() => {})
+    // 销毁 Docker 容器
+    const dockerInst = dockerContainers.get(accountId)
+    if (dockerInst) {
+      dockerInst.manager.remove().catch(() => {})
       dockerContainers.delete(accountId)
     }
+    // 销毁 NapCat 桌面版进程
+    const napcatInst = napcatInstances.get(accountId)
+    if (napcatInst) {
+      napcatInst.manager.stop().catch(() => {})
+      napcatInstances.delete(accountId)
+    }
   } else {
-    // 销毁所有容器
+    // 销毁所有
     for (const [id] of dockerContainers) {
-      destroyDockerContainer(id)
+      dockerContainers.get(id)?.manager.remove().catch(() => {})
+      dockerContainers.delete(id)
+    }
+    for (const [id] of napcatInstances) {
+      napcatInstances.get(id)?.manager.stop().catch(() => {})
+      napcatInstances.delete(id)
     }
   }
 }
@@ -369,7 +454,7 @@ async function disconnectAllManagedClients(): Promise<void> {
   await Promise.allSettled(ids.map(id => disconnectOneBot(id)))
 }
 
-async function ensureDockerConnection(account: QQAccount): Promise<void> {
+async function ensureManagedConnection(account: QQAccount): Promise<void> {
   if (account.config.connectionType !== 'qr') return
 
   // 🔒 并发锁：React StrictMode 双渲染可能导致重复调用
@@ -380,13 +465,26 @@ async function ensureDockerConnection(account: QQAccount): Promise<void> {
   pendingAccountConnections.add(account.id)
 
   try {
-    const manager = getOrCreateDockerContainer(account)
+    const manager = getOrCreateManagedContainer(account)
 
-    if (manager.getStatus() === 'idle' || manager.getStatus() === 'error') {
-      console.log(`[QQBot] ▶ 启动 Docker 容器 (account=${account.qqNumber})...`)
-      await manager.start()
+    if (account.config.deploymentMode === 'desktop') {
+      // NapCat 桌面版
+      const napcatManager = manager as NapCatManager
+      if (napcatManager.getStatus() === 'idle' || napcatManager.getStatus() === 'error') {
+        console.log(`[QQBot] ▶ 启动 NapCat 桌面版 (account=${account.qqNumber})...`)
+        await napcatManager.start()
+      } else {
+        console.log(`[QQBot] ▶ NapCat 桌面版已在运行 (account=${account.qqNumber}, status=${napcatManager.getStatus()})，跳过启动`)
+      }
     } else {
-      console.log(`[QQBot] ▶ Docker 容器已在运行 (account=${account.qqNumber}, status=${manager.getStatus()})，跳过启动`)
+      // Docker 容器
+      const dockerManager = manager as DockerContainerManager
+      if (dockerManager.getStatus() === 'idle' || dockerManager.getStatus() === 'error') {
+        console.log(`[QQBot] ▶ 启动 Docker 容器 (account=${account.qqNumber})...`)
+        await dockerManager.start()
+      } else {
+        console.log(`[QQBot] ▶ Docker 容器已在运行 (account=${account.qqNumber}, status=${dockerManager.getStatus()})，跳过启动`)
+      }
     }
 
     // 给容器一点时间启动 OneBot WebSocket 服务（WebUI 就绪后 WS 还需几秒）
@@ -397,7 +495,7 @@ async function ensureDockerConnection(account: QQAccount): Promise<void> {
       await connectOneBot(account)
       console.log(`[QQBot] ▶ OneBot 连接成功 (account=${account.qqNumber})`)
     } catch (err) {
-      // ❌ 不停止容器！
+      // ❌ 不停止容器/进程！
       // OneBotClient 会后台自动重连，停容器反而让重连永远失败
       const msg = err instanceof Error ? err.message : String(err)
       console.log(`[QQBot] ⚠ 初始 OneBot 连接失败 (account=${account.qqNumber}, ${msg})，客户端将自动重连`)
@@ -429,6 +527,7 @@ function createManagedAccount(info: { uin: string; nickname: string }, oneBotPor
     stats: { groupsCount: 0, uptime: 0, messagesReceived: 0, messagesSent: 0 },
     config: {
       connectionType: 'qr',
+      deploymentMode: 'docker', // 默认使用 Docker 模式，用户可后续修改
       authorization: DEFAULT_AUTH,
       bridges: [],
       assignedPort: oneBotPort,
@@ -482,8 +581,8 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
     if (account?.enabled) {
       await disconnectOneBot(id)
     }
-    // 清理 Docker 容器
-    destroyDockerContainer(id)
+    // 清理托管容器/进程
+    destroyManagedContainer(id)
     data.accounts = data.accounts.filter(a => a.id !== id)
     data.order = data.order.filter(o => o !== id)
     saveAccounts(data.accounts, data.order)
@@ -532,7 +631,7 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
     if (enabled) {
       try {
         if (account.config.connectionType === 'qr') {
-          await ensureDockerConnection(account)
+          await ensureManagedConnection(account)
         } else {
           await connectOneBot(account)
         }
@@ -555,9 +654,8 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
         accountId: id,
         status: 'offline',
       })
-      // Docker 容器：Docker 的 --restart=unless-stopped 会自动管理
-      // 不需要延迟杀进程，Docker 重启策略会处理
-      destroyDockerContainer(id)
+      // 清理托管容器/进程
+      destroyManagedContainer(id)
     }
 
     return { success: true }
@@ -571,42 +669,72 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
     return { success: true }
   })
 
-  // Docker 安装状态
+  // 安装环境状态（Docker + NapCat 桌面版）
   ipcMain.handle('qq-bot:get-install-status', async () => {
     const dockerInfo = await DockerContainerManager.getDockerInfo()
+    // 检查 NapCat 桌面版是否已安装（napcat-install 目录存在）
+    const napcatInstallDir = path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-install')
+    const napcatInstalled = fs.existsSync(path.join(napcatInstallDir, 'package.json'))
     return {
-      installed: dockerInfo.version ? true : false,
+      installed: dockerInfo.version ? true : napcatInstalled,
       dockerVersion: dockerInfo.version,
       isDockerInstalled: dockerInfo.isDockerInstalled,
+      napcatInstalled, // 桌面版 NapCat 是否已安装
       error: dockerInfo.error,
-      installDir: 'Docker Desktop', // Docker 方案无需安装目录
-      defaultInstallDir: 'Docker Desktop',
+      installDir: napcatInstallDir,
+      defaultInstallDir: napcatInstallDir,
     }
   })
 
-  // 选择安装目录（Docker 方案不需要，但保留 API 兼容性）
+  // 选择安装目录（Docker/桌面版通用）
   ipcMain.handle('qq-bot:choose-install-dir', async () => {
-    return null
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return null
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: '选择 NapCat 安装目录',
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
   })
 
-  // 安装 NapCat（Docker 方案：通过 docker pull 安装）
-  ipcMain.handle('qq-bot:install-napcat', async () => {
-    // Docker 方案：无需手动安装，容器启动时自动拉取镜像
-    const dockerInfo = await DockerContainerManager.getDockerInfo()
-    if (!dockerInfo.version) {
-      return { success: false, error: `Docker 不可用: ${dockerInfo.error || '请确保 Docker 已安装并正在运行'}` }
-    }
-    // 创建一个临时管理器来拉取镜像（验证拉取是否成功）
-    const tempManager = new DockerContainerManager({
-      containerName: 'napcat-install-test',
-      oneBotPort: 3099,
-      webUiPort: 6199,
-    })
-    try {
-      await tempManager.pull()
-      return { success: true, message: 'NapCat 镜像已拉取完成' }
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : String(err) }
+  // 安装 NapCat（支持 Docker 和桌面版两种模式）
+  ipcMain.handle('qq-bot:install-napcat', async (_, mode?: string) => {
+    const deployMode = mode || 'docker'
+    if (deployMode === 'docker') {
+      // Docker 方案：无需手动安装，容器启动时自动拉取镜像
+      const dockerInfo = await DockerContainerManager.getDockerInfo()
+      if (!dockerInfo.version) {
+        return { success: false, error: `Docker 不可用: ${dockerInfo.error || '请确保 Docker 已安装并正在运行'}` }
+      }
+      // 创建一个临时管理器来拉取镜像（验证拉取是否成功）
+      const tempManager = new DockerContainerManager({
+        containerName: 'napcat-install-test',
+        oneBotPort: 3099,
+        webUiPort: 6199,
+      })
+      try {
+        await tempManager.pull()
+        return { success: true, message: 'NapCat 镜像已拉取完成' }
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    } else {
+      // 桌面版方案：使用 NapCatManager 安装
+      const installDir = path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-install')
+      const napcatManager = new NapCatManager({
+        installDir,
+        userDataPath: installDir,
+        oneBotPort: 3001,
+        webUiPort: 6099,
+      })
+      try {
+        await napcatManager.start()
+        await napcatManager.stop()
+        return { success: true, message: 'NapCat 桌面版已安装完成' }
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) }
+      }
     }
   })
 
@@ -682,7 +810,7 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
 
           // 自动启用新账号
           if (account.enabled) {
-            await ensureDockerConnection(account)
+            await ensureManagedConnection(account)
           }
         }
       }
@@ -701,27 +829,32 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
     return { success: true }
   })
 
-  // 强制停止 Docker 容器管理器（兜底重置，支持按账号）
+  // 强制停止托管管理器（兜底重置，支持按账号）
   ipcMain.handle('qq-bot:stop-manager', async (_, accountId?: string) => {
     if (accountId) {
-      destroyDockerContainer(accountId)
+      destroyManagedContainer(accountId)
     } else {
-      destroyDockerContainer()
+      destroyManagedContainer()
     }
     return { success: true }
   })
 
-  // 获取容器管理器状态（支持按账号）
+  // 获取托管管理器状态（支持按账号）
   ipcMain.handle('qq-bot:get-manager-status', async (_, accountId?: string) => {
     if (accountId) {
-      const inst = dockerContainers.get(accountId)
-      if (!inst) return { exists: false, status: null }
-      return { exists: true, status: inst.manager.getStatus(), qqNumber: inst.qqNumber }
+      const dockerInst = dockerContainers.get(accountId)
+      if (dockerInst) return { exists: true, type: 'docker', status: dockerInst.manager.getStatus(), qqNumber: dockerInst.qqNumber }
+      const napcatInst = napcatInstances.get(accountId)
+      if (napcatInst) return { exists: true, type: 'desktop', status: napcatInst.manager.getStatus(), qqNumber: napcatInst.qqNumber }
+      return { exists: false, status: null }
     }
     // 返回所有账号的状态摘要
-    const summaries: Array<{ accountId: string; qqNumber: string; status: string }> = []
+    const summaries: Array<{ accountId: string; qqNumber: string; type: string; status: string }> = []
     for (const [id, inst] of dockerContainers) {
-      summaries.push({ accountId: id, qqNumber: inst.qqNumber, status: inst.manager.getStatus() })
+      summaries.push({ accountId: id, qqNumber: inst.qqNumber, type: 'docker', status: inst.manager.getStatus() })
+    }
+    for (const [id, inst] of napcatInstances) {
+      summaries.push({ accountId: id, qqNumber: inst.qqNumber, type: 'desktop', status: inst.manager.getStatus() })
     }
     return { exists: summaries.length > 0, instances: summaries }
   })
@@ -872,7 +1005,7 @@ export async function autoStartQQBotAccounts(): Promise<void> {
   })
 
   try {
-    await ensureDockerConnection(firstAccount)
+    await ensureManagedConnection(firstAccount)
   } catch (err) {
     const data2 = loadAccounts()
     const acc = data2.accounts.find(a => a.id === firstAccount.id)

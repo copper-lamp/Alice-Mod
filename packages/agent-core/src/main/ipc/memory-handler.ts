@@ -3,10 +3,22 @@
  *
  * 为渲染进程（记忆浏览器 UI）提供记忆 CRUD 操作。
  * 通过全局 MemoryManager 实例访问记忆系统。
+ *
+ * v2.0 新增通道：
+ *   maps:list / maps:create / maps:update / maps:delete — 地图路径点
+ *   aim:list / aim:get / aim:update                    — 目标任务
+ *   knowledge:query                                     — 知识库
  */
 
 import { ipcMain } from 'electron'
 import type { MemoryManager } from '../memory/memory-manager'
+import { mapsQuery } from '../memory/tools/maps_query'
+import { mapsEdit } from '../memory/tools/maps_edit'
+import { aimList } from '../memory/tools/aim_list'
+import { aimQuery } from '../memory/tools/aim_query'
+import { aimUpdate } from '../memory/tools/aim_update'
+import { knowledgeQuery } from '../memory/tools/knowledge_query'
+import { memoryEdit } from '../memory/tools/memory_edit'
 
 let memoryManager: MemoryManager | null = null
 
@@ -126,6 +138,167 @@ export function registerMemoryHandlers(): void {
     } catch (err) {
       console.error('[MemoryHandler] similar error:', err)
       return { memories: [] }
+    }
+  })
+
+  // ════════════════════════════════════════════════════════════════
+  // v2.0 记忆编辑（create/update/delete 三合一）
+  // ════════════════════════════════════════════════════════════════
+
+  ipcMain.handle('memory:edit', async (_event, params: {
+    action: 'create' | 'update' | 'delete'
+    id?: string
+    type?: string
+    name?: string
+    content?: string
+    tags?: string[]
+    importance?: number
+  }) => {
+    if (!memoryManager) return { success: false, error: 'MemoryManager 未初始化' }
+    try {
+      const result = await memoryEdit(memoryManager, params)
+      return { success: result.success, id: result.data?.id, error: result.error }
+    } catch (err) {
+      console.error('[MemoryHandler] memory:edit error:', err)
+      return { success: false, error: (err as Error).message }
+    }
+  })
+
+  // ════════════════════════════════════════════════════════════════
+  // v2.0 地图路径点 IPC
+  // ════════════════════════════════════════════════════════════════
+
+  ipcMain.handle('maps:list', async (_event, params: {
+    keywords?: string[]
+    x?: number
+    z?: number
+    radius?: number
+    dimension?: string
+    limit?: number
+  }) => {
+    if (!memoryManager) return { waypoints: [], total: 0 }
+    try {
+      const result = await mapsQuery(memoryManager, params)
+      if (result.success && result.data) {
+        return result.data
+      }
+      return { waypoints: [], total: 0 }
+    } catch (err) {
+      console.error('[MemoryHandler] maps:list error:', err)
+      return { waypoints: [], total: 0 }
+    }
+  })
+
+  ipcMain.handle('maps:create', async (_event, params: {
+    dimension: string
+    x: number
+    y: number
+    z: number
+    name: string
+    description?: string
+    tags?: string[]
+  }) => {
+    if (!memoryManager) return { error: 'MemoryManager 未初始化' }
+    try {
+      const result = await mapsEdit(memoryManager, { action: 'create', ...params })
+      if (result.success && result.data) {
+        return { id: result.data.id }
+      }
+      return { error: result.error ?? '创建失败' }
+    } catch (err) {
+      console.error('[MemoryHandler] maps:create error:', err)
+      return { error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle('maps:update', async (_event, params: {
+    id: string
+    name?: string
+    description?: string
+    tags?: string[]
+  }) => {
+    if (!memoryManager) return { success: false, error: 'MemoryManager 未初始化' }
+    try {
+      const result = await mapsEdit(memoryManager, { action: 'update', ...params })
+      return { success: result.success, error: result.error }
+    } catch (err) {
+      console.error('[MemoryHandler] maps:update error:', err)
+      return { success: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle('maps:delete', async (_event, { id }: { id: string }) => {
+    if (!memoryManager) return { success: false, error: 'MemoryManager 未初始化' }
+    try {
+      const result = await mapsEdit(memoryManager, { action: 'delete', id })
+      return { success: result.success, error: result.error }
+    } catch (err) {
+      console.error('[MemoryHandler] maps:delete error:', err)
+      return { success: false, error: (err as Error).message }
+    }
+  })
+
+  // ════════════════════════════════════════════════════════════════
+  // v2.0 目标任务 IPC
+  // ════════════════════════════════════════════════════════════════
+
+  ipcMain.handle('aim:list', async (_event, params: { type?: string; status?: string }) => {
+    if (!memoryManager) return { tasks: [] }
+    try {
+      const result = await aimList(memoryManager, params ?? {})
+      if (result.success && result.data) {
+        return { tasks: result.data.tasks }
+      }
+      return { tasks: [] }
+    } catch (err) {
+      console.error('[MemoryHandler] aim:list error:', err)
+      return { tasks: [] }
+    }
+  })
+
+  ipcMain.handle('aim:get', async (_event, { id }: { id: string }) => {
+    if (!memoryManager) return { task: null }
+    try {
+      const result = await aimQuery(memoryManager, { id })
+      if (result.success && result.data) {
+        return { task: result.data.task }
+      }
+      return { task: null }
+    } catch (err) {
+      console.error('[MemoryHandler] aim:get error:', err)
+      return { task: null }
+    }
+  })
+
+  ipcMain.handle('aim:update', async (_event, params: { id: string; item_id: string; done: boolean }) => {
+    if (!memoryManager) return { task: null, error: 'MemoryManager 未初始化' }
+    try {
+      const result = await aimUpdate(memoryManager, params)
+      if (result.success && result.data) {
+        return { task: result.data.task }
+      }
+      return { task: null, error: result.error }
+    } catch (err) {
+      console.error('[MemoryHandler] aim:update error:', err)
+      return { task: null, error: (err as Error).message }
+    }
+  })
+
+  // ════════════════════════════════════════════════════════════════
+  // v2.0 知识库 IPC
+  // ════════════════════════════════════════════════════════════════
+
+  ipcMain.handle('knowledge:query', async (_event, params: { query: string; limit?: number }) => {
+    if (!memoryManager) return { results: [] }
+    try {
+      const result = await knowledgeQuery(memoryManager, params)
+      if (result.success && result.data) {
+        return { results: result.data.results }
+      }
+      return { results: [] }
+    } catch (err) {
+      console.error('[MemoryHandler] knowledge:query error:', err)
+      return { results: [] }
     }
   })
 }

@@ -8,7 +8,7 @@ import { QQPermission, DEFAULT_SUB_AGENT_CONFIG } from './types';
 /** 默认 QQ 机器人配置 */
 export const DEFAULT_QQ_BOT_CONFIG: QQBotConfig = {
   enabled: true,
-  mode: 'docker',
+  mode: 'desktop',
 
   docker: {
     account: '',
@@ -51,6 +51,9 @@ export function buildWsUrl(config: QQBotConfig): string {
     const port = config.docker.oneBotPort ?? 3001;
     return `ws://127.0.0.1:${port}`;
   }
+  if (config.mode === 'desktop') {
+    return 'ws://127.0.0.1:3001';
+  }
   // 兼容旧的 managed 模式
   return 'ws://127.0.0.1:3001';
 }
@@ -63,7 +66,9 @@ export function buildOneBotConfig(config: QQBotConfig): {
   const wsUrl = buildWsUrl(config);
   const accessToken = config.mode === 'docker'
     ? config.docker?.accessToken
-    : config.external?.accessToken;
+    : config.mode === 'desktop'
+      ? undefined
+      : config.external?.accessToken;
   return { wsUrl, accessToken: accessToken || undefined };
 }
 
@@ -86,8 +91,12 @@ export function validateConfig(config: QQBotConfig): string[] {
     }
   }
 
+  if (config.mode === 'desktop') {
+    // desktop 模式不需要额外验证
+  }
+
   if (config.mode === 'managed') {
-    errors.push('managed 模式已废弃，请使用 docker 模式');
+    errors.push('managed 模式已废弃，请使用 docker 或 desktop 模式');
   }
 
   if (config.authorization.cooldownSeconds < 1) {

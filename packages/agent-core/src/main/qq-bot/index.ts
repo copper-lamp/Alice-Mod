@@ -8,9 +8,7 @@ export { QQSubAgent } from './qq-sub-agent';
 export { MainAgentTaskQueue, mainAgentTaskQueue } from './main-agent-queue';
 export { DockerContainerManager, createDockerContainerManager } from './docker-container-manager';
 export type { ContainerStatus, DockerContainerOptions, QRCodeResult, LoginStatusResult, QQLoginInfo } from './docker-container-manager';
-/** @deprecated 使用 DockerContainerManager 替代 */
 export { NapCatManager, createNapCatManager } from './napcat-manager';
-/** @deprecated 使用 DockerContainerManager 替代 */
 export type { NapCatManagerOptions, NapCatStatus } from './napcat-manager';
 export { OneBotClient } from './onebot-client';
 export { PermissionManager } from './permission';

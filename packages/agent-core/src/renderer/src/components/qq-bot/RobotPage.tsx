@@ -11,6 +11,10 @@ interface InstallStatus {
   installed: boolean
   installDir: string
   defaultInstallDir: string
+  dockerVersion?: string
+  isDockerInstalled?: boolean
+  napcatInstalled?: boolean
+  error?: string
 }
 
 export const RobotPage: React.FC = () => {

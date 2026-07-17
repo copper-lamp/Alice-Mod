@@ -275,8 +275,8 @@ export interface DockerConfig {
 /** QQ 机器人全局配置 */
 export interface QQBotConfig {
   enabled: boolean;
-  /** @deprecated 使用 'docker' 替代 'managed' */
-  mode: 'docker' | 'managed' | 'external';
+  /** 部署模式：docker（Docker 容器方案）| desktop（桌面版 NapCat 进程管理）| external（外部 NapCat）| managed（已废弃） */
+  mode: 'docker' | 'desktop' | 'external' | 'managed';
 
   /** @deprecated 使用 docker 配置替代 */
   managed?: {
