@@ -39,6 +39,11 @@ public final class PerceptionController {
             return new ScanResult("Bot 未找到", Map.of());
         }
 
+        // 安全处理 filter：如果 filter 不是 Map 类型，忽略无效的 filter
+        if (filter == null) {
+            filter = Map.of();
+        }
+
         ServerLevel level = (ServerLevel) bot.level();
         Vec3 pos = bot.position();
         AABB area = AABB.ofSize(pos, radius * 2, radius * 2, radius * 2);

@@ -1,6 +1,7 @@
 package io.alice.mod.adapter.ai.survival;
 
 import io.alice.mod.adapter.ai.BotAccess;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
@@ -115,8 +116,19 @@ public final class SurvivalController {
                         return new SurvivalResult(false, "等待时间必须大于 0", null);
                     }
 
-                    // TODO: 实现等待逻辑（需要 tick 循环）
-                    return new SurvivalResult(false, "等待功能暂未实现", null);
+                    // 等待 - 使用线程睡眠
+                    try {
+                        Thread.sleep(waitSeconds * 1000L);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return new SurvivalResult(false, "等待被中断", null);
+                    }
+
+                    Map<String, Object> waitData = new HashMap<>();
+                    waitData.put("waitedSeconds", waitSeconds);
+                    return new SurvivalResult(true, 
+                            String.format("已等待 %d 秒", waitSeconds), 
+                            waitData);
 
                 default:
                     return new SurvivalResult(false, "无效的操作: " + action, null);
@@ -183,10 +195,12 @@ public final class SurvivalController {
         Predicate<ItemStack> predicate;
         
         if (foodName != null && !foodName.isEmpty()) {
+            // 将下划线转换为空格，兼容 "apple" 和 "Apple" 两种格式
+            String searchName = foodName.toLowerCase().replace('_', ' ');
             predicate = stack -> {
                 FoodProperties props = stack.get(DataComponents.FOOD);
                 return props != null && 
-                       stack.getHoverName().getString().toLowerCase().contains(foodName.toLowerCase());
+                       stack.getHoverName().getString().toLowerCase().contains(searchName);
             };
         } else {
             // 自动选择最佳食物（营养值最高）
@@ -214,8 +228,10 @@ public final class SurvivalController {
      * 在背包中查找物品。
      */
     private static int findItemInInventory(Inventory inventory, String itemName) {
+        // 将下划线转换为空格，兼容 "diamond_sword" 和 "Diamond Sword" 两种格式
+        String searchName = itemName.toLowerCase().replace('_', ' ');
         Predicate<ItemStack> predicate = stack -> 
-                stack.getHoverName().getString().toLowerCase().contains(itemName.toLowerCase());
+                stack.getHoverName().getString().toLowerCase().contains(searchName);
 
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack stack = inventory.getItem(i);

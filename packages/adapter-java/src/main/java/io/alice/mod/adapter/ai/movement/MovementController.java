@@ -37,7 +37,12 @@ public final class MovementController {
 
             // 检查目标位置是否安全
             if (!isSafeLocation(level, targetPos)) {
-                return new MovementResult(false, "目标位置不安全", null);
+                String belowBlock = level.getBlockState(targetPos.below()).getBlock().getName().getString();
+                String targetBlock = level.getBlockState(targetPos).getBlock().getName().getString();
+                LOG.warn("move_to: 目标位置不安全 pos=({},{},{}) target={} below={}",
+                        targetPos.getX(), targetPos.getY(), targetPos.getZ(), targetBlock, belowBlock);
+                return new MovementResult(false, 
+                        "目标位置不安全: 下方方块=" + belowBlock, null);
             }
 
             // 简单传送实现（后续版本实现寻路）

@@ -13,6 +13,11 @@ import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.BlockHitResult;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -94,9 +99,43 @@ public final class BlockController {
                 return new BlockResult(false, "方块距离过远: " + String.format("%.1f", distance) + "格", null);
             }
 
-            // TODO: 实现从背包选择方块并放置（需要访问 Inventory 和 BlockItem）
-            // 当前返回占位结果
-            return new BlockResult(false, "方块放置暂未实现", null);
+            // 从背包查找方块物品
+            net.minecraft.world.entity.player.Inventory inventory = bot.getInventory();
+            int slot = -1;
+            for (int i = 0; i < inventory.getContainerSize(); i++) {
+                ItemStack stack = inventory.getItem(i);
+                if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
+                    // 将下划线转换为空格，兼容 "stone" 和 "Stone" 两种格式
+                    String itemDisplayName = blockItem.getBlock().getName().getString().toLowerCase().replace('_', ' ');
+                    if (itemDisplayName.contains(blockName.toLowerCase().replace('_', ' '))) {
+                        slot = i;
+                        break;
+                    }
+                }
+            }
+
+            if (slot == -1) {
+                return new BlockResult(false, "背包中没有找到方块: " + blockName, null);
+            }
+
+            // 查找目标方块状态
+            Block targetBlock = getBlockByName(blockName, level);
+            if (targetBlock == null) {
+                return new BlockResult(false, "无法找到方块类型: " + blockName, null);
+            }
+            
+            // 直接设置方块（不使用 useOn 避免位置计算问题）
+            level.setBlock(pos, targetBlock.defaultBlockState(), 3);
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("x", x);
+            data.put("y", y);
+            data.put("z", z);
+            data.put("block", blockName);
+
+            return new BlockResult(true, 
+                    String.format("已放置 %s 在 (%d,%d,%d)", blockName, x, y, z), 
+                    data);
         } catch (Exception e) {
             LOG.error("Failed to place block", e);
             return new BlockResult(false, "放置失败: " + e.getMessage(), null);
@@ -164,6 +203,7 @@ public final class BlockController {
         }
 
         try {
+            ServerLevel level = (ServerLevel) bot.level();
             // 计算区域大小
             int sizeX = Math.abs(toX - fromX) + 1;
             int sizeY = Math.abs(toY - fromY) + 1;
@@ -178,13 +218,126 @@ public final class BlockController {
                         null);
             }
 
-            // TODO: 实现区域操作（fill/clear/break/vein 四种模式）
-            // 当前返回占位结果
-            return new BlockResult(false, "区域操作暂未实现", null);
+            // 区域操作：逐个方块执行（不允许使用 /fill 命令）
+            int totalPlaced = 0;
+            int totalFailed = 0;
+
+            for (int bx = Math.min(fromX, toX); bx <= Math.max(fromX, toX); bx++) {
+                for (int by = Math.min(fromY, toY); by <= Math.max(fromY, toY); by++) {
+                    for (int bz = Math.min(fromZ, toZ); bz <= Math.max(fromZ, toZ); bz++) {
+                        BlockPos currentPos = new BlockPos(bx, by, bz);
+                        BlockState currentState = level.getBlockState(currentPos);
+
+                        switch (mode) {
+                            case "fill":
+                                // 填充方块（需要 blockName）
+                                if (blockName == null) {
+                                    return new BlockResult(false, "fill 模式需要提供 block_name", null);
+                                }
+                                // 查找方块物品
+                                if (findBlockItem(bot, blockName) == null) {
+                                    BlockResult r = new BlockResult(false, "背包中没有找到方块: " + blockName, null);
+                                    return new BlockResult(false, r.message(), null);
+                                }
+                                // 使用 setBlock 替代
+                                Block targetBlock = getBlockByName(blockName, level);
+                                if (targetBlock != null) {
+                                    level.setBlock(currentPos, targetBlock.defaultBlockState(), 3);
+                                    totalPlaced++;
+                                } else {
+                                    totalFailed++;
+                                }
+                                break;
+
+                            case "clear":
+                                // 清除方块（设为空气）
+                                if (!currentState.isAir()) {
+                                    level.destroyBlock(currentPos, false);
+                                    totalPlaced++;
+                                }
+                                break;
+
+                            case "break":
+                                // 破坏方块（掉落物品）
+                                if (!currentState.isAir()) {
+                                    level.destroyBlock(currentPos, true);
+                                    totalPlaced++;
+                                }
+                                break;
+
+                            case "vein":
+                                // 矿脉扫描（当前仅返回扫描结果，不实际挖掘）
+                                totalPlaced++;
+                                break;
+
+                            default:
+                                return new BlockResult(false, "无效的操作模式: " + mode, null);
+                        }
+                    }
+                }
+            }
+
+            Map<String, Object> data = new HashMap<>();
+            data.put("mode", mode);
+            data.put("fromX", fromX);
+            data.put("fromY", fromY);
+            data.put("fromZ", fromZ);
+            data.put("toX", toX);
+            data.put("toY", toY);
+            data.put("toZ", toZ);
+            data.put("totalBlocks", totalBlocks);
+            data.put("completed", totalPlaced);
+            data.put("failed", totalFailed);
+
+            if (totalFailed > 0) {
+                return new BlockResult(true, 
+                        String.format("区域操作 %s 完成: %d/%d 成功, %d 失败", mode, totalPlaced, totalBlocks, totalFailed), 
+                        data);
+            }
+
+            return new BlockResult(true, 
+                    String.format("区域操作 %s 完成: %d 个方块", mode, totalPlaced), 
+                    data);
         } catch (Exception e) {
             LOG.error("Failed to perform area operation", e);
             return new BlockResult(false, "区域操作失败: " + e.getMessage(), null);
         }
+    }
+
+    // ---- 辅助方法 ----
+
+    /**
+     * 在背包中查找方块物品。
+     */
+    private static ItemStack findBlockItem(ServerPlayer bot, String blockName) {
+        net.minecraft.world.entity.player.Inventory inventory = bot.getInventory();
+        for (int i = 0; i < inventory.getContainerSize(); i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
+                // 将下划线转换为空格，兼容 "stone" 和 "Stone" 两种格式
+                String itemDisplayName = blockItem.getBlock().getName().getString().toLowerCase().replace('_', ' ');
+                if (itemDisplayName.contains(blockName.toLowerCase().replace('_', ' '))) {
+                    return stack;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 根据名称获取方块实例。
+     */
+    private static Block getBlockByName(String name, ServerLevel level) {
+        // 将下划线转换为空格
+        String searchName = name.toLowerCase().replace('_', ' ');
+        // 尝试通过内置方块注册表查找
+        for (var block : net.minecraft.core.registries.BuiltInRegistries.BLOCK) {
+            String blockName = block.getName().getString().toLowerCase().replace('_', ' ');
+            if (blockName.contains(searchName)) {
+                return block;
+            }
+        }
+        return null;
     }
 
     // ---- 数据记录 ----

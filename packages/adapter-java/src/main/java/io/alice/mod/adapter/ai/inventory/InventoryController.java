@@ -151,8 +151,10 @@ public final class InventoryController {
      * 在背包中查找物品。
      */
     private static int findItemInInventory(Inventory inventory, String itemName) {
+        // 将下划线转换为空格，兼容 "diamond_sword" 和 "Diamond Sword" 两种格式
+        String searchName = itemName.toLowerCase().replace('_', ' ');
         Predicate<ItemStack> predicate = stack -> 
-                stack.getHoverName().getString().toLowerCase().contains(itemName.toLowerCase());
+                stack.getHoverName().getString().toLowerCase().contains(searchName);
 
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack stack = inventory.getItem(i);

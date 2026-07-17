@@ -66,7 +66,7 @@ public final class ChatController {
 
                 case "broadcast":
                     // 广播（需要权限）
-                    if (!bot.hasPermissions(2)) {
+                    if (!bot.hasPermissions(2) && !server.getPlayerList().isOp(bot.getGameProfile())) {
                         return new ChatResult(false, "无广播权限", null);
                     }
                     server.getPlayerList().broadcastSystemMessage(

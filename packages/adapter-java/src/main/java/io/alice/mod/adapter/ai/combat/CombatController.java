@@ -32,31 +32,37 @@ public final class CombatController {
         }
 
         try {
-            if (targetId == null || targetId.isEmpty()) {
-                return new CombatResult(false, "缺少目标实体 ID", null);
+            // targetId 可选 - 不传时只设置战斗模式
+            Map<String, Object> data = new HashMap<>();
+            data.put("mode", mode);
+
+            if (targetId != null && !targetId.isEmpty()) {
+                ServerLevel level = (ServerLevel) bot.level();
+                UUID uuid = UUID.fromString(targetId);
+                Entity target = level.getEntity(uuid);
+
+                if (target == null) {
+                    return new CombatResult(false, "目标实体未找到: " + targetId, null);
+                }
+
+                if (!(target instanceof LivingEntity)) {
+                    return new CombatResult(false, "目标不是生物实体", null);
+                }
+
+                data.put("targetId", targetId);
+                data.put("targetType", target.getType().getDescriptionId());
             }
 
-            ServerLevel level = (ServerLevel) bot.level();
-            UUID uuid = UUID.fromString(targetId);
-            Entity target = level.getEntity(uuid);
-
-            if (target == null) {
-                return new CombatResult(false, "目标实体未找到: " + targetId, null);
-            }
-
-            if (!(target instanceof LivingEntity livingEntity)) {
-                return new CombatResult(false, "目标不是生物实体", null);
+            // 验证战斗模式
+            if (mode != null && !mode.isEmpty() 
+                    && !mode.equals("melee") && !mode.equals("ranged") && !mode.equals("defensive")) {
+                return new CombatResult(false, "不支持的战斗模式: " + mode, null);
             }
 
             // TODO: 实现战斗模式状态机（melee/ranged/defensive）
             // 当前返回占位结果
-            Map<String, Object> data = new HashMap<>();
-            data.put("mode", mode);
-            data.put("targetId", targetId);
-            data.put("targetType", target.getType().getDescriptionId());
-
             return new CombatResult(true, 
-                    String.format("已设置战斗模式: %s，目标: %s", mode, target.getName().getString()), 
+                    String.format("已设置战斗模式: %s", mode != null ? mode : "none"), 
                     data);
         } catch (Exception e) {
             LOG.error("Failed to set combat mode", e);
