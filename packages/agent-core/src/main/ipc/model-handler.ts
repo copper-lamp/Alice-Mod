@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import type { ModelConfigItem } from '../../renderer/src/lib/types'
+import { getDatabaseManager } from '../database'
 
 /** 模型名 → 上下文窗口大小（自动设置） */
 const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
@@ -131,22 +132,67 @@ function getAutoFC(modelName: string): boolean {
   return true
 }
 
-/** 模型配置存储（用户添加的模型） */
-const mockModels: ModelConfigItem[] = []
+// ════════════════════════════════════════════════════════════════
+// 数据库映射辅助
+// ════════════════════════════════════════════════════════════════
+
+interface ModelConfigRow {
+  id: string
+  provider_id: string
+  provider_name: string
+  model_name: string
+  api_key: string
+  base_url: string
+  enabled: number
+  context_window: number
+  supports_function_calling: number
+  created_at: number
+}
+
+function rowToModel(row: ModelConfigRow): ModelConfigItem {
+  return {
+    id: row.id,
+    providerId: row.provider_id,
+    providerName: row.provider_name,
+    modelName: row.model_name,
+    apiKey: row.api_key,
+    baseUrl: row.base_url,
+    enabled: row.enabled === 1,
+    contextWindow: row.context_window,
+    supportsFunctionCalling: row.supports_function_calling === 1,
+    createdAt: row.created_at,
+  }
+}
+
+function modelToRow(model: ModelConfigItem): ModelConfigRow {
+  return {
+    id: model.id,
+    provider_id: model.providerId,
+    provider_name: model.providerName,
+    model_name: model.modelName,
+    api_key: model.apiKey,
+    base_url: model.baseUrl,
+    enabled: model.enabled ? 1 : 0,
+    context_window: model.contextWindow,
+    supports_function_calling: model.supportsFunctionCalling ? 1 : 0,
+    created_at: model.createdAt,
+  }
+}
 
 export function registerModelHandlers(): void {
   ipcMain.handle('model:list', async () => {
-    return [...mockModels]
+    const db = getDatabaseManager().getDb()
+    const rows = db.prepare('SELECT * FROM model_configs ORDER BY created_at DESC').all() as ModelConfigRow[]
+    return rows.map(rowToModel)
   })
 
   ipcMain.handle('model:add', async (_event, config: ModelConfigItem) => {
+    const db = getDatabaseManager().getDb()
     const id = `${config.providerId}:${config.modelName}`
     // 自动设置上下文窗口
     const contextWindow = getAutoContextWindow(config.modelName)
     // 自动设置 Function Calling 支持
     const supportsFunctionCalling = getAutoFC(config.modelName)
-    // 如果已存在则更新，否则添加
-    const existingIdx = mockModels.findIndex(m => m.id === id)
     const entry: ModelConfigItem = {
       ...config,
       id,
@@ -154,34 +200,43 @@ export function registerModelHandlers(): void {
       supportsFunctionCalling: config.supportsFunctionCalling !== undefined ? config.supportsFunctionCalling : supportsFunctionCalling,
       createdAt: Date.now()
     }
-    if (existingIdx !== -1) {
-      mockModels[existingIdx] = entry
-    } else {
-      mockModels.push(entry)
-    }
+    const row = modelToRow(entry)
+    db.prepare(`
+      INSERT OR REPLACE INTO model_configs
+        (id, provider_id, provider_name, model_name, api_key, base_url, enabled, context_window, supports_function_calling, created_at)
+      VALUES
+        (@id, @provider_id, @provider_name, @model_name, @api_key, @base_url, @enabled, @context_window, @supports_function_calling, @created_at)
+    `).run(row)
     return { success: true }
   })
 
   ipcMain.handle('model:remove', async (_event, { id }) => {
-    const idx = mockModels.findIndex(m => m.id === id)
-    if (idx !== -1) {
-      mockModels.splice(idx, 1)
-      return { success: true }
-    }
-    return { success: false }
+    const db = getDatabaseManager().getDb()
+    const result = db.prepare('DELETE FROM model_configs WHERE id = ?').run(id)
+    return { success: result.changes > 0 }
   })
 
   ipcMain.handle('model:update', async (_event, { id, config }: { id: string; config: Partial<ModelConfigItem> }) => {
-    const model = mockModels.find(m => m.id === id)
-    if (model) {
-      // 如果更新了 modelName 则重新计算上下文
-      if (config.modelName) {
-        config.contextWindow = config.contextWindow || getAutoContextWindow(config.modelName)
-      }
-      Object.assign(model, config)
-      return { success: true }
+    const db = getDatabaseManager().getDb()
+    // 如果更新了 modelName 则重新计算上下文
+    if (config.modelName) {
+      config.contextWindow = config.contextWindow || getAutoContextWindow(config.modelName)
     }
-    return { success: false }
+    // 构建动态 SET 子句
+    const sets: string[] = []
+    const params: Record<string, unknown> = {}
+    if (config.providerId !== undefined) { sets.push('provider_id = @provider_id'); params.provider_id = config.providerId }
+    if (config.providerName !== undefined) { sets.push('provider_name = @provider_name'); params.provider_name = config.providerName }
+    if (config.modelName !== undefined) { sets.push('model_name = @model_name'); params.model_name = config.modelName }
+    if (config.apiKey !== undefined) { sets.push('api_key = @api_key'); params.api_key = config.apiKey }
+    if (config.baseUrl !== undefined) { sets.push('base_url = @base_url'); params.base_url = config.baseUrl }
+    if (config.enabled !== undefined) { sets.push('enabled = @enabled'); params.enabled = config.enabled ? 1 : 0 }
+    if (config.contextWindow !== undefined) { sets.push('context_window = @context_window'); params.context_window = config.contextWindow }
+    if (config.supportsFunctionCalling !== undefined) { sets.push('supports_function_calling = @supports_function_calling'); params.supports_function_calling = config.supportsFunctionCalling ? 1 : 0 }
+    if (sets.length === 0) return { success: false }
+    params.id = id
+    const result = db.prepare(`UPDATE model_configs SET ${sets.join(', ')} WHERE id = @id`).run(params)
+    return { success: result.changes > 0 }
   })
 
   // 获取可用 Provider 列表（含国产）

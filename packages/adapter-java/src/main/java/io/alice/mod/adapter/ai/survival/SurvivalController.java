@@ -116,18 +116,23 @@ public final class SurvivalController {
                         return new SurvivalResult(false, "等待时间必须大于 0", null);
                     }
 
-                    // 等待 - 使用线程睡眠
-                    try {
-                        Thread.sleep(waitSeconds * 1000L);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        return new SurvivalResult(false, "等待被中断", null);
-                    }
+                    // 使用异步方式执行等待，避免阻塞 TCP 读取线程
+                    // 等待在后台线程池中执行，工具立即返回
+                    java.util.concurrent.CompletableFuture.runAsync(() -> {
+                        try {
+                            Thread.sleep(waitSeconds * 1000L);
+                            LOG.info("Wait completed: {} seconds", waitSeconds);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            LOG.warn("Wait interrupted after {} seconds", waitSeconds);
+                        }
+                    });
 
                     Map<String, Object> waitData = new HashMap<>();
                     waitData.put("waitedSeconds", waitSeconds);
-                    return new SurvivalResult(true, 
-                            String.format("已等待 %d 秒", waitSeconds), 
+                    waitData.put("async", true);
+                    return new SurvivalResult(true,
+                            String.format("等待已启动（%d 秒，异步执行）", waitSeconds),
                             waitData);
 
                 default:

@@ -2,6 +2,7 @@ import React, { useCallback } from 'react'
 import { Button } from '@heroui/react'
 import { useWizardStore } from '../../stores/wizardStore'
 import { useUIStore } from '../../stores/uiStore'
+import { useAgentStore } from '../../stores/agentStore'
 import StepIndicator from './wizard/StepIndicator'
 import StepBasicInfo from './wizard/StepBasicInfo'
 import StepPersona from './wizard/StepPersona'
@@ -30,6 +31,8 @@ const AgentCreateWizard: React.FC = () => {
   const handleSubmit = useCallback(async () => {
     const agentId = await submit()
     if (agentId) {
+      // 创建成功后刷新智能体列表，确保侧边栏立即显示新智能体
+      useAgentStore.getState().refreshAgents()
       navigateToAgent(agentId)
     }
   }, [submit, navigateToAgent])
@@ -49,7 +52,7 @@ const AgentCreateWizard: React.FC = () => {
   const canProceed = checkStepValid(currentStep)
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex-1 flex flex-col overflow-hidden">
       <StepIndicator steps={STEPS} currentStep={currentStep} completedSteps={completedSteps} onStepClick={goToStep} />
 
       <div className="flex-1 overflow-y-auto px-6 py-6">

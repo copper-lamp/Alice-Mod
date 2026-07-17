@@ -75,7 +75,7 @@ function ensureDirs(): void {
   fs.mkdirSync(LOGS_DIR, { recursive: true })
 }
 
-function loadAccounts(): { accounts: QQAccount[]; order: string[] } {
+function loadAccounts(): { accounts: QQAccount[]; order: string[]; meta?: Record<string, unknown> } {
   try {
     if (fs.existsSync(ACCOUNTS_FILE)) {
       return JSON.parse(fs.readFileSync(ACCOUNTS_FILE, 'utf-8'))
@@ -84,9 +84,19 @@ function loadAccounts(): { accounts: QQAccount[]; order: string[] } {
   return { accounts: [], order: [] }
 }
 
-function saveAccounts(accounts: QQAccount[], order: string[]): void {
+function saveAccounts(accounts: QQAccount[], order: string[], meta?: Record<string, unknown>): void {
   ensureDirs()
-  fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify({ accounts, order }, null, 2), 'utf-8')
+  // 当 meta 未显式传入时，从现有文件读取并保留 meta，避免丢失 deploymentMode 等配置
+  const resolvedMeta = meta !== undefined ? meta : (() => {
+    try {
+      if (fs.existsSync(ACCOUNTS_FILE)) {
+        const existing = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, 'utf-8'))
+        return existing.meta
+      }
+    } catch { /* ignore */ }
+    return undefined
+  })()
+  fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify({ accounts, order, meta: resolvedMeta }, null, 2), 'utf-8')
 }
 
 function loadLogs(accountId: string): LogEntry[] {
@@ -506,15 +516,17 @@ async function ensureManagedConnection(account: QQAccount): Promise<void> {
   }
 }
 
-function createManagedAccount(info: { uin: string; nickname: string }, oneBotPort?: number, webUiPort?: number): QQAccount {
+function createManagedAccount(info: { uin: string; nickname: string }, oneBotPort?: number, webUiPort?: number, deploymentMode?: 'docker' | 'desktop'): QQAccount {
   const data = loadAccounts()
   const existing = data.accounts.find(a => a.qqNumber === info.uin)
   if (existing) {
     existing.nickname = info.nickname || existing.nickname
     existing.config.connectionType = 'qr'
+    // 只在创建时设置 deploymentMode，不覆盖已有账号的模式
+    if (deploymentMode) existing.config.deploymentMode = deploymentMode
     if (oneBotPort) existing.config.assignedPort = oneBotPort
     if (webUiPort) existing.config.assignedWebUiPort = webUiPort
-    saveAccounts(data.accounts, data.order)
+    saveAccounts(data.accounts, data.order, data.meta)
     return existing
   }
 
@@ -527,7 +539,7 @@ function createManagedAccount(info: { uin: string; nickname: string }, oneBotPor
     stats: { groupsCount: 0, uptime: 0, messagesReceived: 0, messagesSent: 0 },
     config: {
       connectionType: 'qr',
-      deploymentMode: 'docker', // 默认使用 Docker 模式，用户可后续修改
+      deploymentMode: deploymentMode || 'docker', // 使用传入的模式，默认 docker
       authorization: DEFAULT_AUTH,
       bridges: [],
       assignedPort: oneBotPort,
@@ -537,7 +549,7 @@ function createManagedAccount(info: { uin: string; nickname: string }, oneBotPor
   }
   data.accounts.push(account)
   data.order.push(account.id)
-  saveAccounts(data.accounts, data.order)
+  saveAccounts(data.accounts, data.order, data.meta)
   return account
 }
 
@@ -672,17 +684,29 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
   // 安装环境状态（Docker + NapCat 桌面版）
   ipcMain.handle('qq-bot:get-install-status', async () => {
     const dockerInfo = await DockerContainerManager.getDockerInfo()
-    // 检查 NapCat 桌面版是否已安装（napcat-install 目录存在）
-    const napcatInstallDir = path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-install')
-    const napcatInstalled = fs.existsSync(path.join(napcatInstallDir, 'package.json'))
+    // 检查 NapCat 桌面版是否已安装（默认目录 + 手动安装的自定义目录）
+    const defaultInstallDir = path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-install')
+    const defaultInstalled = fs.existsSync(path.join(defaultInstallDir, 'package.json'))
+
+    // 检查手动安装的自定义目录
+    const data = loadAccounts()
+    const customInstallDir = data.meta?.customInstallDir as string | undefined
+    let customInstalled = false
+    if (customInstallDir) {
+      customInstalled = fs.existsSync(path.join(customInstallDir, 'package.json'))
+    }
+
+    const napcatInstalled = defaultInstalled || customInstalled
+    const installDir = customInstallDir && customInstalled ? customInstallDir : defaultInstallDir
+
     return {
       installed: dockerInfo.version ? true : napcatInstalled,
       dockerVersion: dockerInfo.version,
       isDockerInstalled: dockerInfo.isDockerInstalled,
-      napcatInstalled, // 桌面版 NapCat 是否已安装
+      napcatInstalled,
       error: dockerInfo.error,
-      installDir: napcatInstallDir,
-      defaultInstallDir: napcatInstallDir,
+      installDir,
+      defaultInstallDir,
     }
   })
 
@@ -698,8 +722,61 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
     return result.filePaths[0]
   })
 
+  // 验证手动安装的 NapCat 目录是否有效
+  ipcMain.handle('qq-bot:verify-napcat-install', async (_, dir: string) => {
+    try {
+      // 检查 package.json 是否存在
+      const pkgJsonPath = path.join(dir, 'package.json')
+      if (!fs.existsSync(pkgJsonPath)) {
+        return { success: false, error: '未找到 package.json，请确认已选择 NapCat 安装目录' }
+      }
+
+      // 检查可执行文件是否存在
+      const candidates = ['napcat.bat', 'launcher.bat', 'launcher-win10.bat', 'NapCatWinBootMain.exe', 'napcat.exe']
+      let foundExecutable = false
+      for (const name of candidates) {
+        if (fs.existsSync(path.join(dir, name))) {
+          foundExecutable = true
+          break
+        }
+      }
+      // 也检查一级子目录
+      if (!foundExecutable) {
+        try {
+          const entries = fs.readdirSync(dir, { withFileTypes: true })
+          for (const entry of entries) {
+            if (entry.isDirectory()) {
+              for (const name of candidates) {
+                if (fs.existsSync(path.join(dir, entry.name, name))) {
+                  foundExecutable = true
+                  break
+                }
+              }
+              if (foundExecutable) break
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!foundExecutable) {
+        return { success: false, error: '未找到 NapCat 可执行文件（napcat.bat/launcher.bat），请确认已下载 NapCat' }
+      }
+
+      // 将用户选择的安装目录持久化，供后续 get-install-status 使用
+      const data = loadAccounts()
+      data.meta = data.meta || {}
+      data.meta.customInstallDir = dir
+      data.meta.deploymentMode = 'desktop' // 手动安装即桌面版模式
+      saveAccounts(data.accounts, data.order, data.meta)
+
+      return { success: true, installDir: dir }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '验证安装目录失败' }
+    }
+  })
+
   // 安装 NapCat（支持 Docker 和桌面版两种模式）
-  ipcMain.handle('qq-bot:install-napcat', async (_, mode?: string) => {
+  ipcMain.handle('qq-bot:install-napcat', async (_, mode?: string, installDir?: string) => {
     const deployMode = mode || 'docker'
     if (deployMode === 'docker') {
       // Docker 方案：无需手动安装，容器启动时自动拉取镜像
@@ -721,16 +798,22 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
       }
     } else {
       // 桌面版方案：使用 NapCatManager 安装
-      const installDir = path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-install')
+      const installDirPath = installDir || path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-install')
       const napcatManager = new NapCatManager({
-        installDir,
-        userDataPath: installDir,
+        installDir: installDirPath,
+        userDataPath: installDirPath,
         oneBotPort: 3001,
         webUiPort: 6099,
       })
       try {
         await napcatManager.start()
         await napcatManager.stop()
+        // 存储桌面版部署模式，供后续 QR 登录使用
+        const data = loadAccounts()
+        data.meta = data.meta || {}
+        data.meta.deploymentMode = 'desktop'
+        if (installDir) data.meta.customInstallDir = installDirPath
+        saveAccounts(data.accounts, data.order, data.meta)
         return { success: true, message: 'NapCat 桌面版已安装完成' }
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) }
@@ -744,53 +827,130 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
   })
 
   // 扫码登录 - 开始
-  ipcMain.handle('qq-bot:start-qr-login', async () => {
-    const dockerInfo = await DockerContainerManager.getDockerInfo()
-    if (!dockerInfo.version) {
-      throw new Error(`Docker 不可用: ${dockerInfo.error || '请确保 Docker 已安装并正在运行'}`)
-    }
+  ipcMain.handle('qq-bot:start-qr-login', async (_, mode?: string) => {
+    // 没有指定模式时，从 data.meta 读取（桌面版安装时已存储）
+    const data = loadAccounts()
+    const deployMode = mode || (data.meta?.deploymentMode as string) || 'docker'
 
-    // 如果已有 QR 登录实例在运行，先清理
+    // 清理已有 QR 登录实例
     if (qrLoginManager) {
       qrLoginManager.remove().catch(() => {})
       qrLoginManager = null
     }
-
-    // 创建临时 Docker 容器用于扫码（无 -q 参数）
-    const tempPort = findTempPort()
-    const tempManager = new DockerContainerManager({
-      containerName: `napcat-qr-login-${Date.now().toString(36)}`,
-      oneBotPort: tempPort.oneBot,
-      webUiPort: tempPort.webUi,
-      restartPolicy: 'no', // 临时容器，不自动重启
-      onLog: (line) => console.log(`[Docker(QR)] ${line}`),
-      onStatusChange: (status) => console.log(`[Docker(QR)] status: ${status}`),
-    })
-
-    qrLoginManager = tempManager
-
-    // 启动容器（自动拉取镜像）
-    await tempManager.start()
-
-    // 等待 NapCat 完全就绪后获取二维码（带重试）
-    let lastError: Error | null = null
-    for (let i = 0; i < 3; i++) {
-      try {
-        if (i > 0) {
-          console.log(`[QQBot] 二维码获取重试 (第 ${i + 1} 次)...`)
-          await delay(2000)
-        }
-        const qr = await tempManager.getQRCode()
-        return { url: qr.url, expiresAt: qr.expiresAt }
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err))
-      }
+    if (qrLoginNapcatManager) {
+      qrLoginNapcatManager.stop().catch(() => {})
+      qrLoginNapcatManager = null
     }
-    throw lastError || new Error('获取二维码失败')
+
+    if (deployMode === 'desktop') {
+      // ── 桌面版 QR 登录 ──
+      const data = loadAccounts()
+      const customInstallDir = data.meta?.customInstallDir as string | undefined
+      const installDir = customInstallDir || path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-install')
+      const userDataPath = path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-data', 'qr-login')
+
+      const tempPort = findTempPort()
+      const tempManager = new NapCatManager({
+        installDir,
+        userDataPath,
+        oneBotPort: tempPort.oneBot,
+        webUiPort: tempPort.webUi,
+        onLog: (line) => console.log(`[NapCat(QR)] ${line}`),
+        onStatusChange: (status) => console.log(`[NapCat(QR)] status: ${status}`),
+      })
+
+      qrLoginNapcatManager = tempManager
+
+      // 启动桌面版 NapCat
+      await tempManager.start()
+
+      // 等待 NapCat 完全就绪后获取二维码（带重试）
+      let lastError: Error | null = null
+      for (let i = 0; i < 3; i++) {
+        try {
+          if (i > 0) {
+            console.log(`[QQBot] 二维码获取重试 (第 ${i + 1} 次)...`)
+            await delay(2000)
+          }
+          const qr = await tempManager.getQRCode()
+          return { url: qr.url, expiresAt: qr.expiresAt }
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err))
+        }
+      }
+      throw lastError || new Error('获取二维码失败')
+    } else {
+      // ── Docker QR 登录 ──
+      const dockerInfo = await DockerContainerManager.getDockerInfo()
+      if (!dockerInfo.version) {
+        throw new Error(`Docker 不可用: ${dockerInfo.error || '请确保 Docker 已安装并正在运行'}`)
+      }
+
+      // 创建临时 Docker 容器用于扫码
+      const tempPort = findTempPort()
+      const tempManager = new DockerContainerManager({
+        containerName: `napcat-qr-login-${Date.now().toString(36)}`,
+        oneBotPort: tempPort.oneBot,
+        webUiPort: tempPort.webUi,
+        restartPolicy: 'no',
+        onLog: (line) => console.log(`[Docker(QR)] ${line}`),
+        onStatusChange: (status) => console.log(`[Docker(QR)] status: ${status}`),
+      })
+
+      qrLoginManager = tempManager
+
+      // 启动容器（自动拉取镜像）
+      await tempManager.start()
+
+      // 等待 NapCat 完全就绪后获取二维码（带重试）
+      let lastError: Error | null = null
+      for (let i = 0; i < 3; i++) {
+        try {
+          if (i > 0) {
+            console.log(`[QQBot] 二维码获取重试 (第 ${i + 1} 次)...`)
+            await delay(2000)
+          }
+          const qr = await tempManager.getQRCode()
+          return { url: qr.url, expiresAt: qr.expiresAt }
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err))
+        }
+      }
+      throw lastError || new Error('获取二维码失败')
+    }
   })
 
   // 扫码登录 - 检查状态
   ipcMain.handle('qq-bot:check-qr-login', async () => {
+    // 优先检查桌面版 QR 登录
+    const napcatManager = qrLoginNapcatManager
+    if (napcatManager) {
+      try {
+        const status = await napcatManager.checkLoginStatus()
+        if (status.isLogin) {
+          const info = await napcatManager.getLoginInfo()
+          if (info) {
+            const tempPort = napcatManager.getOneBotPort()
+            const tempWebUiPort = napcatManager.getWebUiPort()
+            const account = createManagedAccount(info, tempPort, tempWebUiPort, 'desktop')
+
+            // 清理临时 QR 登录管理器
+            qrLoginNapcatManager = null
+            napcatManager.stop().catch(() => {})
+
+            // 自动启用新账号
+            if (account.enabled) {
+              await ensureManagedConnection(account)
+            }
+          }
+        }
+        return status
+      } catch (err) {
+        return { isLogin: false, isOffline: false, loginError: err instanceof Error ? err.message : String(err) }
+      }
+    }
+
+    // 检查 Docker QR 登录
     const manager = qrLoginManager
     if (!manager) return { isLogin: false, isOffline: false }
 
@@ -802,7 +962,7 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
           // 获取临时管理器的端口，分配给新账号
           const tempPort = manager.getOneBotPort()
           const tempWebUiPort = manager.getWebUiPort()
-          const account = createManagedAccount(info, tempPort, tempWebUiPort)
+          const account = createManagedAccount(info, tempPort, tempWebUiPort, 'docker')
 
           // 清理临时 QR 登录管理器
           qrLoginManager = null
@@ -825,6 +985,10 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
     if (qrLoginManager) {
       qrLoginManager.remove().catch(() => {})
       qrLoginManager = null
+    }
+    if (qrLoginNapcatManager) {
+      qrLoginNapcatManager.stop().catch(() => {})
+      qrLoginNapcatManager = null
     }
     return { success: true }
   })

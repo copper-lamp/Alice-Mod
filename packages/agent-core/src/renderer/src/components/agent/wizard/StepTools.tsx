@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { Checkbox, Tooltip, Button } from '@heroui/react'
+import { Checkbox, Tooltip } from '@heroui/react'
+import { RefreshCw } from 'lucide-react'
 import { useWizardStore } from '../../../stores/wizardStore'
 
 interface ToolItem {
@@ -16,27 +17,38 @@ const StepTools: React.FC = () => {
   const { formData, setEnabledTools } = useWizardStore()
   const [tools, setTools] = useState<ToolItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     loadTools()
+    // 监听工具列表更新事件，自动刷新
+    if (window.electronAPI) {
+      const unsubscribe = window.electronAPI.on('workspace:tools-updated', () => {
+        loadTools(true)
+      })
+      return () => { unsubscribe() }
+    }
   }, [])
 
-  const loadTools = async () => {
+  const loadTools = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true)
     try {
       const result = await window.electronAPI.invoke('tool:list-all') as ToolItem[]
-      setTools(result)
-      if (Object.keys(formData.enabledTools).length === 0) {
+      // 只在非刷新模式下保留已有的 enabledTools 选择状态
+      if (!isRefresh && Object.keys(formData.enabledTools).length === 0) {
         const enabled: Record<string, boolean> = {}
         result.forEach(t => { enabled[t.name] = true })
         setEnabledTools(enabled)
       }
+      setTools(result)
     } catch (err) {
       console.error('加载工具列表失败:', err)
     } finally {
       setLoading(false)
+      if (isRefresh) setRefreshing(false)
     }
-  }
+  }, [formData.enabledTools, setEnabledTools])
 
   const grouped = tools.reduce<Record<string, ToolItem[]>>((acc, tool) => {
     if (!acc[tool.category]) acc[tool.category] = []
@@ -61,28 +73,6 @@ const StepTools: React.FC = () => {
     setEnabledTools(newEnabled)
   }
 
-  const handleDebugPrompt = useCallback(async () => {
-    const { formData } = useWizardStore.getState()
-    try {
-      const result = await window.electronAPI.invoke('debug:assemble-prompt', {
-        name: formData.name,
-        identity: formData.persona.identity,
-        expertise: formData.persona.expertise,
-        personality: formData.persona.personality,
-        workflowId: formData.persona.workflowId,
-        enabledTools: formData.enabledTools,
-        behaviorRules: formData.persona.behaviorRules,
-        communicationStyle: formData.persona.communicationStyle,
-        boundaries: formData.persona.boundaries,
-      }) as { success: boolean; prompt: string }
-      if (result.success) {
-        console.log('[调试] 提示词组装结果:\n' + result.prompt)
-      }
-    } catch (err) {
-      console.error('[调试] 提示词组装失败:', err)
-    }
-  }, [])
-
   if (loading) {
     return <div className="text-sm text-gray-400 text-center py-8">加载工具列表...</div>
   }
@@ -102,9 +92,15 @@ const StepTools: React.FC = () => {
           已启用: <strong className="text-gray-700">{enabledCount}</strong>/{totalCount}
         </span>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="ghost" onPress={handleDebugPrompt}>
-            🛠 组装提示词
-          </Button>
+          <button
+            onClick={() => loadTools(true)}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 disabled:opacity-50 transition-colors"
+            title="重新加载工具列表"
+          >
+            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
+            {refreshing ? '刷新中...' : '刷新'}
+          </button>
           <button onClick={toggleAll} className="text-xs text-blue-600 hover:text-blue-700">
             {enabledCount === totalCount ? '取消全选' : '全选'}
           </button>

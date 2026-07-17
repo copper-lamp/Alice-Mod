@@ -22,7 +22,7 @@ import AimView from './AimView'
 const tabs = [
   { key: 'database' as const, label: '资料库' },
   { key: 'memory' as const, label: '记忆' },
-  { key: 'maps' as const, label: '地图路径点' },
+  { key: 'maps' as const, label: '地图索引' },
   { key: 'skill' as const, label: '技能' },
   { key: 'aim' as const, label: '目标任务' },
 ]

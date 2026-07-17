@@ -145,6 +145,10 @@ export class NapCatManager {
     return this.webUiActualPort;
   }
 
+  getOneBotPort(): number {
+    return this.options.oneBotPort || DEFAULT_ONE_BOT_PORT;
+  }
+
   /** 获取 NapCat 安装根目录 */
   getInstallDir(): string {
     return this.options.installDir || path.join(this.options.userDataPath, 'napcat');

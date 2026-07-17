@@ -216,8 +216,14 @@ export const aimApi = {
   get: (id: string) =>
     window.electronAPI?.invoke('aim:get', { id }) as Promise<{ task: any }>,
 
+  create: (params: { type: string; title: string; description: string; items: string[] }) =>
+    window.electronAPI?.invoke('aim:create', params) as Promise<{ task: any; error?: string }>,
+
   update: (params: { id: string; item_id: string; done: boolean }) =>
     window.electronAPI?.invoke('aim:update', params) as Promise<{ task: any }>,
+
+  delete: (id: string) =>
+    window.electronAPI?.invoke('aim:delete', { id }) as Promise<{ success: boolean; error?: string }>,
 }
 
 /** IPC 调用封装 — 知识库（v2.0 新增） */

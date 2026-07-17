@@ -6,7 +6,7 @@
  *
  * v2.0 新增通道：
  *   maps:list / maps:create / maps:update / maps:delete — 地图路径点
- *   aim:list / aim:get / aim:update                    — 目标任务
+ *   aim:list / aim:get / aim:create / aim:update / aim:delete — 目标任务
  *   knowledge:query                                     — 知识库
  */
 
@@ -281,6 +281,72 @@ export function registerMemoryHandlers(): void {
     } catch (err) {
       console.error('[MemoryHandler] aim:update error:', err)
       return { task: null, error: (err as Error).message }
+    }
+  })
+
+  // 创建目标任务
+  ipcMain.handle('aim:create', async (_event, params: {
+    type: string
+    title: string
+    description: string
+    items: string[]
+  }) => {
+    if (!memoryManager) return { task: null, error: 'MemoryManager 未初始化' }
+    try {
+      const db = (memoryManager as any).sqlite?.db
+      if (!db) return { task: null, error: '数据库未初始化' }
+
+      const now = Date.now()
+      const taskId = `aim_${now}_${Math.random().toString(36).slice(2, 8)}`
+
+      db.prepare(
+        'INSERT INTO aim_tasks (id, type, title, description, progress, status, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?, ?)'
+      ).run(taskId, params.type, params.title, params.description, 'active', now, now)
+
+      const insertItem = db.prepare(
+        'INSERT INTO aim_items (id, task_id, content, done, sort_order, created_at) VALUES (?, ?, ?, 0, ?, ?)'
+      )
+      params.items.forEach((content, idx) => {
+        const itemId = `${taskId}_item_${idx}`
+        insertItem.run(itemId, taskId, content, idx, now)
+      })
+
+      const task = db.prepare('SELECT * FROM aim_tasks WHERE id = ?').get(taskId) as any
+      const items = db.prepare('SELECT * FROM aim_items WHERE task_id = ? ORDER BY sort_order ASC').all(taskId) as any[]
+
+      return {
+        task: {
+          id: task.id,
+          type: task.type,
+          title: task.title,
+          description: task.description,
+          items: items.map((i: any) => ({ id: i.id, content: i.content, done: i.done === 1 })),
+          progress: 0,
+          status: 'active',
+          createdAt: task.created_at,
+          updatedAt: task.updated_at,
+        },
+      }
+    } catch (err) {
+      console.error('[MemoryHandler] aim:create error:', err)
+      return { task: null, error: (err as Error).message }
+    }
+  })
+
+  // 删除目标任务
+  ipcMain.handle('aim:delete', async (_event, { id }: { id: string }) => {
+    if (!memoryManager) return { success: false, error: 'MemoryManager 未初始化' }
+    try {
+      const db = (memoryManager as any).sqlite?.db
+      if (!db) return { success: false, error: '数据库未初始化' }
+
+      db.prepare('DELETE FROM aim_items WHERE task_id = ?').run(id)
+      db.prepare('DELETE FROM aim_tasks WHERE id = ?').run(id)
+
+      return { success: true }
+    } catch (err) {
+      console.error('[MemoryHandler] aim:delete error:', err)
+      return { success: false, error: (err as Error).message }
     }
   })
 

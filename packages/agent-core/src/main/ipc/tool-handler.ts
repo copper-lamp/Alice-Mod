@@ -1,8 +1,13 @@
 import { ipcMain } from 'electron'
 import { getWorkspaceManager } from '../workspace'
 import { getDatabaseManager } from '../database'
+import { WIKI_TOOL_SCHEMAS } from '../wiki'
+import { SEARCH_TOOL_SCHEMAS } from '../search'
 import type { ToolInfo } from '../../renderer/src/lib/types'
 import type { ToolSchema } from '@mcagent/shared'
+
+/** AC 内置工具列表（Wiki + 搜索），用于始终注入到工具列表 */
+const BUILTIN_TOOLS: ToolSchema[] = [...WIKI_TOOL_SCHEMAS, ...SEARCH_TOOL_SCHEMAS]
 
 // ════════════════════════════════════════════════════
 // 本地化映射
@@ -53,6 +58,13 @@ const TOOL_LOCALE_MAP: Record<string, { displayName: string; categoryLabel: stri
   // 战斗类
   set_combat_mode: { displayName: '设置战斗模式', categoryLabel: '战斗' },
   stop_combat: { displayName: '停止战斗', categoryLabel: '战斗' },
+  // 内置工具（Wiki）
+  minecraft_wiki_search: { displayName: 'Wiki 搜索', categoryLabel: '知识' },
+  minecraft_wiki_get_page: { displayName: 'Wiki 获取页面', categoryLabel: '知识' },
+  minecraft_wiki_get_section: { displayName: 'Wiki 获取章节', categoryLabel: '知识' },
+  // 内置工具（搜索）
+  web_search: { displayName: '网页搜索', categoryLabel: '知识' },
+  web_fetch: { displayName: '网页抓取', categoryLabel: '知识' },
 }
 
 /** 分类中文映射 */
@@ -69,6 +81,7 @@ const CATEGORY_LABEL_MAP: Record<string, string> = {
   chat: '对话类',
   memory: '记忆类',
   task: '任务类',
+  knowledge: '知识类',
   other: '其他',
 }
 
@@ -118,6 +131,7 @@ function flattenTools(allTools: Map<string, ToolSchema[]>): ToolInfo[] {
 
 /**
  * 从 SQLite 恢复工具列表到内存 ToolRegistry
+ * 始终注入内置工具（Wiki + 搜索），确保即使旧版 SQLite 数据也能返回完整列表
  */
 function restoreFromDb(): ToolSchema[] {
   try {
@@ -128,23 +142,39 @@ function restoreFromDb(): ToolSchema[] {
       tool_json: string
     }>
 
-    if (rows.length === 0) return []
+    // 基础：始终包含内置工具
+    const allSchemas: ToolSchema[] = [...WIKI_TOOL_SCHEMAS, ...SEARCH_TOOL_SCHEMAS]
 
-    const allSchemas: ToolSchema[] = []
+    if (rows.length === 0) return allSchemas
+
     const wm = getWorkspaceManager()
     const toolRegistry = wm.getToolRegistry()
 
     for (const row of rows) {
       const tools = JSON.parse(row.tool_json) as ToolSchema[]
-      allSchemas.push(...tools)
+      // 合并 SQLite 中不在内置工具列表中的工具到 allSchemas
+      for (const tool of tools) {
+        if (!allSchemas.some(t => t.name === tool.name)) {
+          allSchemas.push(tool)
+        }
+      }
       // 恢复 hash 到内存（不触发写入）
       ;(toolRegistry as any).hashes?.set(row.workspace_id, row.tool_hash)
-      ;(toolRegistry as any).registry?.set(row.workspace_id, tools)
+      // 用注入内置工具后的完整列表恢复 registry
+      // 关键修复：确保 registry 中包含内置工具，避免下次 tool:list-all 时遗漏
+      const existingNames = new Set(tools.map(t => t.name))
+      const augmented = [...tools]
+      for (const builtin of BUILTIN_TOOLS) {
+        if (!existingNames.has(builtin.name)) {
+          augmented.push(builtin)
+        }
+      }
+      ;(toolRegistry as any).registry?.set(row.workspace_id, augmented)
     }
 
     return allSchemas
   } catch {
-    return []
+    return [...WIKI_TOOL_SCHEMAS, ...SEARCH_TOOL_SCHEMAS]
   }
 }
 
@@ -158,20 +188,27 @@ export function registerToolHandlers(): void {
     const toolRegistry = wm.getToolRegistry()
     const allTools = toolRegistry.getAll()
 
-    // 分级查询: 1. 内存
-    if (allTools.size > 0) {
+    // 始终注入内置工具（Wiki + 搜索），确保工具列表永不遗漏
+    // 原因：内存 registry 可能来自旧版 SQLite 恢复，其中不包含内置工具
+    allTools.set('__builtin__', BUILTIN_TOOLS)
+
+    // 分级查询: 1. 内存有外部工具时（size > 1 表示除 __builtin__ 外还有外部工具）
+    if (allTools.size > 1) {
       return flattenTools(allTools)
     }
 
-    // 分级查询: 2. SQLite（内存无数据时）
+    // 分级查询: 2. SQLite（内存无外部工具时）
     const schemas = restoreFromDb()
     if (schemas.length > 0) {
-      // 重建 memory Map 并返回
+      // 重建 memory Map 并返回（restoreFromDb 已包含内置工具）
       const restored = new Map<string, ToolSchema[]>()
       restored.set('restored', schemas)
+      // 双重保险：再注入一次内置工具
+      restored.set('__builtin__', BUILTIN_TOOLS)
       return flattenTools(restored)
     }
 
-    return [] as ToolInfo[]
+    // 分级查询: 3. 兜底 — 仅内置工具
+    return flattenTools(allTools)
   })
 }

@@ -102,6 +102,7 @@ public final class BlockController {
             // 从背包查找方块物品
             net.minecraft.world.entity.player.Inventory inventory = bot.getInventory();
             int slot = -1;
+            ItemStack blockStack = null;
             for (int i = 0; i < inventory.getContainerSize(); i++) {
                 ItemStack stack = inventory.getItem(i);
                 if (!stack.isEmpty() && stack.getItem() instanceof BlockItem blockItem) {
@@ -109,12 +110,13 @@ public final class BlockController {
                     String itemDisplayName = blockItem.getBlock().getName().getString().toLowerCase().replace('_', ' ');
                     if (itemDisplayName.contains(blockName.toLowerCase().replace('_', ' '))) {
                         slot = i;
+                        blockStack = stack;
                         break;
                     }
                 }
             }
 
-            if (slot == -1) {
+            if (slot == -1 || blockStack == null) {
                 return new BlockResult(false, "背包中没有找到方块: " + blockName, null);
             }
 
@@ -123,9 +125,15 @@ public final class BlockController {
             if (targetBlock == null) {
                 return new BlockResult(false, "无法找到方块类型: " + blockName, null);
             }
-            
+
             // 直接设置方块（不使用 useOn 避免位置计算问题）
             level.setBlock(pos, targetBlock.defaultBlockState(), 3);
+
+            // 消耗背包中的方块物品（生存模式）
+            blockStack.shrink(1);
+            if (blockStack.isEmpty()) {
+                inventory.setItem(slot, ItemStack.EMPTY);
+            }
 
             Map<String, Object> data = new HashMap<>();
             data.put("x", x);

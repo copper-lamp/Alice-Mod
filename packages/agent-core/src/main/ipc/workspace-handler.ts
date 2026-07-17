@@ -444,6 +444,17 @@ export function registerWorkspaceHandlers(mainWindow?: BrowserWindow): void {
       })
     }
   })
+
+  manager.on(WorkspaceEvent.ToolsUpdated, (event) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('workspace:tools-updated', {
+        workspaceId: event.workspaceId,
+        instanceId: event.instanceId,
+        toolCount: event.metadata?.toolCount,
+        timestamp: event.timestamp,
+      })
+    }
+  })
 }
 
 // ── 导出实例管理器（供 AgentFileExporter 等模块使用） ──

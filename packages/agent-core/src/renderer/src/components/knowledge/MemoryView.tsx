@@ -3,6 +3,8 @@
  *
  * 记忆类型简化为 3 种：event（事件）/character（人物）/experience（经验）
  * content 为纯文本字符串
+ *
+ * 修复：为 tags/content 添加安全默认值，防止崩溃
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
@@ -41,7 +43,18 @@ const MemoryView: React.FC = () => {
         type: filterType || undefined,
         limit: 50,
       })
-      setMemories(result.memories ?? [])
+      // 安全处理：确保每个记忆都有 tags 和 content 默认值
+      const safe = (result.memories ?? []).map((m: any) => ({
+        id: m.id ?? '',
+        type: m.type ?? '',
+        name: (m.content as any)?.name as string ?? m.name ?? '',
+        content: (m.content as any)?.text as string ?? m.content ?? '',
+        tags: Array.isArray(m.tags) ? m.tags : [],
+        importance: typeof m.importance === 'number' ? m.importance : 5,
+        createdAt: m.createdAt ?? Date.now(),
+        updatedAt: m.updatedAt ?? Date.now(),
+      }))
+      setMemories(safe)
     } catch (err) {
       setError(`加载失败: ${(err as Error).message}`)
     } finally {
@@ -56,6 +69,7 @@ const MemoryView: React.FC = () => {
   const handleDelete = async (id: string) => {
     try {
       await memoryApi.memoryEdit({ action: 'delete', id })
+      if (selectedMemory?.id === id) setSelectedMemory(null)
       await loadMemories()
     } catch (err) {
       setError(`删除失败: ${(err as Error).message}`)
@@ -134,7 +148,7 @@ const MemoryView: React.FC = () => {
                   删除
                 </button>
               </div>
-              {selectedMemory?.id === m.id && (
+              {selectedMemory?.id === m.id && m.content && (
                 <div className="mt-2 text-sm text-gray-600 whitespace-pre-wrap">
                   {m.content}
                 </div>

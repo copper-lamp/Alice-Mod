@@ -233,6 +233,24 @@ export class DatabaseManager implements IDatabaseManager {
       console.warn('[DatabaseManager] 创建 QQ 绑定索引失败:', (err as Error).message);
     }
 
+    // ── V25: model_configs 表（模型配置持久化） ──
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS model_configs (
+        id TEXT PRIMARY KEY,
+        provider_id TEXT NOT NULL,
+        provider_name TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        api_key TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        context_window INTEGER NOT NULL DEFAULT 4096,
+        supports_function_calling INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_model_configs_provider
+        ON model_configs(provider_id);
+    `);
+
     // ── V22: 元编排层 — 执行计划文档 + 任务记忆 ──
     // PlanStore / TaskMemoryStore 构造时也会 initSchema，这里统一在启动时创建
     // 避免运行时 DDL 与并发写入冲突。

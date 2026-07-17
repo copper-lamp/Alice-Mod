@@ -203,9 +203,9 @@ const WorkspaceDropdown: React.FC = () => {
                             </span>
                           </div>
 
-                          {/* 操作图标（hover 显示） */}
+                          {/* 操作图标（始终可见，hover 时加深） */}
                           <div
-                            className="flex items-center gap-0.5 opacity-0 group-hover/item:opacity-100 transition-opacity flex-shrink-0"
+                            className="flex items-center gap-0.5 opacity-60 hover:opacity-100 transition-opacity flex-shrink-0"
                             onClick={e => e.stopPropagation()}
                           >
                             <button
