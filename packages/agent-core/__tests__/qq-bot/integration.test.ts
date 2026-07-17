@@ -139,7 +139,11 @@ describe('QQ 机器人集成测试', () => {
   // ── 配置验证 ──
 
   it('默认配置应有效', () => {
-    const errors = validateConfig(DEFAULT_QQ_BOT_CONFIG);
+    const config = {
+      ...DEFAULT_QQ_BOT_CONFIG,
+      docker: { account: '123456', autoStart: true, autoUpdate: false },
+    };
+    const errors = validateConfig(config);
     expect(errors).toHaveLength(0);
   });
 

@@ -244,16 +244,49 @@ export interface BridgeConfig {
 // 10. 全局配置
 // ════════════════════════════════════════════════════════════════
 
+/** Docker 模式配置（替代 managed 托管模式） */
+export interface DockerConfig {
+  /** QQ 号 */
+  account: string;
+  /** Docker 镜像，默认 ghcr.io/napneko/napcat:latest */
+  image?: string;
+  /** 镜像版本标签（可选） */
+  version?: string;
+  /** 宿主机 OneBot 端口（默认自动分配） */
+  oneBotPort?: number;
+  /** 宿主机 WebUI 端口（默认自动分配） */
+  webUiPort?: number;
+  /** WebUI Token */
+  webUiToken?: string;
+  /** OneBot 鉴权 Token */
+  accessToken?: string;
+  /** CPU 限制，如 "1.5" */
+  cpuLimit?: string;
+  /** 内存限制，如 "512M" */
+  memoryLimit?: string;
+  /** 持久化数据目录（默认 Alice/qq-bot/napcat-data/） */
+  dataDir?: string;
+  /** 自动启动 */
+  autoStart: boolean;
+  /** 自动更新镜像 */
+  autoUpdate: boolean;
+}
+
 /** QQ 机器人全局配置 */
 export interface QQBotConfig {
   enabled: boolean;
-  mode: 'managed' | 'external';
+  /** @deprecated 使用 'docker' 替代 'managed' */
+  mode: 'docker' | 'managed' | 'external';
 
+  /** @deprecated 使用 docker 配置替代 */
   managed?: {
     account: string;
     autoStart: boolean;
     autoUpdate: boolean;
   };
+
+  /** Docker 容器模式配置（替代 managed 托管模式） */
+  docker?: DockerConfig;
 
   external?: {
     wsHost: string;

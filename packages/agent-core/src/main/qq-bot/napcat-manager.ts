@@ -1,8 +1,13 @@
 /**
+ * @deprecated 使用 DockerContainerManager 替代
+ *
  * NapCatManager — NapCat 托管进程管理器
  *
  * 负责 NapCat 子进程的下载、配置、启动、停止、健康监控和崩溃恢复。
  * 通过 NapCat 内置 WebUI API 获取真实二维码和登录状态。
+ *
+ * 该模块已废弃，请使用 DockerContainerManager（./docker-container-manager.ts）替代。
+ * Docker 方案提供跨平台支持、更强稳定性、天然多账号隔离，无需手动管理进程。
  */
 
 import * as fs from 'fs';
@@ -1016,23 +1021,16 @@ export class NapCatManager {
 
     const isBatchFile = execPath.toLowerCase().endsWith('.bat');
     const cwd = this.options.workingDir || napcatDir;
+    const env = {
+      ...process.env,
+      NAPCAT_WEBUI_SECRET_KEY: this.options.webUiToken,
+      NAPCAT_QUICK_ACCOUNT: this.options.account || '',
+    };
     const proc = isBatchFile
-      ? spawn('cmd.exe', ['/c', `chcp 65001 > NUL & "${execPath}" ${args.join(' ')}`], {
-          cwd,
-          env: {
-            ...process.env,
-            NAPCAT_WEBUI_SECRET_KEY: this.options.webUiToken,
-            NAPCAT_QUICK_ACCOUNT: this.options.account || '',
-          },
-        })
-      : spawn(execPath, args, {
-          cwd,
-          env: {
-            ...process.env,
-            NAPCAT_WEBUI_SECRET_KEY: this.options.webUiToken,
-            NAPCAT_QUICK_ACCOUNT: this.options.account || '',
-          },
-        });
+      ? // 使用 shell: true 让 Windows 自动用 cmd.exe 运行 .bat 文件
+        // 避免路径中的 @ 等特殊字符被 cmd.exe /c 解析为命令修饰符
+        spawn(`"${execPath}"`, args, { cwd, shell: true, env })
+      : spawn(execPath, args, { cwd, env });
 
     this.process = proc;
 

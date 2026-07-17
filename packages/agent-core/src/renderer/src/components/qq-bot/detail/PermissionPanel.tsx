@@ -100,6 +100,34 @@ export const PermissionPanel: React.FC<Props> = ({ account }) => {
         </Switch>
       </div>
 
+      {/* ── 数据存储目录 ── */}
+      <div className="pt-4 border-t border-gray-100">
+        <label className="text-sm font-medium text-gray-700 block mb-1">数据存储目录</label>
+        <p className="text-xs text-gray-400 mb-2">
+          NapCat 登录态数据存储位置（含 QQ 聊天缓存、图片等），不占 C 盘空间
+        </p>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 text-sm text-gray-600 truncate font-mono bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
+            {account.config.dataDir || '默认位置（软件安装目录/Alice/qq-bot/napcat-data/）'}
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            onPress={async () => {
+              const dir = await window.electronAPI.invoke('qq-bot:choose-data-dir') as string | null
+              if (dir) {
+                await saveConfig(account.id, {
+                  ...account.config,
+                  dataDir: dir,
+                })
+              }
+            }}
+          >
+            选择目录
+          </Button>
+        </div>
+      </div>
+
       <div className="pt-2">
         <Button
           size="sm"

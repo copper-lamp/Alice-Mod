@@ -6,10 +6,12 @@
   "main": "./dist/main/index.js",
   "scripts": {
     "dev": "chcp 65001 > NUL & electron-vite dev",
+    "predev": "node scripts/ensure-native.cjs electron",
     "build": "electron-vite build",
     "preview": "chcp 65001 > NUL & electron-vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "pretest": "node scripts/ensure-native.cjs node",
     "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "rebuild:node": "npm rebuild better-sqlite3"
   },
@@ -20,6 +22,7 @@
     "@types/node-cron": "^3.0.11",
     "better-sqlite3": "^12.11.1",
     "chromadb": "^3.5.0",
+    "dockerode": "^5.0.1",
     "lucide-react": "^1.24.0",
     "node-cron": "^4.6.0",
     "qrcode": "^1.5.4",
@@ -30,10 +33,12 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.2.9",
     "@tailwindcss/vite": "^4.3.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/dockerode": "^4.0.1",
     "@types/node": "^22.0.0",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
@@ -42,7 +47,6 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^37.0.0",
-    "@electron/rebuild": "^3.2.9",
     "electron-vite": "^5.0.0",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.2",

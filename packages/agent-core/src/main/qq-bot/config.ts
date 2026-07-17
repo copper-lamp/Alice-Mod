@@ -8,7 +8,13 @@ import { QQPermission, DEFAULT_SUB_AGENT_CONFIG } from './types';
 /** 默认 QQ 机器人配置 */
 export const DEFAULT_QQ_BOT_CONFIG: QQBotConfig = {
   enabled: true,
-  mode: 'external',
+  mode: 'docker',
+
+  docker: {
+    account: '',
+    autoStart: false,
+    autoUpdate: false,
+  },
 
   external: {
     wsHost: '127.0.0.1',
@@ -41,9 +47,11 @@ export function buildWsUrl(config: QQBotConfig): string {
     const { wsHost, wsPort, wsProtocol } = config.external;
     return `${wsProtocol}://${wsHost}:${wsPort}`;
   }
-  if (config.mode === 'managed' && config.managed) {
-    return 'ws://127.0.0.1:3001';
+  if (config.mode === 'docker' && config.docker) {
+    const port = config.docker.oneBotPort ?? 3001;
+    return `ws://127.0.0.1:${port}`;
   }
+  // 兼容旧的 managed 模式
   return 'ws://127.0.0.1:3001';
 }
 
@@ -53,7 +61,9 @@ export function buildOneBotConfig(config: QQBotConfig): {
   accessToken?: string;
 } {
   const wsUrl = buildWsUrl(config);
-  const accessToken = config.external?.accessToken;
+  const accessToken = config.mode === 'docker'
+    ? config.docker?.accessToken
+    : config.external?.accessToken;
   return { wsUrl, accessToken: accessToken || undefined };
 }
 
@@ -70,10 +80,14 @@ export function validateConfig(config: QQBotConfig): string[] {
     }
   }
 
-  if (config.mode === 'managed') {
-    if (!config.managed?.account) {
-      errors.push('托管模式下 QQ 号不能为空');
+  if (config.mode === 'docker') {
+    if (!config.docker?.account) {
+      errors.push('Docker 模式下 QQ 号不能为空');
     }
+  }
+
+  if (config.mode === 'managed') {
+    errors.push('managed 模式已废弃，请使用 docker 模式');
   }
 
   if (config.authorization.cooldownSeconds < 1) {

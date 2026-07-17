@@ -1,11 +1,20 @@
-import React, { useEffect, useState, useRef } from 'react'
-import { Button, Tabs, ProgressBar } from '@heroui/react'
+import React, { useEffect, useState } from 'react'
+import { Button, ProgressBar } from '@heroui/react'
 
 interface InstallStatus {
   installed: boolean
   installDir: string
-  executablePath?: string
   defaultInstallDir: string
+  dockerVersion?: string
+  isDockerInstalled?: boolean
+  error?: string
+}
+
+interface DockerStatus {
+  available: boolean
+  version?: string
+  isDockerInstalled?: boolean
+  error?: string
 }
 
 interface InstallProgress {
@@ -19,102 +28,54 @@ interface Props {
 }
 
 const STAGE_LABELS: Record<string, string> = {
-  testing_mirrors: '测试下载通道',
-  downloading: '下载中',
-  extracting: '解压中',
+  checking_docker: '检查 Docker 环境',
+  pulling_image: '拉取镜像中',
   done: '安装完成',
 }
 
 export const NapCatSetupWizard: React.FC<Props> = ({ onComplete }) => {
-  const [status, setStatus] = useState<InstallStatus | null>(null)
-  const [mode, setMode] = useState<'auto' | 'manual'>('auto')
-  const [installDir, setInstallDir] = useState('')
+  const [dockerStatus, setDockerStatus] = useState<DockerStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [installProgress, setInstallProgress] = useState<InstallProgress | null>(null)
-  const cleanupRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
-    loadStatus()
-    return () => {
-      cleanupRef.current?.()
-    }
+    checkDockerStatus()
   }, [])
 
-  useEffect(() => {
-    if (status) {
-      setInstallDir(status.defaultInstallDir)
-    }
-  }, [status])
-
-  const loadStatus = async () => {
+  const checkDockerStatus = async () => {
     try {
       const result = await window.electronAPI.invoke('qq-bot:get-install-status') as InstallStatus
-      setStatus(result)
-      setInstallDir(result.defaultInstallDir)
-    } catch {
-      setError('获取安装状态失败')
-    }
-  }
-
-  const chooseDir = async () => {
-    setError(null)
-    try {
-      const dir = await window.electronAPI.invoke('qq-bot:choose-install-dir') as string | null
-      if (dir) {
-        setInstallDir(dir)
-      }
+      setDockerStatus({
+        available: result.installed,
+        version: result.dockerVersion,
+        isDockerInstalled: result.isDockerInstalled,
+        error: result.error,
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : '选择目录失败')
+      setDockerStatus({ available: false, error: '获取安装状态失败' })
     }
   }
 
-  const installNapCat = async () => {
+  const pullImage = async () => {
     setLoading(true)
     setError(null)
-    setInstallProgress({ percent: 0, stage: 'testing_mirrors', message: '正在测试下载通道...' })
-
-    // 监听进度
-    const cleanup = window.electronAPI.on('qq-bot:install-progress', (progress: unknown) => {
-      setInstallProgress(progress as InstallProgress)
-    })
-    cleanupRef.current = cleanup
+    setInstallProgress({ percent: 0, stage: 'checking_docker', message: '正在检查 Docker 环境...' })
 
     try {
-      const result = await window.electronAPI.invoke('qq-bot:install-napcat', installDir) as { success: boolean; installDir?: string; error?: string }
+      const result = await window.electronAPI.invoke('qq-bot:install-napcat') as { success: boolean; message?: string; error?: string }
       if (result.success) {
-        setInstallProgress({ percent: 100, stage: 'done', message: '安装成功' })
+        setInstallProgress({ percent: 100, stage: 'done', message: 'NapCat 镜像已就绪' })
         setTimeout(() => {
-          loadStatus()
           onComplete()
         }, 800)
       } else {
-        setError(result.error || '安装失败')
+        setError(result.error || '拉取镜像失败')
         setInstallProgress(null)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '安装失败')
+      setError(err instanceof Error ? err.message : '拉取镜像失败')
       setInstallProgress(null)
-    } finally {
-      setLoading(false)
-      cleanupRef.current?.()
-      cleanupRef.current = null
-    }
-  }
-
-  const setManualDir = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const result = await window.electronAPI.invoke('qq-bot:set-napcat-dir', installDir) as { success: boolean; error?: string }
-      if (result.success) {
-        await loadStatus()
-        onComplete()
-      } else {
-        setError(result.error || '目录校验失败')
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '目录校验失败')
     } finally {
       setLoading(false)
     }
@@ -126,6 +87,96 @@ export const NapCatSetupWizard: React.FC<Props> = ({ onComplete }) => {
     return 'success' as const
   }
 
+  // Docker 未安装或未运行 → 显示安装/启动指引
+  if (dockerStatus && !dockerStatus.available) {
+    const isInstalled = dockerStatus.isDockerInstalled === true
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-white rounded-xl shadow-sm border border-gray-200 p-8 overflow-hidden">
+        <div className="w-20 h-20 rounded-full bg-red-50 flex items-center justify-center mb-5">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-red-500">
+            <path d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+        </div>
+
+        <h1 className="text-xl font-semibold text-gray-800 mb-2">
+          {isInstalled ? 'Docker 未运行' : '需要 Docker 环境'}
+        </h1>
+
+        {isInstalled ? (
+          <p className="text-sm text-gray-500 mb-6 text-center max-w-md">
+            已检测到 Docker Desktop，但守护进程未运行。
+            <br />
+            请启动 Docker Desktop 后再重新检测。
+          </p>
+        ) : (
+          <p className="text-sm text-gray-500 mb-6 text-center max-w-md">
+            NapCat Docker 方案需要 Docker Desktop 才能运行。
+            <br />
+            请先安装 Docker Desktop 后再继续。
+          </p>
+        )}
+
+        {dockerStatus.error && (
+          <div className="w-full max-w-lg text-sm text-red-500 bg-red-50 rounded-lg p-3 border border-red-100 mb-4">
+            {dockerStatus.error}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3 w-64">
+          {isInstalled ? (
+            <Button
+              size="lg"
+              variant="secondary"
+              onPress={() => {
+                setLoading(true)
+                checkDockerStatus().finally(() => setLoading(false))
+              }}
+              isPending={loading}
+            >
+              启动 Docker 后，点击重新检测
+            </Button>
+          ) : (
+            <>
+              <Button
+                size="lg"
+                onPress={() => window.open('https://www.docker.com/products/docker-desktop/')}
+              >
+                下载 Docker Desktop
+              </Button>
+              <Button
+                size="lg"
+                variant="secondary"
+                onPress={() => {
+                  setLoading(true)
+                  checkDockerStatus().finally(() => setLoading(false))
+                }}
+                isPending={loading}
+              >
+                我已安装，重新检测
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // 检查中
+  if (!dockerStatus) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-white rounded-xl shadow-sm border border-gray-200">
+        <div className="flex flex-col items-center gap-3">
+          <svg className="animate-spin" width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="text-gray-200" />
+            <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="4" className="text-blue-500" strokeLinecap="round" />
+          </svg>
+          <span className="text-sm text-gray-400">正在检查 Docker 环境...</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Docker 已安装 → 显示拉取向导
   return (
     <div className="flex-1 flex flex-col items-center justify-center bg-white rounded-xl shadow-sm border border-gray-200 p-8 overflow-hidden">
       <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-5">
@@ -136,14 +187,16 @@ export const NapCatSetupWizard: React.FC<Props> = ({ onComplete }) => {
         </svg>
       </div>
 
-      <h1 className="text-xl font-semibold text-gray-800 mb-2">NapCat 安装向导</h1>
+      <h1 className="text-xl font-semibold text-gray-800 mb-2">NapCat Docker 安装向导</h1>
       <p className="text-sm text-gray-500 mb-6 text-center max-w-md">
-        首次使用 QQ 机器人前，需要先安装 NapCat。你可以选择自动下载安装，或手动指定已解压的 NapCat 目录。
+        NapCat 将以 Docker 容器方式运行，无需手动下载安装包。
+        <br />
+        点击下方按钮拉取 NapCat 镜像即可开始使用。
       </p>
 
       <div className="w-full max-w-lg">
         {installProgress ? (
-          // 安装进度
+          // 拉取进度
           <div className="flex flex-col items-center gap-4 py-4">
             <ProgressBar
               value={installProgress.percent}
@@ -162,74 +215,37 @@ export const NapCatSetupWizard: React.FC<Props> = ({ onComplete }) => {
             <span className="text-xs text-gray-400">{installProgress.message}</span>
           </div>
         ) : (
-          <Tabs selectedKey={mode} onSelectionChange={(k) => { if (k) setMode(k as 'auto' | 'manual') }}>
-            <Tabs.List className="mb-4">
-              <Tabs.Tab id="auto">自动下载安装</Tabs.Tab>
-              <Tabs.Tab id="manual">手动指定目录</Tabs.Tab>
-            </Tabs.List>
-
-            <Tabs.Panel id="auto">
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-full bg-gray-50 rounded-lg p-3 border border-gray-200">
-                  <div className="text-xs text-gray-500 mb-1">安装位置</div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 text-sm text-gray-700 truncate font-mono">{installDir}</div>
-                    <Button size="sm" variant="secondary" onPress={chooseDir}>更改</Button>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1">推荐选择非系统盘目录，避免占用 C 盘空间</p>
-                </div>
-
-                <Button
-                  size="lg"
-                  isPending={loading}
-                  onPress={installNapCat}
-                  className="w-64"
-                >
-                  {loading ? '正在下载安装...' : '开始安装 NapCat'}
-                </Button>
-
-                {error && (
-                  <div className="w-full text-sm text-red-500 bg-red-50 rounded-lg p-3 border border-red-100">
-                    {error}
-                  </div>
-                )}
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-full bg-gray-50 rounded-lg p-3 border border-gray-200">
+              <div className="flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green-500 shrink-0">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+                <span className="text-sm text-gray-700">Docker 已就绪</span>
               </div>
-            </Tabs.Panel>
-
-            <Tabs.Panel id="manual">
-              <div className="flex flex-col items-center gap-4">
-                <div className="w-full bg-gray-50 rounded-lg p-3 border border-gray-200">
-                  <div className="text-xs text-gray-500 mb-1">NapCat 目录</div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 text-sm text-gray-700 truncate font-mono">{installDir || '未选择'}</div>
-                    <Button size="sm" variant="secondary" onPress={chooseDir}>选择目录</Button>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1">需要包含 napcat.exe 或 launcher.bat 等可执行文件</p>
+              {dockerStatus.version && (
+                <div className="text-xs text-gray-400 mt-1 ml-6">
+                  Docker Engine: v{dockerStatus.version}
                 </div>
+              )}
+            </div>
 
-                <Button
-                  size="lg"
-                  isPending={loading}
-                  isDisabled={!installDir}
-                  onPress={setManualDir}
-                  className="w-64"
-                >
-                  {loading ? '校验中...' : '确认使用该目录'}
-                </Button>
+            <Button
+              size="lg"
+              isPending={loading}
+              onPress={pullImage}
+              className="w-64"
+            >
+              {loading ? '正在拉取镜像...' : '拉取 NapCat 镜像'}
+            </Button>
 
-                {error && (
-                  <div className="w-full text-sm text-red-500 bg-red-50 rounded-lg p-3 border border-red-100">
-                    {error}
-                  </div>
-                )}
+            {error && (
+              <div className="w-full text-sm text-red-500 bg-red-50 rounded-lg p-3 border border-red-100">
+                {error}
               </div>
-            </Tabs.Panel>
-          </Tabs>
+            )}
+          </div>
         )}
-      </div>
-
-      <div className="mt-6 text-xs text-gray-400">
-        默认安装位置：{status?.defaultInstallDir ?? '加载中...'}
       </div>
     </div>
   )

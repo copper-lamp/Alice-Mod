@@ -49,6 +49,8 @@ export interface QQAccountConfig {
     allowPrivate: boolean
   }
   bridges: BridgeConfig[]
+  /** NapCat 数据持久化目录（Docker 容器挂载路径） */
+  dataDir?: string
 }
 
 /** QQ 账号 */
