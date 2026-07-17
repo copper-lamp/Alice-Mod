@@ -1,9 +1,13 @@
 /**
- * SkillsView — 技能管理 UI（v2.0 重构）
+ * SkillsView — 技能管理 UI（v2.1 重构：表格+开关）
  *
- * 技能格式：名称、描述、内容（纯文本 skill 标准）。
- * Agent 加载技能时会加载 content 内容。
+ * v2.1 变更：
+ * - 从列表改为表格布局，每行包含技能名称、描述、阶段、启用开关
+ * - 开关按钮可逐个启用/禁用技能
+ * - 保留新建/编辑/删除功能
+ *
  * 数据通过 memoryApi 连接后端（存储为 type='skill' 的记忆）。
+ * 技能内容的 content.enabled 字段控制是否启用（默认 true）。
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
@@ -14,6 +18,7 @@ interface SkillItem {
   name: string
   description: string
   content: string
+  enabled: boolean
   createdAt: number
   updatedAt: number
 }
@@ -45,6 +50,7 @@ const SkillsView: React.FC = () => {
           name: (c.name as string) ?? '',
           description: (c.description as string) ?? '',
           content: (c.text as string) ?? '',
+          enabled: (c.enabled as boolean) ?? true,
           createdAt: m.createdAt ?? Date.now(),
           updatedAt: m.updatedAt ?? Date.now(),
         }
@@ -81,8 +87,15 @@ const SkillsView: React.FC = () => {
     setSaving(true)
     try {
       if (editingId) {
+        // 更新时保留现有的 enabled 状态
+        const existing = skills.find(s => s.id === editingId)
         const result = await memoryApi.update(editingId, {
-          content: { name: form.name.trim(), description: form.description.trim(), text: form.content },
+          content: {
+            name: form.name.trim(),
+            description: form.description.trim(),
+            text: form.content,
+            enabled: existing?.enabled ?? true,
+          },
         } as Record<string, unknown>)
         if (result.success) {
           notify('success', '技能更新成功')
@@ -93,7 +106,12 @@ const SkillsView: React.FC = () => {
         const result = await memoryApi.store({
           type: 'skill',
           branch: 'knowledge',
-          content: { name: form.name.trim(), description: form.description.trim(), text: form.content },
+          content: {
+            name: form.name.trim(),
+            description: form.description.trim(),
+            text: form.content,
+            enabled: true,
+          },
           tags: [form.name.trim()],
           importance: 5,
         })
@@ -127,6 +145,29 @@ const SkillsView: React.FC = () => {
     }
   }
 
+  /** 切换技能的启用/禁用状态 */
+  const toggleEnabled = async (skill: SkillItem) => {
+    const newEnabled = !skill.enabled
+    try {
+      const result = await memoryApi.update(skill.id, {
+        content: {
+          name: skill.name,
+          description: skill.description,
+          text: skill.content,
+          enabled: newEnabled,
+        },
+      } as Record<string, unknown>)
+      if (result.success) {
+        setSkills(prev => prev.map(s => s.id === skill.id ? { ...s, enabled: newEnabled } : s))
+        notify('success', `${skill.name} 已${newEnabled ? '启用' : '禁用'}`)
+      } else {
+        notify('error', result.error || '更新失败')
+      }
+    } catch (err) {
+      notify('error', `更新失败: ${(err as Error).message}`)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* 通知 */}
@@ -146,6 +187,12 @@ const SkillsView: React.FC = () => {
         </button>
       </div>
 
+      {/* 说明 */}
+      <div className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2">
+        通过开关启用/禁用技能。启用的技能将注入到智能体的系统提示词中。
+        如需个别智能体单独配置，请在智能体配置页的"技能配置"中覆盖。
+      </div>
+
       {/* 错误提示 */}
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded text-sm">
@@ -154,34 +201,68 @@ const SkillsView: React.FC = () => {
         </div>
       )}
 
-      {/* 技能列表 */}
+      {/* 技能表格 */}
       {loading ? (
         <div className="text-center py-8 text-gray-400">加载中...</div>
       ) : skills.length === 0 ? (
-        <div className="text-center py-8 text-gray-400">暂无技能</div>
+        <div className="text-center py-8 text-gray-400">暂无技能，点击"新建技能"开始</div>
       ) : (
-        <div className="space-y-2">
-          {skills.map(skill => (
-            <div key={skill.id} className="border rounded-lg p-4 hover:shadow-sm transition-shadow">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <span className="font-medium text-sm text-gray-800">{skill.name}</span>
-                  {skill.description && (
-                    <span className="text-xs text-gray-400 ml-2">{skill.description}</span>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button className="text-xs text-blue-500 hover:text-blue-700" onClick={() => openEdit(skill)}>编辑</button>
-                  <button className="text-xs text-red-500 hover:text-red-700" onClick={() => handleDelete(skill.id)}>删除</button>
-                </div>
-              </div>
-              {skill.content && (
-                <div className="text-xs text-gray-500 bg-gray-50 rounded p-2 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
-                  {skill.content}
-                </div>
-              )}
-            </div>
-          ))}
+        <div className="overflow-x-auto border border-gray-200 rounded-lg">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 w-16">启用</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">名称</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">描述</th>
+                <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500 w-28">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {skills.map((skill, idx) => (
+                <tr key={skill.id} className={`border-b border-gray-100 hover:bg-gray-50 ${idx % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={skill.enabled}
+                      onClick={() => toggleEnabled(skill)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        skill.enabled ? 'bg-blue-500' : 'bg-gray-200'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
+                          skill.enabled ? 'translate-x-4' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-gray-800">{skill.name}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-gray-500 truncate max-w-xs">{skill.description || '-'}</div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        className="text-xs text-blue-500 hover:text-blue-700"
+                        onClick={() => openEdit(skill)}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        className="text-xs text-red-500 hover:text-red-700"
+                        onClick={() => handleDelete(skill.id)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

@@ -166,8 +166,20 @@ export interface AgentConfig {
   isMain?: boolean
   /** V20：agent 所属 workspace（默认 '' 表示全局 / 兼容存量） */
   workspaceId?: string
+  /** V26：预编译的完整系统提示词文本，创建/更新时由 PromptCompiler 生成 */
+  compiledPrompt?: string
+  /** V27：技能配置（启用/禁用列表） */
+  skills?: AgentSkillConfig
   createdAt?: number
   updatedAt?: number
+}
+
+/** V27：技能配置 */
+export interface AgentSkillConfig {
+  /** 启用的技能名称列表（空 = 使用全局默认） */
+  enabledSkills?: string[]
+  /** 禁用的技能名称列表 */
+  disabledSkills?: string[]
 }
 
 /** 工具配置 */
@@ -180,6 +192,8 @@ export interface QQBinding {
   enabled: boolean
   accountId?: string
   groupIds?: string[]
+  /** V27：仅处理 @ 机器人的消息（过滤非 @ 消息） */
+  mentionOnly?: boolean
 }
 
 /** 模型配置（UI 管理用） */

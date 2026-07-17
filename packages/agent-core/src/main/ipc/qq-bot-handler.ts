@@ -244,7 +244,11 @@ function getOrCreateNapcatContainer(
   if (existing) return existing.manager
 
   const ports = assignPorts(account)
-  const installDir = account.config.dataDir || path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-install')
+
+  // 获取自定义安装目录：优先使用账号配置 dataDir，其次 data.meta 中保存的路径
+  const data = loadAccounts()
+  const customInstallDir = data.meta?.customInstallDir as string | undefined
+  const installDir = account.config.dataDir || customInstallDir || path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-install')
   const userDataPath = account.config.dataDir || path.join(process.cwd(), 'Alice', 'qq-bot', 'napcat-data', account.id.slice(0, 8))
 
   const manager = new NapCatManager({
@@ -264,12 +268,11 @@ function getOrCreateNapcatContainer(
   // 持久化端口
   account.config.assignedPort = ports.oneBot
   account.config.assignedWebUiPort = ports.webUi
-  const data = loadAccounts()
   const acc = data.accounts.find(a => a.id === account.id)
   if (acc) {
     acc.config.assignedPort = ports.oneBot
     acc.config.assignedWebUiPort = ports.webUi
-    saveAccounts(data.accounts, data.order)
+    saveAccounts(data.accounts, data.order, data.meta)
   }
 
   napcatInstances.set(account.id, { qqNumber: account.qqNumber, manager })
@@ -466,6 +469,22 @@ async function disconnectAllManagedClients(): Promise<void> {
 
 async function ensureManagedConnection(account: QQAccount): Promise<void> {
   if (account.config.connectionType !== 'qr') return
+
+  // ⚡ 同步 data.meta.deploymentMode 到账号配置
+  // 修复：如果用户通过桌面版安装（data.meta.deploymentMode === 'desktop'），
+  // 但账号因历史 bug 导致 deploymentMode 为 'docker' 或未设置，纠正为 'desktop'
+  if (account.config.deploymentMode !== 'desktop') {
+    const data = loadAccounts()
+    if (data.meta?.deploymentMode === 'desktop') {
+      console.log(`[QQBot] 纠正账号 ${account.qqNumber} deploymentMode: ${account.config.deploymentMode} → desktop`)
+      account.config.deploymentMode = 'desktop'
+      const acc = data.accounts.find(a => a.id === account.id)
+      if (acc) {
+        acc.config.deploymentMode = 'desktop'
+        saveAccounts(data.accounts, data.order, data.meta)
+      }
+    }
+  }
 
   // 🔒 并发锁：React StrictMode 双渲染可能导致重复调用
   if (pendingAccountConnections.has(account.id)) {
@@ -1080,6 +1099,34 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
   ipcMain.handle('qq-bot:clear-logs', async (_, accountId: string) => {
     saveLogs(accountId, [])
     return { success: true }
+  })
+
+  // 获取群列表
+  ipcMain.handle('qq-bot:get-group-list', async (_, accountId: string) => {
+    const client = activeClients.get(accountId)
+    if (!client) {
+      return { success: false, error: '账号未连接' }
+    }
+    try {
+      const groups = await client.getGroupList()
+      return { success: true, groups }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '获取群列表失败' }
+    }
+  })
+
+  // 获取群成员列表
+  ipcMain.handle('qq-bot:get-group-member-list', async (_, accountId: string, groupId: string) => {
+    const client = activeClients.get(accountId)
+    if (!client) {
+      return { success: false, error: '账号未连接' }
+    }
+    try {
+      const members = await client.getGroupMemberList(groupId)
+      return { success: true, members }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '获取群成员列表失败' }
+    }
   })
 }
 

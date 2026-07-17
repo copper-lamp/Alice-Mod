@@ -49,6 +49,7 @@ export type TriggerRuleType =
   | 'private_msg'
   | 'cron'
   | 'interval'
+  | 'random_window'
   | 'composite'
   | 'always';
 

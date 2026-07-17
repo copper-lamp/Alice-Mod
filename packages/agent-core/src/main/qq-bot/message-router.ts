@@ -60,6 +60,11 @@ export async function routeQQMessageToAgent(
     }
   }
 
+  // 5. V27: mentionOnly 模式过滤 — 仅处理 @ 机器人的消息
+  if (config.qqBinding.mentionOnly && !isAtBot(msg)) {
+    return false
+  }
+
   // 5. 获取 MainAgent 实例
   const workspaceId = config.workspaceId ?? ''
   const agent = await registry.get(workspaceId, boundAgent.id)
@@ -127,6 +132,16 @@ async function findBoundAgent(
     console.warn(`[MessageRouter] 查找绑定 Agent 失败:`, err)
   }
   return null
+}
+
+/**
+ * 检查消息是否 @ 了机器人
+ * 检测消息段中是否有 type='at' 的段
+ */
+function isAtBot(msg: QQMessage): boolean {
+  return msg.segments?.some(
+    seg => seg.type === 'at' && seg.data?.qq === 'all',
+  ) ?? false
 }
 
 /**

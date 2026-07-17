@@ -1,10 +1,12 @@
 import React from 'react'
-import { Checkbox, Select, Label, ListBox } from '@heroui/react'
+import { Select, ListBox } from '@heroui/react'
+import { useQQBotStore } from '../../../stores/qqBotStore'
 
 interface QQBinding {
   enabled: boolean
   accountId?: string
   groupIds?: string[]
+  mentionOnly?: boolean
 }
 
 interface QQBindSectionProps {
@@ -12,20 +14,9 @@ interface QQBindSectionProps {
   onChange: (binding: QQBinding) => void
 }
 
-const MOCK_QQ_ACCOUNTS = [
-  { id: '10001', name: '主账号 - 10001' },
-  { id: '10002', name: '子账号 - 10002' },
-  { id: '10003', name: '测试账号 - 10003' }
-]
-
-const MOCK_QQ_GROUPS = [
-  { id: 'g001', name: 'Minecraft 服务器群' },
-  { id: 'g002', name: 'AI 开发交流群' },
-  { id: 'g003', name: '测试群组' },
-  { id: 'g004', name: '管理群' }
-]
-
 const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
+  const accounts = useQQBotStore(s => s.accounts)
+
   const handleToggleEnabled = (enabled: boolean) => {
     onChange({ ...binding, enabled })
   }
@@ -45,19 +36,52 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
     onChange({ ...binding, groupIds: current.filter(id => id !== groupId) })
   }
 
-  const availableGroups = MOCK_QQ_GROUPS.filter(g => !(binding.groupIds ?? []).includes(g.id))
+  // 从选中的账号的桥接配置中提取群组
+  const selectedAccount = accounts.find(a => a.id === binding.accountId)
+  const allGroups = selectedAccount
+    ? selectedAccount.config.bridges.map(b => ({ id: b.groupId, name: `群 ${b.groupId}` }))
+    : []
+
+  // 当账号切换时，如果选中账号的桥梁中没有已绑定的群组，尝试保留
+  // 但如果有群组不在新账号的桥梁中，则自动移除
+  React.useEffect(() => {
+    if (binding.accountId && selectedAccount && binding.groupIds && binding.groupIds.length > 0) {
+      const validGroupIds = allGroups.map(g => g.id)
+      const invalidGroups = binding.groupIds.filter(gid => !validGroupIds.includes(gid))
+      if (invalidGroups.length > 0) {
+        onChange({
+          ...binding,
+          groupIds: binding.groupIds.filter(gid => validGroupIds.includes(gid)),
+        })
+      }
+    }
+  }, [binding.accountId])
+
+  const availableGroups = allGroups.filter(g => !(binding.groupIds ?? []).includes(g.id))
 
   return (
     <div className="space-y-4">
       {/* 启用开关 */}
-      <Checkbox isSelected={binding.enabled} onChange={handleToggleEnabled}>
-        <Checkbox.Content>
-          <Checkbox.Control>
-            <Checkbox.Indicator />
-          </Checkbox.Control>
-          <span className="text-sm text-gray-700">启用 QQ 绑定</span>
-        </Checkbox.Content>
-      </Checkbox>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={binding.enabled}
+        onClick={() => handleToggleEnabled(!binding.enabled)}
+        className="inline-flex items-center gap-2 cursor-pointer"
+      >
+        <span
+          className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+            binding.enabled ? 'bg-blue-500' : 'bg-gray-200'
+          }`}
+        >
+          <span
+            className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
+              binding.enabled ? 'translate-x-4' : 'translate-x-0'
+            }`}
+          />
+        </span>
+        <span className="text-sm text-gray-700 select-none">启用 QQ 绑定</span>
+      </button>
 
       {binding.enabled && (
         <>
@@ -75,12 +99,22 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
               </Select.Trigger>
               <Select.Popover>
                 <ListBox>
-                  {MOCK_QQ_ACCOUNTS.map(acc => (
-                    <ListBox.Item key={acc.id} id={acc.id} textValue={acc.name}>
-                      {acc.name}
-                      <ListBox.ItemIndicator />
+                  {accounts.length === 0 && (
+                    <ListBox.Item key="empty" id="empty" textValue="暂无可用账号">
+                      <span className="text-gray-400">暂无可用账号，请先在 QQ 机器人页面添加</span>
                     </ListBox.Item>
-                  ))}
+                  )}
+                  {accounts
+                    .filter(a => a.enabled)
+                    .map(acc => (
+                      <ListBox.Item key={acc.id} id={acc.id} textValue={`${acc.nickname} (${acc.qqNumber})`}>
+                        <div className="flex items-center gap-2">
+                          <span className={`w-1.5 h-1.5 rounded-full ${acc.status === 'online' ? 'bg-green-500' : acc.status === 'reconnecting' ? 'bg-yellow-500' : 'bg-gray-300'}`} />
+                          {acc.nickname || acc.qqNumber} ({acc.qqNumber})
+                        </div>
+                        <ListBox.ItemIndicator />
+                      </ListBox.Item>
+                    ))}
                 </ListBox>
               </Select.Popover>
             </Select>
@@ -92,7 +126,7 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
             {binding.groupIds && binding.groupIds.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {binding.groupIds.map(gid => {
-                  const group = MOCK_QQ_GROUPS.find(g => g.id === gid)
+                  const group = allGroups.find(g => g.id === gid)
                   return (
                     <span
                       key={gid}
@@ -110,7 +144,13 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
                 })}
               </div>
             )}
-            {availableGroups.length > 0 ? (
+            {!selectedAccount ? (
+              <div className="text-xs text-gray-400">请先选择 QQ 账号</div>
+            ) : allGroups.length === 0 ? (
+              <div className="text-xs text-gray-400">该账号暂无桥接配置的群组，请先在 QQ 机器人页面的桥接配置中添加群组</div>
+            ) : availableGroups.length === 0 ? (
+              <div className="text-xs text-gray-400">已选择所有可用群组</div>
+            ) : (
               <Select
                 selectedKey=""
                 onSelectionChange={(key) => handleAddGroup(key as string)}
@@ -131,9 +171,34 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
                   </ListBox>
                 </Select.Popover>
               </Select>
-            ) : (
-              <div className="text-xs text-gray-400">已选择所有可用群组</div>
             )}
+          </div>
+
+          {/* V27: 仅 @ 触发 */}
+          <div className="pt-2 border-t border-gray-100">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={binding.mentionOnly ?? false}
+              onClick={() => onChange({ ...binding, mentionOnly: !(binding.mentionOnly ?? false) })}
+              className="inline-flex items-center gap-2 cursor-pointer"
+            >
+              <span
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  binding.mentionOnly ? 'bg-blue-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
+                    binding.mentionOnly ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </span>
+              <span className="text-sm text-gray-700 select-none">仅 @ 触发</span>
+            </button>
+            <p className="text-xs text-gray-400 mt-1 ml-11">
+              开启后仅处理 @ 机器人的群消息，其他消息将被忽略
+            </p>
           </div>
         </>
       )}

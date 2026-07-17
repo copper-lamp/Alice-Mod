@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { getDatabaseManager } from '../database'
 import { AgentFileExporter } from './agent-file-exporter'
+import { PromptCompiler } from '../prompt/compiler/prompt-compiler'
 import type { AgentConfig, AgentSummary } from '../../renderer/src/lib/types'
 
 export class AgentConfigManager {
@@ -10,8 +11,12 @@ export class AgentConfigManager {
   async create(config: AgentConfig): Promise<string> {
     await this.ensureLoaded()
     const id = `agent-${randomUUID().slice(0, 8)}`
+
+    // V26: 编译系统提示词
+    const compiledPrompt = PromptCompiler.compile(config)
+
     const now = Date.now()
-    const record: AgentConfig = { ...config, id, createdAt: now, updatedAt: now }
+    const record: AgentConfig = { ...config, id, compiledPrompt, createdAt: now, updatedAt: now }
     this.cache.set(id, record)
     this.saveToDb(id, record)
 
@@ -28,6 +33,10 @@ export class AgentConfigManager {
     const existing = this.cache.get(id)
     if (!existing) return false
     const updated = { ...existing, ...config, updatedAt: Date.now() }
+
+    // V26: 配置变更后重新编译系统提示词
+    updated.compiledPrompt = PromptCompiler.compile(updated)
+
     this.cache.set(id, updated)
     this.saveToDb(id, updated)
 
@@ -115,6 +124,17 @@ export class AgentConfigManager {
     return true
   }
 
+  /**
+   * V26：更新指定 agent 的预编译提示词（用于惰性编译回填）
+   */
+  async updateCompiledPrompt(agentId: string, compiledPrompt: string): Promise<void> {
+    const existing = this.cache.get(agentId)
+    if (existing) {
+      existing.compiledPrompt = compiledPrompt
+      this.saveToDb(agentId, existing)
+    }
+  }
+
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return
     this.loaded = true
@@ -123,7 +143,7 @@ export class AgentConfigManager {
       const rows = db.prepare('SELECT * FROM agents').all() as Array<{
         id: string; name: string; alias: string | null; skin_data: string | null
         persona_json: string; tools_json: string; qq_binding_json: string
-        llm_config_json: string; created_at: number; updated_at: number
+        llm_config_json: string; compiled_prompt: string | null; created_at: number; updated_at: number
         is_main: number | null; workspace_id: string | null
       }>
       for (const row of rows) {
@@ -136,6 +156,7 @@ export class AgentConfigManager {
           tools: JSON.parse(row.tools_json),
           qqBinding: JSON.parse(row.qq_binding_json),
           llmConfig: JSON.parse(row.llm_config_json),
+          compiledPrompt: row.compiled_prompt ?? undefined,
           isMain: row.is_main === 1,
           workspaceId: row.workspace_id ?? undefined,
           createdAt: row.created_at,
@@ -153,13 +174,14 @@ export class AgentConfigManager {
       // V24: 提取 qq_binding_account_id 以支持索引加速查找
       const qqBindingAccountId = config.qqBinding?.enabled ? (config.qqBinding.accountId ?? null) : null
       db.prepare(
-        `INSERT OR REPLACE INTO agents (id, name, alias, skin_data, persona_json, tools_json, qq_binding_json, qq_binding_account_id, llm_config_json, is_main, workspace_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO agents (id, name, alias, skin_data, persona_json, tools_json, qq_binding_json, qq_binding_account_id, llm_config_json, compiled_prompt, is_main, workspace_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         id, config.name, config.alias ?? null, config.skinData ?? null,
         JSON.stringify(config.persona), JSON.stringify(config.tools),
         JSON.stringify(config.qqBinding), qqBindingAccountId,
         JSON.stringify(config.llmConfig),
+        config.compiledPrompt ?? null,
         config.isMain ? 1 : 0, config.workspaceId ?? null,
         config.createdAt ?? Date.now(), config.updatedAt ?? Date.now(),
       )

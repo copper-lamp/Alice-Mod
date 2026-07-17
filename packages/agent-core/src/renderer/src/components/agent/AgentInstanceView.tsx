@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { Tabs } from '@heroui/react'
+import { Tabs, Modal, useOverlayState, Button } from '@heroui/react'
+import { Trash2, AlertTriangle } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useAgentStore } from '../../stores/agentStore'
 import ChatPanel from '../chat/ChatPanel'
@@ -18,9 +19,11 @@ function formatTime(ts: number): string {
 }
 
 const AgentInstanceView: React.FC = () => {
-  const { agentViewTab, setAgentViewTab } = useUIStore()
-  const { currentAgent, fetchAgent, agents, currentAgentId } = useAgentStore()
+  const { agentViewTab, setAgentViewTab, setLayoutMode } = useUIStore()
+  const { currentAgent, fetchAgent, agents, currentAgentId, deleteAgent } = useAgentStore()
   const [qqStatus, setQqStatus] = useState<string>('disconnected')
+  const deleteState = useOverlayState()
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (currentAgentId && !currentAgent) {
@@ -49,6 +52,20 @@ const AgentInstanceView: React.FC = () => {
 
   const currentSummary = agents.find(a => a.id === currentAgentId)
 
+  const handleDelete = async () => {
+    if (!currentAgentId) return
+    setDeleting(true)
+    try {
+      await deleteAgent(currentAgentId)
+      deleteState.close()
+      setLayoutMode('nav-view')
+    } catch {
+      // 删除失败由 store 内部处理
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   if (!currentAgentId || !currentSummary) {
     return (
       <div className="flex-1 flex items-center justify-center bg-white rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
@@ -70,6 +87,7 @@ const AgentInstanceView: React.FC = () => {
   }
 
   return (
+    <>
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
       {/* 标题栏 - 上栏：头像、名字、最后运行时间、Tabs */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 shrink-0">
@@ -119,6 +137,13 @@ const AgentInstanceView: React.FC = () => {
             </Tabs.List>
           </Tabs.ListContainer>
         </Tabs>
+          <button
+            onClick={() => deleteState.open()}
+            className="ml-2 p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+            title="删除智能体"
+          >
+            <Trash2 size={14} />
+          </button>
       </div>
 
       {/* 内容区 - 下栏：高度由父容器决定，由子组件自行处理滚动 */}
@@ -130,6 +155,53 @@ const AgentInstanceView: React.FC = () => {
         )}
       </div>
     </div>
+
+    {/* 删除确认弹窗 */}
+    {currentSummary && (
+        <Modal state={deleteState}>
+          <div />
+          <Modal.Backdrop>
+            <Modal.Container size="xs">
+              <Modal.Dialog className="sm:max-w-[360px]">
+                {() => (
+                  <>
+                    <Modal.Header>
+                      <Modal.Icon className="bg-danger-soft text-danger-soft-foreground">
+                        <AlertTriangle size={16} />
+                      </Modal.Icon>
+                      <Modal.Heading>确认删除</Modal.Heading>
+                    </Modal.Header>
+                    <Modal.Body>
+                      <p className="text-sm text-gray-600">
+                        确定要删除智能体 <strong>{currentSummary.name}</strong>？此操作不可恢复。
+                      </p>
+                    </Modal.Body>
+                    <Modal.Footer>
+                      <Button
+                        variant="secondary"
+                        isDisabled={deleting}
+                        onPress={() => {
+                          deleteState.close()
+                        }}
+                      >
+                        取消
+                      </Button>
+                      <Button
+                        isDisabled={deleting}
+                        isPending={deleting}
+                        onPress={handleDelete}
+                      >
+                        {deleting ? '删除中...' : '确认删除'}
+                      </Button>
+                    </Modal.Footer>
+                  </>
+                )}
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
+      )}
+    </>
   )
 }
 

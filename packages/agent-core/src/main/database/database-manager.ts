@@ -233,6 +233,9 @@ export class DatabaseManager implements IDatabaseManager {
       console.warn('[DatabaseManager] 创建 QQ 绑定索引失败:', (err as Error).message);
     }
 
+    // ── V26: agents.compiled_prompt 列（预编译系统提示词） ──
+    this.addColumnIfNotExists(db, 'agents', 'compiled_prompt', 'TEXT');
+
     // ── V25: model_configs 表（模型配置持久化） ──
     db.exec(`
       CREATE TABLE IF NOT EXISTS model_configs (

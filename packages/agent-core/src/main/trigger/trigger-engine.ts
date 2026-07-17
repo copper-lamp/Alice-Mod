@@ -241,7 +241,8 @@ export class TriggerEngine {
         return (event.payload.isPrivate === true || event.type === 'private') ? rule : null;
       case 'cron':
       case 'interval':
-        // Cron / Interval 规则由 CronAdapter 处理，这里直接命中（事件已带 source=cron）
+      case 'random_window':
+        // Cron / Interval / RandomWindow 事件由对应 Adapter 处理，这里直接命中（事件已带 source=cron）
         return rule;
       case 'composite':
         return this.matchComposite(rule, event) ? rule : null;

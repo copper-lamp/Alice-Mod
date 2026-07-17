@@ -160,6 +160,33 @@ const StepRobot: React.FC = () => {
               )}
             </div>
           )}
+
+          {/* V27: 仅 @ 触发 */}
+          <div className="pt-2 border-t border-gray-100">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={binding.mentionOnly ?? false}
+              onClick={() => updateQQBinding({ mentionOnly: !(binding.mentionOnly ?? false) })}
+              className="inline-flex items-center gap-2 cursor-pointer"
+            >
+              <span
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  binding.mentionOnly ? 'bg-blue-500' : 'bg-gray-200'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
+                    binding.mentionOnly ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </span>
+              <span className="text-sm text-gray-700 select-none">仅 @ 触发</span>
+            </button>
+            <p className="text-xs text-gray-400 mt-1 ml-11">
+              开启后仅处理 @ 机器人的群消息，其他消息将被忽略
+            </p>
+          </div>
         </div>
       )}
     </div>

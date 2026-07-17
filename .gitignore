@@ -46,6 +46,7 @@ build/
 # NapCat 安装目录
 napcat/
 packages/**/napcat/
+packages/agent-core/Alice/
 
 #
 .superpowers/

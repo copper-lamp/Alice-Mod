@@ -3,7 +3,8 @@ import { Button, Select, ListBox, TextArea, Checkbox } from '@heroui/react'
 import { useAgentStore } from '../../stores/agentStore'
 import { useModelStore } from '../../stores/modelStore'
 import { useUIStore } from '../../stores/uiStore'
-import type { AgentConfig, AgentPersona, AgentToolConfig, QQBinding, ModelSelection } from '../../lib/types'
+import { memoryApi } from '../../lib/ipc'
+import type { AgentConfig, AgentPersona, AgentToolConfig, QQBinding, ModelSelection, AgentSkillConfig } from '../../lib/types'
 import BasicInfoSection from './sections/BasicInfoSection'
 import QQBindSection from './sections/QQBindSection'
 
@@ -40,10 +41,28 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId }) => {
   const [form, setForm] = useState<AgentConfig>(defaultConfig)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>('')
+  const [availableSkills, setAvailableSkills] = useState<Array<{ id: string; name: string; description: string }>>([])
 
   useEffect(() => {
     fetchModels()
   }, [fetchModels])
+
+  useEffect(() => {
+    // 加载可用技能列表
+    memoryApi.list({ type: 'skill', limit: 100 }).then(result => {
+      const skills = (result.memories ?? []).map((m: any) => {
+        const c = (m.content as Record<string, unknown>) ?? {}
+        return {
+          id: m.id ?? '',
+          name: (c.name as string) ?? '',
+          description: (c.description as string) ?? '',
+        }
+      })
+      setAvailableSkills(skills)
+    }).catch(() => {
+      // 技能列表加载失败不影响主体功能
+    })
+  }, [])
 
   useEffect(() => {
     if (agentId) {
@@ -248,6 +267,115 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId }) => {
               binding={form.qqBinding}
               onChange={(binding: QQBinding) => updateField('qqBinding', binding)}
             />
+          </section>
+
+          <hr className="border-gray-100" />
+
+          {/* V27: 技能配置 */}
+          <section>
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">技能配置</h3>
+            <p className="text-xs text-gray-400 mb-3">
+              选择此智能体可用的技能。未选中的技能将不会注入到系统提示词中。
+              如不配置，则使用全局技能开关设置。
+            </p>
+            {availableSkills.length === 0 ? (
+              <div className="text-sm text-gray-400 text-center py-4 bg-gray-50 rounded-lg">
+                暂无可用技能，请先在"知识 → 技能管理"中创建技能
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-200">
+                      <th className="text-left px-4 py-2 text-xs font-medium text-gray-500 w-16">启用</th>
+                      <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">技能名称</th>
+                      <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">描述</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {availableSkills.map((skill, idx) => {
+                      const enabledSkills = form.skills?.enabledSkills
+                      const disabledSkills = form.skills?.disabledSkills
+                      // 如果 enabledSkills 有内容，则仅白名单中的技能启用
+                      // 否则默认启用（除非在 disabledSkills 中）
+                      const isEnabled = enabledSkills && enabledSkills.length > 0
+                        ? enabledSkills.includes(skill.name)
+                        : !(disabledSkills ?? []).includes(skill.name)
+
+                      const handleToggle = () => {
+                        const currentEnabled = form.skills?.enabledSkills ?? []
+                        const currentDisabled = form.skills?.disabledSkills ?? []
+
+                        if (enabledSkills && enabledSkills.length > 0) {
+                          // 白名单模式
+                          const newEnabled = isEnabled
+                            ? currentEnabled.filter(n => n !== skill.name)
+                            : [...currentEnabled, skill.name]
+                          updateField('skills', { enabledSkills: newEnabled })
+                        } else {
+                          // 黑名单模式
+                          const newDisabled = isEnabled
+                            ? [...currentDisabled, skill.name]
+                            : currentDisabled.filter(n => n !== skill.name)
+                          updateField('skills', { disabledSkills: newDisabled })
+                        }
+                      }
+
+                      return (
+                        <tr key={skill.id} className={`border-b border-gray-100 hover:bg-gray-50 ${idx % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
+                          <td className="px-4 py-2.5">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={isEnabled}
+                              onClick={handleToggle}
+                              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                isEnabled ? 'bg-blue-500' : 'bg-gray-200'
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
+                                  isEnabled ? 'translate-x-4' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                          </td>
+                          <td className="px-4 py-2.5 font-medium text-gray-800">{skill.name}</td>
+                          <td className="px-4 py-2.5 text-gray-500 truncate max-w-xs">{skill.description || '-'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <hr className="border-gray-100" />
+
+          {/* V26: 预编译系统提示词预览 */}
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-800">系统提示词</h3>
+              {currentAgent?.compiledPrompt && (
+                <span className="text-xs text-gray-400">
+                  创建/更新时自动编译，运行时直接使用
+                </span>
+              )}
+            </div>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              {currentAgent?.compiledPrompt ? (
+                <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono leading-relaxed max-h-96 overflow-y-auto">
+                  {currentAgent.compiledPrompt}
+                </pre>
+              ) : (
+                <div className="text-sm text-gray-400 text-center py-4">
+                  {agentId
+                    ? '保存配置后将自动生成系统提示词'
+                    : '创建智能体后将在运行时自动生成系统提示词'}
+                </div>
+              )}
+            </div>
           </section>
         </div>
       </div>

@@ -303,12 +303,30 @@ export class MainAgent {
       const profile = mapAgentConfigToProfile(this.deps.agentConfig);
       this.deps.promptBuilder.updateProfile(profile);
 
+      // V26: 兼容旧数据 — 惰性编译并回填
+      if (!this.deps.agentConfig.compiledPrompt) {
+        try {
+          const { PromptCompiler } = await import('../prompt/compiler/prompt-compiler');
+          const compiled = PromptCompiler.compile(this.deps.agentConfig);
+          this.deps.agentConfig.compiledPrompt = compiled;
+          // 异步回填到数据库（不阻塞推理）
+          const { getSharedAgentConfigManager } = await import('../ipc/agent-handler');
+          getSharedAgentConfigManager().updateCompiledPrompt(this.deps.agentId, compiled).catch(err =>
+            console.warn(`[MainAgent] 惰性编译回填失败 ${this.deps.agentId}:`, err),
+          );
+        } catch {
+          // 回退到动态组装
+        }
+      }
+
       const buildParams: BuildParams = {
         workspaceId: this.deps.workspaceId,
         userInput: event.prompt,
         history,
         state: this.getPlaceholderPlayerState(),
         source: toBuildSource(event.source),
+        // V26: 优先使用预编译提示词，避免运行时动态组装
+        systemOverride: this.deps.agentConfig.compiledPrompt ?? undefined,
         extraContext: {
           excludeTools,
           // V22：透传 Orchestrator 注入的进展状态与技能文本

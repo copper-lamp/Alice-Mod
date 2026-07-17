@@ -36,5 +36,8 @@ export { SlidingWindowTrimStrategy, SummaryTrimStrategy, PriorityTrimStrategy } 
 export { DefaultTemplateRegistry } from './template-registry';
 export { PromptTemplateManager } from './prompt-template-manager';
 
+// V26: 提示词编译器
+export { PromptCompiler } from './compiler';
+
 // 工具提示词规范
 export { ACTION_TARGET_SPEC, VERB_FIRST_SPEC, DOMAIN_ACTION_SPEC, TOOL_CATEGORIES, TOOL_DESCRIPTION_TEMPLATES, checkToolDescriptionQuality, checkAllToolsQuality, getToolDescriptionGuide, formatToolForPrompt } from './tools/tool-prompt-spec';

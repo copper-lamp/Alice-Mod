@@ -15,6 +15,7 @@ import {
   GameChatTriggerAdapter,
   PluginEventTriggerAdapter,
   QQTriggerAdapter,
+  RandomWindowTriggerAdapter,
 } from './adapters';
 import type {
   AgentEvent,
@@ -56,6 +57,7 @@ export class TriggerModule {
     gameChat: GameChatTriggerAdapter;
     pluginEvent: PluginEventTriggerAdapter;
     qq: QQTriggerAdapter;
+    randomWindow: RandomWindowTriggerAdapter;
   };
   private running = false;
 
@@ -83,6 +85,7 @@ export class TriggerModule {
       gameChat: new GameChatTriggerAdapter(),
       pluginEvent: new PluginEventTriggerAdapter(),
       qq: new QQTriggerAdapter(),
+      randomWindow: new RandomWindowTriggerAdapter(this.eventBus, this.store),
     };
   }
 
@@ -149,9 +152,13 @@ export class TriggerModule {
   createTrigger(params: CreateTriggerParams, schedule?: TriggerSchedule): EventTrigger {
     const trigger = this.store.create(params, schedule);
 
-    // 如果是 cron 类型且已启动，立即调度
-    if (this.running && trigger.source === 'cron' && schedule) {
-      this.adapters.cron.schedule(trigger.id, schedule);
+    // 如果已启动，立即调度
+    if (this.running && schedule) {
+      if (this.isRandomWindowSchedule(schedule)) {
+        this.adapters.randomWindow.schedule(trigger.id, schedule);
+      } else if (trigger.source === 'cron') {
+        this.adapters.cron.schedule(trigger.id, schedule);
+      }
     }
 
     return trigger;
@@ -161,13 +168,18 @@ export class TriggerModule {
   updateTrigger(id: string, params: UpdateTriggerParams): EventTrigger | null {
     const trigger = this.store.update(id, params);
 
-    // 如果更新的是 cron 触发器，重新调度
-    if (this.running && trigger && trigger.source === 'cron') {
+    // 如果已启动，重新调度
+    if (this.running && trigger) {
       const schedule = this.store.getSchedule(trigger.id);
       if (schedule) {
-        this.adapters.cron.schedule(trigger.id, schedule);
+        if (this.isRandomWindowSchedule(schedule)) {
+          this.adapters.randomWindow.schedule(trigger.id, schedule);
+        } else if (trigger.source === 'cron') {
+          this.adapters.cron.schedule(trigger.id, schedule);
+        }
       } else {
         this.adapters.cron.unschedule(trigger.id);
+        this.adapters.randomWindow.unschedule(trigger.id);
       }
     }
 
@@ -177,10 +189,22 @@ export class TriggerModule {
   /** 删除触发器 */
   deleteTrigger(id: string): boolean {
     const trigger = this.store.getById(id);
-    if (trigger && trigger.source === 'cron') {
+    if (trigger) {
       this.adapters.cron.unschedule(id);
+      this.adapters.randomWindow.unschedule(id);
     }
     return this.store.delete(id);
+  }
+
+  /** 判断调度是否为随机窗口调度 */
+  private isRandomWindowSchedule(schedule: TriggerSchedule): boolean {
+    if (!schedule.cronExpression) return false;
+    try {
+      const parsed = JSON.parse(schedule.cronExpression);
+      return parsed?.type === 'random_window';
+    } catch {
+      return false;
+    }
   }
 
   /** 获取触发器 */

@@ -34,10 +34,12 @@ import type { LlmRequestScheduler } from '../llm/scheduler/types';
 import type { ChatHistoryStore } from '../chat-history/chat-history-store';
 import type { ToolRegistry } from '../workspace/tool-registry';
 import type { Orchestrator, MainAgentHandle } from '../orchestration/orchestrator';
+import type { MiddlewareContext } from '../pipeline/types';
 
 import { MainAgent } from './main-agent';
 import { BatchToolDispatcher } from '../pipeline/batch-tool-dispatcher';
 import { BatchResultCollector } from '../pipeline/batch-result-collector';
+import { NOTIFY_QQ_TOOL_SCHEMA } from '../qq-bot/tools/notify_qq';
 
 /** Registry 依赖（由 ipc/index.ts 启动时注入） */
 export interface MainAgentRegistryDeps {
@@ -202,16 +204,91 @@ export class MainAgentRegistry {
    *
    * MainAgent / BatchToolDispatcher / BatchResultCollector 均通过顶部静态 import 引入，
    * 实测无循环依赖（main-agent.ts 不反向引用 registry）。
+   *
+   * V27: 注册 notify_qq 本地工具 + 添加 Pipeline 中间件处理本地调用。
    */
   private constructAgent(
     workspaceId: string,
     agentId: string,
     agentConfig: AgentConfig,
   ): MainAgent {
+    // V27: 注册 notify_qq 本地工具（供 LLM 可见）
+    this.deps.toolRegistry.registerLocal(workspaceId, [NOTIFY_QQ_TOOL_SCHEMA]);
+
     // 独立 pipeline + 注入 dispatcher/collector
     const pipeline = this.deps.pipelineFactory();
     pipeline.setDispatcher(new BatchToolDispatcher(this.deps.connectionResolver));
     pipeline.setCollector(new BatchResultCollector());
+
+    // V27: 添加 notify_qq 本地处理器中间件
+    pipeline.use({
+      name: 'notify_qq_handler',
+      before: async (ctx: MiddlewareContext): Promise<MiddlewareContext> => {
+        const notifyCalls = ctx.calls.filter((c) => c.toolName === 'notify_qq');
+        if (notifyCalls.length === 0) return ctx;
+
+        // 找出当前 workspace 下的 QQ Agent
+        const qqAgent = this.findQQAgent(workspaceId);
+        if (!qqAgent) {
+          // 无 QQ Agent，所有 notify_qq 调用标记失败
+          for (const call of notifyCalls) {
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: 'notify_qq',
+              success: false,
+              error: '未找到绑定的 QQ Agent，无法发送通知',
+              durationMs: 0,
+            } as any);
+          }
+          ctx.calls = ctx.calls.filter((c) => c.toolName !== 'notify_qq');
+          return ctx;
+        }
+
+        // 处理每个 notify_qq 调用
+        for (const call of notifyCalls) {
+          const startTime = Date.now();
+          const params = call.arguments as Record<string, unknown>;
+          const content = params.content as string;
+          const target = params.target as string | undefined;
+
+          try {
+            // 调用 QQAgent.sendQQMessage()
+            const result = await (qqAgent as any).sendQQMessage(
+              target ?? '',
+              content,
+              'group',
+            );
+
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: 'notify_qq',
+              success: result,
+              data: result ? { message: '通知已发送' } : undefined,
+              error: result ? undefined : '发送通知失败',
+              durationMs: Date.now() - startTime,
+            } as any);
+          } catch (err) {
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: 'notify_qq',
+              success: false,
+              error: err instanceof Error ? err.message : '发送通知异常',
+              durationMs: Date.now() - startTime,
+            } as any);
+          }
+        }
+
+        // 从 pipeline 调度中移除所有 notify_qq 调用（已本地处理）
+        ctx.calls = ctx.calls.filter((c) => c.toolName !== 'notify_qq');
+        return ctx;
+      },
+    });
 
     // 独立 promptBuilder
     const promptBuilder = this.deps.promptBuilderFactory(this.deps.toolRegistry);
@@ -231,6 +308,20 @@ export class MainAgentRegistry {
       observer: this.deps.observer,
       maxRounds: this.deps.maxRounds ?? DEFAULT_MAX_ROUNDS,
     });
+  }
+
+  /**
+   * V27: 在当前 workspace 下查找启用了 QQ 绑定的 Agent
+   */
+  private findQQAgent(workspaceId: string): MainAgent | undefined {
+    for (const [key, agent] of this.cache.entries()) {
+      const [ws] = key.split(':');
+      if (ws === workspaceId && (agent as any).client) {
+        // 检查是否有 QQ client（即此 agent 是 QQAgent）
+        return agent;
+      }
+    }
+    return undefined;
   }
 }
 

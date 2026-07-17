@@ -287,6 +287,40 @@ export class QQAgent extends MainAgent {
   }
 
   // ════════════════════════════════════════════════════════════
+  // 父→子：主 Agent 调度发送 QQ 消息
+  // ════════════════════════════════════════════════════════════
+
+  /**
+   * V27: 被主 Agent 调度 — 主动发送 QQ 消息
+   *
+   * 主 Agent 可通过此方法让 QQ Agent 向指定群或用户发送消息。
+   * 用于主 Agent 主动汇报任务进展、发送通知等场景。
+   *
+   * @param target 目标群号或 QQ 号
+   * @param content 消息内容
+   * @param type 消息类型：group=群消息, private=私聊
+   * @returns 是否发送成功
+   */
+  async sendQQMessage(
+    target: string,
+    content: string,
+    type: 'group' | 'private' = 'group',
+  ): Promise<boolean> {
+    try {
+      if (type === 'group') {
+        await this.client.sendGroupMsg(target, content);
+      } else {
+        await this.client.sendPrivateMsg(target, content);
+      }
+      console.log(`[QQAgent] 主 Agent 调度消息已发送到 ${type === 'group' ? '群' : '私聊'} ${target}`);
+      return true;
+    } catch (err) {
+      console.error(`[QQAgent] 发送调度消息失败:`, err);
+      return false;
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
   // 辅助方法
   // ════════════════════════════════════════════════════════════
 

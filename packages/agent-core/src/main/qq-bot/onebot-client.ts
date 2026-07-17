@@ -182,6 +182,11 @@ export class OneBotClient {
     return result.data;
   }
 
+  async getGroupList(): Promise<any[]> {
+    const result = await this.callApi('get_group_list', {});
+    return result.data;
+  }
+
   async getGroupMemberList(groupId: string): Promise<any[]> {
     const result = await this.callApi('get_group_member_list', { group_id: parseInt(groupId) });
     return result.data;

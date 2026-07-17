@@ -5,6 +5,7 @@ import { DetailHeader } from './DetailHeader'
 import { PermissionPanel } from './PermissionPanel'
 import { BridgeConfigPanel } from './BridgeConfigPanel'
 import { MessageLogPanel } from './MessageLogPanel'
+import { GroupManagementPanel } from './GroupManagementPanel'
 
 export const AccountDetailView: React.FC = () => {
   const selectedAccountId = useQQBotStore(s => s.selectedAccountId)
@@ -36,6 +37,7 @@ export const AccountDetailView: React.FC = () => {
             <Tabs.Tab id="permission">权限管理</Tabs.Tab>
             <Tabs.Tab id="bridge">桥接配置</Tabs.Tab>
             <Tabs.Tab id="logs">消息日志</Tabs.Tab>
+            <Tabs.Tab id="groups">群聊管理</Tabs.Tab>
           </Tabs.List>
           <div className="flex-1 overflow-hidden pt-3 min-h-0">
             <Tabs.Panel id="permission" className="h-full">
@@ -51,6 +53,11 @@ export const AccountDetailView: React.FC = () => {
             <Tabs.Panel id="logs" className="h-full">
               <Card className="p-4 h-full overflow-hidden">
                 <MessageLogPanel />
+              </Card>
+            </Tabs.Panel>
+            <Tabs.Panel id="groups" className="h-full">
+              <Card className="p-4 h-full overflow-hidden">
+                <GroupManagementPanel accountId={selectedAccount.id} />
               </Card>
             </Tabs.Panel>
           </div>

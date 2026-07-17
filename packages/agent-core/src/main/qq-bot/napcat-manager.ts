@@ -184,8 +184,8 @@ export class NapCatManager {
         this.process.kill('SIGKILL');
         this.process = null;
       }
-      await this.forceKillNapCatProcesses();
-      await this.waitForPortFree(this.options.webUiPort, 3000);
+      await this.forceKillNapCatProcesses(this.options.webUiPort);
+      await this.waitForPortFree(this.options.webUiPort, 8000);
 
       await this.ensureExecutable();
       this.writeOneBotConfig();
@@ -201,11 +201,12 @@ export class NapCatManager {
       this.log(`[NapCatManager] 启动失败: ${enhancedMsg}`);
 
       // 清理可能已经启动的子进程，防止残留
-      if (this.process && !this.process.killed) {
-        this.process.kill('SIGKILL');
+      // 先使用 taskkill /F /T 杀死进程树（包括 QQ.exe），再通过端口兜底
+      if (this.process && this.process.pid) {
+        await this.killProcessTree(this.process.pid);
         this.process = null;
       }
-      await this.forceKillNapCatProcesses();
+      await this.forceKillNapCatProcesses(this.options.webUiPort);
 
       this.setStatus('error');
       throw new Error(enhancedMsg);
@@ -972,6 +973,7 @@ export class NapCatManager {
   private writeWebUiConfig(): void {
     const configDir = this.getConfigDir();
     fs.mkdirSync(configDir, { recursive: true });
+    const configPath = path.join(configDir, 'webui.json');
 
     const config = {
       host: '127.0.0.1',
@@ -980,11 +982,8 @@ export class NapCatManager {
       loginRate: 3,
     };
 
-    fs.writeFileSync(
-      path.join(configDir, 'webui.json'),
-      JSON.stringify(config, null, 2),
-      'utf-8',
-    );
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+    this.log(`[NapCatManager] WebUI 配置已写入: ${configPath}, token=${config.token.substring(0, 8)}...`);
   }
 
   /** 启动 NapCat 子进程 */
@@ -1020,6 +1019,7 @@ export class NapCatManager {
     }
 
     this.log(`[NapCatManager] spawn: ${execPath} ${args.join(' ')}`);
+    this.log(`[NapCatManager] NAPCAT_WEBUI_SECRET_KEY=${this.options.webUiToken.substring(0, 8)}...`);
 
     const isBatchFile = execPath.toLowerCase().endsWith('.bat');
     const cwd = this.options.workingDir || napcatDir;
@@ -1057,7 +1057,11 @@ export class NapCatManager {
 
     proc.on('exit', (code, signal) => {
       this.log(`[NapCatManager] 子进程退出: code=${code}, signal=${signal}`);
-      this.process = null;
+      // 仅当 this.process 仍指向当前退出进程时才清空引用，
+      // 防止旧进程的 exit 事件异步触发时误清新进程的引用（竞态条件）
+      if (this.process === proc) {
+        this.process = null;
+      }
       // status 为 'starting' 时，是被 start() 主动 kill 旧进程，不触发错误重启
       if (this.status !== 'stopping' && this.status !== 'starting') {
         this.handleCrash();
@@ -1119,25 +1123,43 @@ export class NapCatManager {
 
   /** WebUI 登录认证 */
   private async authenticateWebUi(): Promise<void> {
-    const hash = crypto
-      .createHash('sha256')
-      .update(this.options.webUiToken + '.napcat')
-      .digest('hex');
+    // 尝试多个密码候选：
+    // 1. 我们的自定义 token（写入 webui.json 的）
+    // 2. 'napcat'（NapCat 默认 WebUI 密码，当 launcher.bat 提权导致环境变量丢失时兜底）
+    const passwords = [
+      this.options.webUiToken,
+      'napcat',
+    ];
 
-    const res = await this.webUiPost<
-      WebUiResponse<{ Credential?: string; require2FA?: boolean }>
-    >('/api/auth/login', { hash }, 10000);
+    for (const password of passwords) {
+      const hash = crypto
+        .createHash('sha256')
+        .update(password + '.napcat')
+        .digest('hex');
 
-    if (res.code !== 0 || !res.data?.Credential) {
-      throw new Error(res.message || 'WebUI 登录失败');
+      try {
+        this.log(`[NapCatManager] WebUI 认证尝试: token=${password === this.options.webUiToken ? '自定义' : '默认(napcat)'}, hash=${hash.substring(0, 16)}...`);
+        const res = await this.webUiPost<
+          WebUiResponse<{ Credential?: string; require2FA?: boolean }>
+        >('/api/auth/login', { hash }, 5000);
+
+        if (res.code === 0 && res.data?.Credential) {
+          if (res.data.require2FA) {
+            throw new Error('WebUI 启用了 2FA，请通过 NapCat WebUI 手动完成登录');
+          }
+          this.credential = res.data.Credential;
+          this.log(`[NapCatManager] WebUI 认证成功（使用 token: ${password === this.options.webUiToken ? '自定义' : '默认(napcat)'}）`);
+          return;
+        }
+        this.log(`[NapCatManager] WebUI 认证失败: 服务器返回 code=${res.code}, message=${res.message || '无消息'}`);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        this.log(`[NapCatManager] WebUI 认证异常: ${errMsg}`);
+        // 当前密码失败，尝试下一个
+      }
     }
 
-    if (res.data.require2FA) {
-      throw new Error('WebUI 启用了 2FA，请通过 NapCat WebUI 手动完成登录');
-    }
-
-    this.credential = res.data.Credential;
-    this.log('[NapCatManager] WebUI 认证成功');
+    throw new Error('WebUI 认证失败，已尝试自定义 token 和默认密码 "napcat"');
   }
 
   private async ensureAuthenticated(): Promise<void> {
@@ -1257,18 +1279,71 @@ export class NapCatManager {
    *
    * 策略（避免误杀用户个人 QQ）：
    * 1. 优先使用托管进程 PID 精确杀死进程树
-   * 2. 无 PID 时按进程名杀死 NapCat 相关进程（不含 QQ.exe）
-   * 3. taskkill /T 确保进程树全部清理
+   * 2. 如提供了 WebUI 端口，查找并杀死占用该端口的进程（精确到端口，避免误杀）
+   * 3. 无 PID 时不做任何操作（避免多账号场景下误杀其他账号的 NapCat 实例）
    */
-  private async forceKillNapCatProcesses(): Promise<void> {
-    // 仅通过托管进程 PID 精确杀死进程树
-    // 不按名称杀死进程，避免多账号场景下误杀其他账号的 NapCat 实例
+  private async forceKillNapCatProcesses(webUiPort?: number): Promise<void> {
+    // 1. 优先使用托管进程 PID 精确杀死进程树
     if (this.process && this.process.pid) {
       await this.killProcessTree(this.process.pid);
+      // 杀死后等待端口释放
+      if (webUiPort) {
+        await this.waitForPortFree(webUiPort, 3000);
+      }
       return;
     }
-    // 无 PID 时不做任何操作（避免误杀其他账号进程）
+
+    // 2. 如提供了 WebUI 端口，查找并杀死占用该端口的进程
+    if (webUiPort) {
+      const killed = await this.killProcessByPort(webUiPort);
+      if (killed) {
+        this.log(`[NapCatManager] 已通过端口 ${webUiPort} 杀死残留进程`);
+        await this.waitForPortFree(webUiPort, 3000);
+        return;
+      }
+    }
+
+    // 3. 无 PID 时不做任何操作（避免误杀其他账号进程）
     this.log('[NapCatManager] 无托管进程 PID，跳过强制杀进程（多账号安全）');
+  }
+
+  /**
+   * 通过端口号查找并杀死占用该端口的进程
+   * 使用 PowerShell Get-NetTCPConnection 精确定位
+   * 仅杀死占用指定端口的进程，避免误杀其他账号实例
+   */
+  private killProcessByPort(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (process.platform !== 'win32') {
+        resolve(false);
+        return;
+      }
+      // 使用 PowerShell 查找占用端口的进程 PID
+      exec(
+        `powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"`,
+        (err, stdout) => {
+          if (err || !stdout.trim()) {
+            resolve(false);
+            return;
+          }
+          const pid = parseInt(stdout.trim().split(/[\r\n]+/)[0], 10);
+          if (!pid || isNaN(pid)) {
+            resolve(false);
+            return;
+          }
+          this.log(`[NapCatManager] 发现端口 ${port} 被进程 PID ${pid} 占用，正在清理...`);
+          exec(`taskkill /F /T /PID ${pid} 2>nul`, (killErr) => {
+            if (killErr) {
+              this.log(`[NapCatManager] 杀死进程 ${pid} 失败: ${killErr.message}`);
+              resolve(false);
+              return;
+            }
+            this.log(`[NapCatManager] 已杀死残留进程 PID ${pid}`);
+            resolve(true);
+          });
+        },
+      );
+    });
   }
 
   /** 通过 PID 杀死整个进程树（Windows taskkill /T, 非 Windows kill 负 PID） */
