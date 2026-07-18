@@ -28,6 +28,7 @@ let tcpClient: TcpClient;
 let toolRegistry: ToolRegistry;
 let toolManager: ToolManager;
 let statusReporter: StatusReporter;
+let _BotManager: any = null;
 
 // ============================================================
 // 初始化
@@ -80,29 +81,29 @@ function initPlugin(): void {
   });
 
   // 6. 加载传统模块
-  const BotManager = loadModule('./bot/BotManager.js', 'BotManager');
-  if (!BotManager) return;
+  _BotManager = loadModule('./bot/BotManager.js', 'BotManager');
+  if (!_BotManager) return;
 
   const BotTestSuite = loadModule('./test/BotTestSuite.js', 'BotTestSuite');
 
-  BotManager.init();
+  _BotManager.init();
   _initialized = true;
 
   // 7. 初始化状态上报（暂不启动），注入 BotManager 在线假人列表
   statusReporter = new StatusReporter({
     sendNotification: (method, params) => tcpClient.sendNotification(method, params),
     isConnected: () => tcpClient.isConnected(),
-    getBots: () => BotManager.getAll(),
+    getBots: () => _BotManager.getAll(),
     intervalMs: 2000,
   });
 
   // 注册事件
-  registerEvents(BotManager);
+  registerEvents(_BotManager);
 
   // V6-T: 初始化游戏内 GUI 测试工具
   const guiTester = new InGameToolTester(toolManager, configManager.guiTest);
 
-  registerCommands(BotManager, BotTestSuite, guiTester);
+  registerCommands(_BotManager, BotTestSuite, guiTester);
 
   logger.info(`${_NAME} 启动完成，等待服务器就绪...`);
 }
@@ -126,7 +127,7 @@ function loadModule(path: string, name: string): any {
 
 function registerEvents(BotManager: any): void {
   // 假人状态变更事件监听（online / offline / death / created / removed）
-  BotManager.onEvent((event: { type: string; botName: string; timestamp: number }) => {
+  _BotManager.onEvent((event: { type: string; botName: string; timestamp: number }) => {
     if (!tcpClient.isConnected()) return;
 
     const eventTypeMap: Record<string, string> = {
@@ -176,14 +177,14 @@ function registerEvents(BotManager: any): void {
     statusReporter.start();
 
     // 传统模块：加载假人数据 + 自动上线
-    try { BotManager.loadAllData(); } catch (e) { logger.warn('加载假人数据失败', e); }
-    try { BotManager.initialAutoOnline(); } catch (e) { logger.warn('自动上线失败', e); }
+    try { _BotManager.loadAllData(); } catch (e) { logger.warn('加载假人数据失败', e); }
+    try { _BotManager.initialAutoOnline(); } catch (e) { logger.warn('自动上线失败', e); }
 
     logger.info(`${_NAME} 已就绪`);
 
     // 自动冒烟测试（调试期间启用）
     setTimeout(() => {
-      runAutoSmokeTest(BotManager, toolManager).catch((err) => {
+      runAutoSmokeTest(_BotManager, toolManager).catch((err) => {
         logger.error('[AutoSmokeTest] 启动失败', err);
       });
     }, 12000);
@@ -191,17 +192,17 @@ function registerEvents(BotManager: any): void {
 
   // Tick — 驱动假人同步
   mc.listen('onTick', () => {
-    if (_initialized) BotManager.onTick();
+    if (_initialized) _BotManager.onTick();
     return true;
   });
 
   // 假人死亡 — 推送事件通知
   mc.listen('onPlayerDie', (player: any, source: any) => {
-    if (_initialized) BotManager.onPlayerDie(player, source);
+    if (_initialized) _BotManager.onPlayerDie(player, source);
 
     // 推送死亡事件到 Agent Core
     if (player && tcpClient.isConnected()) {
-      const bot = BotManager.get(player.realName);
+      const bot = _BotManager.get(player.realName);
       if (bot) {
         pushEvent('death', {
           player_name: player.realName,
@@ -247,7 +248,7 @@ function registerEvents(BotManager: any): void {
     if (!_initialized || !tcpClient.isConnected()) return;
     if (!mob || !mob.isSimulatedPlayer || !mob.isSimulatedPlayer()) return;
 
-    const bot = BotManager.get(mob.realName);
+    const bot = _BotManager.get(mob.realName);
     if (!bot) return;
 
     pushEvent('entity_attack', {
@@ -264,7 +265,7 @@ function registerEvents(BotManager: any): void {
     try {
       if (!_initialized || !tcpClient.isConnected()) return;
 
-      for (const bot of BotManager.getAll()) {
+      for (const bot of _BotManager.getAll()) {
         try {
           if (!bot.isOnline()) {
             delete thresholdState[bot.name];
@@ -352,6 +353,9 @@ function handleMessage(msg: JsonRpcMessage): void {
       case 'tool_call_batch':
         handleToolCallBatch(request);
         break;
+      case 'bot_control':
+        handleBotControl(request);
+        break;
       default:
         tcpClient.sendRaw(
           JsonRpcCodec.encodeError(
@@ -410,6 +414,51 @@ async function handleToolCallBatch(request: JsonRpcRequest): Promise<void> {
     data: results,
     duration_ms: results.reduce((sum: number, r: any) => sum + (r.duration_ms || 0), 0),
   }));
+}
+
+// 假人上线/下线控制
+async function handleBotControl(request: JsonRpcRequest): Promise<void> {
+  const { action, bot_name } = request.params || {};
+  if (!_BotManager) {
+    tcpClient.sendRaw(JsonRpcCodec.encodeError(request.id, -32000, 'BotManager 未就绪'));
+    return;
+  }
+  if (!bot_name || !action) {
+    tcpClient.sendRaw(JsonRpcCodec.encodeError(request.id, -32602, '缺少必填参数: bot_name, action'));
+    return;
+  }
+  if (action !== 'online' && action !== 'offline' && action !== 'status') {
+    tcpClient.sendRaw(JsonRpcCodec.encodeError(request.id, -32602, 'action 必须是 online, offline 或 status'));
+    return;
+  }
+
+  try {
+    if (action === 'status') {
+      const bot = _BotManager.get(bot_name);
+      const online = bot ? bot.isOnline() : false;
+      tcpClient.sendRaw(JsonRpcCodec.encodeResponse(request.id, {
+        success: true,
+        online,
+        bot_name,
+      }));
+      return;
+    }
+
+    let result: string | void;
+    if (action === 'online') {
+      result = _BotManager.online(bot_name, false);
+    } else {
+      result = _BotManager.offline(bot_name, false);
+    }
+    tcpClient.sendRaw(JsonRpcCodec.encodeResponse(request.id, {
+      success: result === 'SUCCESS' || result === undefined,
+      message: result && result !== 'SUCCESS' ? result : undefined,
+      action,
+      bot_name,
+    }));
+  } catch (err) {
+    tcpClient.sendRaw(JsonRpcCodec.encodeError(request.id, -32603, `假人控制失败: ${err instanceof Error ? err.message : String(err)}`));
+  }
 }
 
 // 状态变化处理
@@ -512,18 +561,18 @@ async function runAutoSmokeTest(BotManager: any, toolMgr: ToolManager): Promise<
   logger.info('[AutoSmokeTest] 开始自动冒烟测试');
   try {
     // 0. 清理历史测试假人数据，避免脏状态影响测试
-    const existing = BotManager.get(AUTO_TEST_BOT);
+    const existing = _BotManager.get(AUTO_TEST_BOT);
     if (existing && existing.isOnline && existing.isOnline()) {
       existing.offline(false);
       await sleep(500);
     }
-    try { BotManager.deleteData(AUTO_TEST_BOT); } catch (e) { /* ignore */ }
-    try { BotManager.deleteInventory(AUTO_TEST_BOT); } catch (e) { /* ignore */ }
+    try { _BotManager.deleteData(AUTO_TEST_BOT); } catch (e) { /* ignore */ }
+    try { _BotManager.deleteInventory(AUTO_TEST_BOT); } catch (e) { /* ignore */ }
     await sleep(200);
 
     // 1. 创建假人
-    if (!BotManager.get(AUTO_TEST_BOT)) {
-      const createResult = BotManager.create(AUTO_TEST_BOT, AUTO_TEST_POS);
+    if (!_BotManager.get(AUTO_TEST_BOT)) {
+      const createResult = _BotManager.create(AUTO_TEST_BOT, AUTO_TEST_POS);
       if (createResult && createResult !== 'SUCCESS') {
         logger.error(`[AutoSmokeTest] 创建假人失败: ${createResult}`);
         return;
@@ -532,7 +581,7 @@ async function runAutoSmokeTest(BotManager: any, toolMgr: ToolManager): Promise<
     }
 
     // 2. 上线假人
-    const onlineResult = BotManager.online(AUTO_TEST_BOT, false);
+    const onlineResult = _BotManager.online(AUTO_TEST_BOT, false);
     if (onlineResult && onlineResult !== 'SUCCESS') {
       logger.error(`[AutoSmokeTest] 上线假人失败: ${onlineResult}`);
       return;
@@ -542,7 +591,7 @@ async function runAutoSmokeTest(BotManager: any, toolMgr: ToolManager): Promise<
     await sleep(2000);
 
     // 3. 将假人传送到指定测试坐标
-    const tpResult = BotManager.teleportToPos(AUTO_TEST_BOT, AUTO_TEST_POS);
+    const tpResult = _BotManager.teleportToPos(AUTO_TEST_BOT, AUTO_TEST_POS);
     if (tpResult && tpResult !== 'SUCCESS') {
       logger.error(`[AutoSmokeTest] 传送假人失败: ${tpResult}`);
       return;
@@ -551,7 +600,7 @@ async function runAutoSmokeTest(BotManager: any, toolMgr: ToolManager): Promise<
 
     await sleep(2000);
 
-    const bot = BotManager.get(AUTO_TEST_BOT);
+    const bot = _BotManager.get(AUTO_TEST_BOT);
     const botPlayer = bot?.getPlayer ? bot.getPlayer() : null;
     if (!botPlayer) {
       logger.error('[AutoSmokeTest] 无法获取假人 Player 对象');
@@ -668,8 +717,8 @@ function registerCommands(BotManager: any, BotTestSuite: any, guiTester: InGameT
         }
 
         const info = _initialized
-          ? `§e假人数量: ${BotManager.getAll().length}\n` +
-            `§e在线假人: ${BotManager.getAll().filter((b: any) => b.isOnline()).length}\n` +
+          ? `§e假人数量: ${_BotManager.getAll().length}\n` +
+            `§e在线假人: ${_BotManager.getAll().filter((b: any) => b.isOnline()).length}\n` +
             `§eTCP 状态: ${tcpClient.getState()}\n` +
             `§e已注册工具: ${toolRegistry.count}`
           : '§c插件尚未就绪';

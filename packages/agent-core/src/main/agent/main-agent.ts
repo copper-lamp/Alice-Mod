@@ -283,7 +283,11 @@ export class MainAgent {
       const modelKey: keyof AgentLLMConfig = (event.source === 'qq' || event.source === 'debug')
         ? 'qqBotModel'
         : 'mainModel';
-      const modelSel = this.deps.agentConfig.llmConfig[modelKey];
+      let modelSel = this.deps.agentConfig.llmConfig[modelKey];
+      // V20 FIX: 如果 qqBotModel 未配置（providerId 为空字符串），回退到 mainModel
+      if (!modelSel?.providerId && modelKey === 'qqBotModel') {
+        modelSel = this.deps.agentConfig.llmConfig.mainModel;
+      }
 
       // ── 2. 加载历史 ──
       const historyEntries = await this.deps.historyStore.load(
@@ -361,6 +365,8 @@ export class MainAgent {
               workspaceId: this.deps.workspaceId,
               requiresTools: tools.length > 0,
               requiresStreaming: false,
+              providerId: modelSel?.providerId,
+              model: modelSel?.modelName,
             };
             return this.deps.modelRouter.resolve(ctx);
           },

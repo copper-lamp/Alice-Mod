@@ -66,6 +66,41 @@ export function registerAgentHandlers(): void {
     return { success }
   })
 
+  // V28: 设置智能体启用/禁用
+  ipcMain.handle('agent:set-enabled', async (_event, { id, enabled }: { id: string; enabled: boolean }) => {
+    const updateResult = await agentConfigManager.update(id, { enabled })
+    if (updateResult) {
+      const { getMainAgentRegistry } = await import('./index')
+      getMainAgentRegistry().invalidate('', id)
+    }
+    return { success: updateResult }
+  })
+
+  // V28: 控制假人上线/下线
+  ipcMain.handle('agent:bot-control', async (_event, { id, action }: { id: string; action: 'online' | 'offline' }) => {
+    const config = await agentConfigManager.get(id)
+    if (!config) return { success: false, error: '智能体不存在' }
+
+    const workspaceId = config.workspaceId ?? ''
+    const { getConnectionResolver } = await import('./index')
+    const resolver = getConnectionResolver()
+    if (!resolver) return { success: false, error: 'ConnectionResolver 未就绪' }
+
+    try {
+      const conn = resolver.resolve(workspaceId)
+      const resp = await conn.sendRequestAndAwait('bot_control', {
+        action,
+        bot_name: config.name,
+      }, { timeoutMs: 15_000 })
+      if ('error' in resp && resp.error) {
+        return { success: false, error: `[${resp.error.code}] ${resp.error.message}` }
+      }
+      return { success: true, data: (resp as any).result }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
   // V24: 获取 Agent 运行时状态（含 QQ 连接状态）
   ipcMain.handle('agent:get-status', async (_event, { id }) => {
     const config = await agentConfigManager.get(id)
@@ -94,9 +129,29 @@ export function registerAgentHandlers(): void {
       }
     }
 
+    // V28: 获取假人上线状态
+    let botOnline = false
+    try {
+      const { getConnectionResolver } = await import('./index')
+      const resolver = getConnectionResolver()
+      if (resolver) {
+        const conn = resolver.resolve(workspaceId)
+        const resp = await conn.sendRequestAndAwait('bot_control', {
+          action: 'status',
+          bot_name: config.name,
+        }, { timeoutMs: 5_000 })
+        if (!('error' in resp) || !resp.error) {
+          botOnline = (resp as any).result?.online === true
+        }
+      }
+    } catch {
+      // 连接未就绪或适配器不支持，忽略
+    }
+
     return {
       status: 'ready',
       qqStatus,
+      botOnline,
       roundLimit: 5,
     }
   })

@@ -93,7 +93,7 @@ export type LayoutMode = 'nav-view' | 'agent-view' | 'agent-create'
 export type NavPanelType = 'dashboard' | 'model' | 'knowledge' | 'robot'
 
 /** 智能体实例 Tab */
-export type AgentViewTab = 'info' | 'config'
+export type AgentViewTab = 'info' | 'config' | 'qq'
 
 /** 仪表盘统计数据 */
 export interface DashboardStats {
@@ -149,6 +149,8 @@ export interface AgentSummary {
   lastActiveAt?: number
   workspaceId?: string
   skinData?: string
+  enabled: boolean
+  botOnline: boolean
 }
 
 /** 智能体完整配置 */
@@ -168,8 +170,14 @@ export interface AgentConfig {
   workspaceId?: string
   /** V26：预编译的完整系统提示词文本，创建/更新时由 PromptCompiler 生成 */
   compiledPrompt?: string
+  /** V28：QQ 智能体独立人设配置（与主 Agent persona 完全独立） */
+  qqPersona?: AgentPersona
+  /** V28：QQ 智能体预编译系统提示词 */
+  qqCompiledPrompt?: string
   /** V27：技能配置（启用/禁用列表） */
   skills?: AgentSkillConfig
+  /** V28：智能体是否启用（默认 true），禁用时不响应任何触发事件 */
+  enabled?: boolean
   createdAt?: number
   updatedAt?: number
 }

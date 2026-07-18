@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
 import { Tabs, Modal, useOverlayState, Button } from '@heroui/react'
-import { Trash2, AlertTriangle } from 'lucide-react'
+import { Trash2, AlertTriangle, Wifi, WifiOff, Power } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useAgentStore } from '../../stores/agentStore'
 import ChatPanel from '../chat/ChatPanel'
 import AgentConfigForm from './AgentConfigForm'
+import QQPanel from './QQPanel'
 
 function formatTime(ts: number): string {
   const d = new Date(ts)
@@ -25,13 +26,26 @@ const AgentInstanceView: React.FC = () => {
   const deleteState = useOverlayState()
   const [deleting, setDeleting] = useState(false)
 
+  // V28: 智能体启用/禁用状态
+  const [enabled, setEnabled] = useState<boolean>(true)
+  const [botOnline, setBotOnline] = useState<boolean>(false)
+  const [botLoading, setBotLoading] = useState(false)
+
   useEffect(() => {
     if (currentAgentId && !currentAgent) {
       fetchAgent(currentAgentId)
     }
   }, [currentAgentId])
 
+  // 同步 currentAgent.enabled 到本地状态
+  useEffect(() => {
+    if (currentAgent) {
+      setEnabled(currentAgent.enabled !== false)
+    }
+  }, [currentAgent])
+
   // V24: 获取 Agent 运行时状态（含 QQ 连接状态）
+  // V28: 扩展为包含 botOnline 字段
   useEffect(() => {
     if (!currentAgentId) return
     const fetchStatus = async () => {
@@ -39,8 +53,12 @@ const AgentInstanceView: React.FC = () => {
         const result = await window.electronAPI.invoke('agent:get-status', { id: currentAgentId }) as {
           status: string
           qqStatus: string
+          botOnline?: boolean
         }
         setQqStatus(result.qqStatus ?? 'disconnected')
+        if (result.botOnline !== undefined) {
+          setBotOnline(result.botOnline)
+        }
       } catch {
         // agent:get-status 可能未注册
       }
@@ -63,6 +81,39 @@ const AgentInstanceView: React.FC = () => {
       // 删除失败由 store 内部处理
     } finally {
       setDeleting(false)
+    }
+  }
+
+  // V28: 切换智能体启用/禁用
+  const handleToggleEnabled = async () => {
+    if (!currentAgentId) return
+    const newEnabled = !enabled
+    try {
+      await window.electronAPI.invoke('agent:set-enabled', { id: currentAgentId, enabled: newEnabled })
+      setEnabled(newEnabled)
+    } catch {
+      // 忽略
+    }
+  }
+
+  // V28: 控制假人上线/下线
+  const handleBotControl = async (action: 'online' | 'offline') => {
+    if (!currentAgentId) return
+    setBotLoading(true)
+    try {
+      const result = await window.electronAPI.invoke('agent:bot-control', { id: currentAgentId, action }) as {
+        success: boolean
+        error?: string
+      }
+      if (result.success) {
+        setBotOnline(action === 'online')
+      } else {
+        console.warn('[AgentInstanceView] bot-control 失败:', result.error)
+      }
+    } catch {
+      console.warn('[AgentInstanceView] bot-control 调用异常')
+    } finally {
+      setBotLoading(false)
     }
   }
 
@@ -89,7 +140,7 @@ const AgentInstanceView: React.FC = () => {
   return (
     <>
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-white rounded-xl shadow-sm border border-gray-200 animate-fadeIn">
-      {/* 标题栏 - 上栏：头像、名字、最后运行时间、Tabs */}
+      {/* 标题栏 - 上栏：头像、名字、状态、控制按钮、Tabs */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-8 h-8 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center border border-gray-200 flex-shrink-0">
@@ -106,52 +157,103 @@ const AgentInstanceView: React.FC = () => {
             )}
           </div>
           <div className="min-w-0">
-            <span className="text-base font-semibold text-gray-800">{currentSummary.name}</span>
-            <span className="text-xs text-gray-400 ml-2 capitalize">{currentSummary.status}</span>
-            <span className="text-xs text-gray-400 ml-3">
-              {currentSummary.lastActiveAt ? `最后活跃: ${formatTime(currentSummary.lastActiveAt)}` : '未运行'}
-            </span>
-            {/* V24: QQ 连接状态 */}
-            {currentAgent?.qqBinding?.enabled && (
-              <span className={`ml-3 inline-flex items-center gap-1 text-xs ${qqStatus === 'connected' ? 'text-green-500' : 'text-gray-400'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${qqStatus === 'connected' ? 'bg-green-500' : 'bg-gray-300'}`} />
-                QQ: {qqStatus === 'connected' ? '在线' : qqStatus === 'connecting' ? '连接中' : '离线'}
+            <div className="flex items-center gap-2">
+              <span className="text-base font-semibold text-gray-800">{currentSummary.name}</span>
+              {/* V28: 启用/禁用开关 */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={enabled}
+                onClick={handleToggleEnabled}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  enabled ? 'bg-green-500' : 'bg-gray-300'
+                }`}
+                title={enabled ? '已启用' : '已禁用'}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                    enabled ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className={`text-xs ${enabled ? 'text-green-600' : 'text-gray-400'}`}>
+                {enabled ? '已启用' : '已禁用'}
               </span>
-            )}
+              <span className="text-xs text-gray-400 ml-1 capitalize">{currentSummary.status}</span>
+              <span className="text-xs text-gray-400 ml-1">
+                {currentSummary.lastActiveAt ? `最后活跃: ${formatTime(currentSummary.lastActiveAt)}` : '未运行'}
+              </span>
+              {/* V24: QQ 连接状态 */}
+              {currentAgent?.qqBinding?.enabled && (
+                <span className={`ml-1 inline-flex items-center gap-1 text-xs ${qqStatus === 'connected' ? 'text-green-500' : 'text-gray-400'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${qqStatus === 'connected' ? 'bg-green-500' : 'bg-gray-300'}`} />
+                  QQ: {qqStatus === 'connected' ? '在线' : qqStatus === 'connecting' ? '连接中' : '离线'}
+                </span>
+              )}
+              {/* V28: 假人上线状态 */}
+              <span className={`ml-1 inline-flex items-center gap-1 text-xs ${botOnline ? 'text-green-500' : 'text-gray-400'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${botOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
+                假人: {botOnline ? '在线' : '离线'}
+              </span>
+            </div>
           </div>
         </div>
-        <Tabs
-          selectedKey={agentViewTab}
-          onSelectionChange={(key) => setAgentViewTab(key as 'info' | 'config')}
-        >
-          <Tabs.ListContainer>
-            <Tabs.List aria-label="智能体视图">
-              <Tabs.Tab id="info">
-                信息
-                <Tabs.Indicator />
-              </Tabs.Tab>
-              <Tabs.Tab id="config">
-                配置
-                <Tabs.Indicator />
-              </Tabs.Tab>
-            </Tabs.List>
-          </Tabs.ListContainer>
-        </Tabs>
+        <div className="flex items-center gap-2">
+          {/* V28: 上线/下线按钮 */}
+          <button
+            onClick={() => handleBotControl(botOnline ? 'offline' : 'online')}
+            disabled={botLoading}
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              botOnline
+                ? 'bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200'
+                : 'bg-green-50 text-green-600 hover:bg-green-100 border border-green-200'
+            } ${botLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            title={botOnline ? '下线假人' : '上线假人'}
+          >
+            {botOnline ? <WifiOff size={12} /> : <Wifi size={12} />}
+            {botLoading ? '处理中...' : botOnline ? '下线' : '上线'}
+          </button>
+          <Tabs
+            selectedKey={agentViewTab}
+            onSelectionChange={(key) => setAgentViewTab(key as 'info' | 'config' | 'qq')}
+          >
+            <Tabs.ListContainer>
+              <Tabs.List aria-label="智能体视图">
+                <Tabs.Tab id="info">
+                  信息
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+                <Tabs.Tab id="config">
+                  配置
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+                <Tabs.Tab id="qq">
+                  QQ
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+              </Tabs.List>
+            </Tabs.ListContainer>
+          </Tabs>
           <button
             onClick={() => deleteState.open()}
-            className="ml-2 p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+            className="ml-1 p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
             title="删除智能体"
           >
             <Trash2 size={14} />
           </button>
+        </div>
       </div>
 
       {/* 内容区 - 下栏：高度由父容器决定，由子组件自行处理滚动 */}
       <div className="flex-1 min-h-0 flex flex-col">
         {agentViewTab === 'info' ? (
           <ChatPanel />
-        ) : (
+        ) : agentViewTab === 'config' ? (
           <AgentConfigForm agentId={currentAgentId} />
+        ) : (
+          <QQPanel agentId={currentAgentId} />
         )}
       </div>
     </div>

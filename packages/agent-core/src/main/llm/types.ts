@@ -272,6 +272,10 @@ export interface RouterContext {
   requiresTools: boolean;
   /** 是否需要流式输出 */
   requiresStreaming: boolean;
+  /** 首选 Provider ID（由调用方指定，如 qqBotModel 的 providerId） */
+  providerId?: string;
+  /** 首选模型名 */
+  model?: string;
 }
 
 /** 解析后的模型选择 */

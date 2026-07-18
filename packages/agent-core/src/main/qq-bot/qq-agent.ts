@@ -142,6 +142,9 @@ export class QQAgent extends MainAgent {
     this.currentMsg = msg;
     this.setStatus('processing');
 
+    // V28: 备份主 Agent 的 compiledPrompt，用于临时替换和恢复
+    const originalCompiledPrompt = this.deps.agentConfig.compiledPrompt;
+
     try {
       // 1. 解析玩家身份
       const identity = msg.userId ? this.playerIdentity.resolveByQQ(msg.userId) : null;
@@ -153,6 +156,27 @@ export class QQAgent extends MainAgent {
 
       // 3. 构建 prompt（含 peer_context）
       const prompt = this.formatQQPrompt(msg, identity);
+
+      // V28: 使用 qqCompiledPrompt 作为系统提示词（与主 Agent 独立）
+      // 临时替换 compiledPrompt 为 qqCompiledPrompt，调用后恢复
+      if (this.deps.agentConfig.qqCompiledPrompt) {
+        this.deps.agentConfig.compiledPrompt = this.deps.agentConfig.qqCompiledPrompt;
+      } else {
+        // V28: 兼容旧数据 — 惰性编译并回填
+        try {
+          const { PromptCompiler } = await import('../prompt/compiler/prompt-compiler');
+          const compiled = PromptCompiler.compileQQ(this.deps.agentConfig);
+          this.deps.agentConfig.compiledPrompt = compiled;
+          this.deps.agentConfig.qqCompiledPrompt = compiled;
+          // 异步回填到数据库
+          const { getSharedAgentConfigManager } = await import('../ipc/agent-handler');
+          getSharedAgentConfigManager().updateCompiledPrompt(this.deps.agentId, compiled).catch(err =>
+            console.warn(`[QQAgent] 惰性编译回填失败 ${this.deps.agentId}:`, err),
+          );
+        } catch {
+          // 回退到主 Agent 的 compiledPrompt
+        }
+      }
 
       // 4. 调父类 handle（自动选 qqBotModel、通过 scheduler 限流、写历史）
       const result = await super.handle({
@@ -189,6 +213,9 @@ export class QQAgent extends MainAgent {
         this.reportBus.markConsumed(pendingReports.map(r => r.id));
       }
 
+      // V28: 恢复主 Agent 的 compiledPrompt
+      this.deps.agentConfig.compiledPrompt = originalCompiledPrompt;
+
       this.setStatus('idle');
       return {
         response: result.finalResponse,
@@ -197,6 +224,8 @@ export class QQAgent extends MainAgent {
         error: result.error,
       };
     } catch (err) {
+      // V28: 确保恢复主 Agent 的 compiledPrompt
+      this.deps.agentConfig.compiledPrompt = originalCompiledPrompt;
       this.setStatus('idle');
       const errorMsg = err instanceof Error ? err.message : String(err);
       return { response: '', rounds: 0, totalTokens: 0, error: errorMsg };

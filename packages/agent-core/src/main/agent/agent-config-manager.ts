@@ -14,9 +14,11 @@ export class AgentConfigManager {
 
     // V26: 编译系统提示词
     const compiledPrompt = PromptCompiler.compile(config)
+    // V28: 编译 QQ 系统提示词
+    const qqCompiledPrompt = PromptCompiler.compileQQ(config)
 
     const now = Date.now()
-    const record: AgentConfig = { ...config, id, compiledPrompt, createdAt: now, updatedAt: now }
+    const record: AgentConfig = { ...config, id, compiledPrompt, enabled: config.enabled ?? true, createdAt: now, updatedAt: now }
     this.cache.set(id, record)
     this.saveToDb(id, record)
 
@@ -36,6 +38,8 @@ export class AgentConfigManager {
 
     // V26: 配置变更后重新编译系统提示词
     updated.compiledPrompt = PromptCompiler.compile(updated)
+    // V28: 重新编译 QQ 系统提示词
+    updated.qqCompiledPrompt = PromptCompiler.compileQQ(updated)
 
     this.cache.set(id, updated)
     this.saveToDb(id, updated)
@@ -74,6 +78,8 @@ export class AgentConfigManager {
       toolCount: Object.values(c.tools.enabledTools).filter(Boolean).length,
       lastActiveAt: c.updatedAt,
       skinData: c.skinData,
+      enabled: c.enabled ?? true,
+      botOnline: false,
     }))
   }
 
@@ -145,6 +151,8 @@ export class AgentConfigManager {
         persona_json: string; tools_json: string; qq_binding_json: string
         llm_config_json: string; compiled_prompt: string | null; created_at: number; updated_at: number
         is_main: number | null; workspace_id: string | null
+        qq_persona_json: string | null; qq_compiled_prompt: string | null
+        enabled: number | null
       }>
       for (const row of rows) {
         this.cache.set(row.id, {
@@ -157,8 +165,11 @@ export class AgentConfigManager {
           qqBinding: JSON.parse(row.qq_binding_json),
           llmConfig: JSON.parse(row.llm_config_json),
           compiledPrompt: row.compiled_prompt ?? undefined,
+          qqPersona: row.qq_persona_json ? JSON.parse(row.qq_persona_json) : undefined,
+          qqCompiledPrompt: row.qq_compiled_prompt ?? undefined,
           isMain: row.is_main === 1,
           workspaceId: row.workspace_id ?? undefined,
+          enabled: row.enabled !== 0,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
         })
@@ -174,15 +185,18 @@ export class AgentConfigManager {
       // V24: 提取 qq_binding_account_id 以支持索引加速查找
       const qqBindingAccountId = config.qqBinding?.enabled ? (config.qqBinding.accountId ?? null) : null
       db.prepare(
-        `INSERT OR REPLACE INTO agents (id, name, alias, skin_data, persona_json, tools_json, qq_binding_json, qq_binding_account_id, llm_config_json, compiled_prompt, is_main, workspace_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO agents (id, name, alias, skin_data, persona_json, tools_json, qq_binding_json, qq_binding_account_id, llm_config_json, compiled_prompt, qq_persona_json, qq_compiled_prompt, is_main, workspace_id, enabled, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         id, config.name, config.alias ?? null, config.skinData ?? null,
         JSON.stringify(config.persona), JSON.stringify(config.tools),
         JSON.stringify(config.qqBinding), qqBindingAccountId,
         JSON.stringify(config.llmConfig),
         config.compiledPrompt ?? null,
+        config.qqPersona ? JSON.stringify(config.qqPersona) : null,
+        config.qqCompiledPrompt ?? null,
         config.isMain ? 1 : 0, config.workspaceId ?? null,
+        config.enabled !== false ? 1 : 0,
         config.createdAt ?? Date.now(), config.updatedAt ?? Date.now(),
       )
     } catch (err) {

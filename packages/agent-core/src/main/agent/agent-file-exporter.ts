@@ -59,6 +59,7 @@ export interface ExportedAgentConfig {
   }
   is_main: boolean
   workspace_id: string | null
+  enabled: boolean
   created_at: number
   updated_at: number
 }
@@ -210,6 +211,7 @@ export class AgentFileExporter {
       },
       is_main: config.isMain ?? false,
       workspace_id: config.workspaceId ?? null,
+      enabled: config.enabled !== false,
       created_at: config.createdAt ?? Date.now(),
       updated_at: config.updatedAt ?? Date.now(),
     }

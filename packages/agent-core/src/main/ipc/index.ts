@@ -57,6 +57,11 @@ import { getMemoryManager } from './memory-handler'
 
 export { setMemoryManager, getSharedAgentConfigManager }
 
+/** V28：获取 ConnectionResolver 实例（供 agent-handler 使用） */
+export function getConnectionResolver(): import('../agent/connection-resolver').ConnectionResolver | null {
+  return _connectionResolver
+}
+
 export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   // 初始化 Wiki 客户端
   setWikiClient(new WikiClient())
@@ -124,6 +129,62 @@ export async function bootstrapAndWireAgents(tcpServer: TcpServer): Promise<Main
   _scheduler = new DefaultLlmRequestScheduler()
   _historyStore = new SqliteChatHistoryStore(getDatabaseManager().getDb())
   _connectionResolver = new ConnectionResolver(tcpServer, getWorkspaceManager())
+
+  // 1.5 从 model_configs 表同步已配置的 Provider 到 LLM 配置管理器
+  // 解决前端模型配置页面与 LLM 引导系统数据不同步的问题
+  try {
+    const db = getDatabaseManager().getDb()
+    const rows = db.prepare(
+      'SELECT * FROM model_configs WHERE enabled = 1 ORDER BY provider_id, created_at',
+    ).all() as Array<{
+      provider_id: string
+      provider_name: string
+      model_name: string
+      api_key: string
+      base_url: string
+    }>
+
+    // 按 provider_id 分组
+    const providerMap = new Map<string, {
+      baseUrl: string
+      apiKey: string
+      models: string[]
+    }>()
+
+    for (const row of rows) {
+      if (!providerMap.has(row.provider_id)) {
+        providerMap.set(row.provider_id, {
+          baseUrl: row.base_url,
+          apiKey: row.api_key,
+          models: [],
+        })
+      }
+      const entry = providerMap.get(row.provider_id)!
+      if (!entry.models.includes(row.model_name)) {
+        entry.models.push(row.model_name)
+      }
+    }
+
+    // 更新到 configManager
+    for (const [providerId, entry] of providerMap) {
+      await _configManager.updateProviderConfig(providerId, {
+        baseUrl: entry.baseUrl,
+        apiKey: entry.apiKey || undefined,
+        defaultModel: entry.models[0],
+        models: entry.models,
+        timeout: 60000,
+        maxRetries: 3,
+      })
+    }
+
+    if (providerMap.size > 0) {
+      console.info(
+        `[bootstrapAndWireAgents] 从 model_configs 同步 ${providerMap.size} 个 Provider 配置`,
+      )
+    }
+  } catch (err) {
+    console.warn('[bootstrapAndWireAgents] 同步 model_configs 失败:', err)
+  }
 
   // 2. bootstrap：注册 Provider + 配置 Router workspace 路由
   const agentConfigManager = getSharedAgentConfigManager()

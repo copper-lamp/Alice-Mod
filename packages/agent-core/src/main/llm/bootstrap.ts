@@ -98,7 +98,8 @@ export async function bootstrapLlmSystem(deps: BootstrapDeps): Promise<Bootstrap
       skippedAgents.push(summary.id);
       continue;
     }
-    const wsKey = cfg.workspaceId ?? 'default';
+    // V20 FIX: 空字符串 '' 也是合法的 workspaceId，不要用 'default' 替代
+    const wsKey = cfg.workspaceId || 'default';
     // 同一 workspace 多个 agent 时后者覆盖前者；正常情况下每 workspace 一个 main agent
     workspaceRoutes[wsKey] = {
       providerId: mainModel.providerId,

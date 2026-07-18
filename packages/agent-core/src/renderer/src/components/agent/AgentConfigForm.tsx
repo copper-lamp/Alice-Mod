@@ -6,7 +6,6 @@ import { useUIStore } from '../../stores/uiStore'
 import { memoryApi } from '../../lib/ipc'
 import type { AgentConfig, AgentPersona, AgentToolConfig, QQBinding, ModelSelection, AgentSkillConfig } from '../../lib/types'
 import BasicInfoSection from './sections/BasicInfoSection'
-import QQBindSection from './sections/QQBindSection'
 
 interface AgentConfigFormProps {
   agentId?: string
@@ -256,17 +255,6 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId }) => {
             <div className="text-sm text-gray-600">
               已启用 {Object.keys(form.tools.enabledTools).length} 个工具
             </div>
-          </section>
-
-          <hr className="border-gray-100" />
-
-          {/* QQ 绑定 */}
-          <section>
-            <h3 className="text-sm font-semibold text-gray-800 mb-3">QQ 绑定</h3>
-            <QQBindSection
-              binding={form.qqBinding}
-              onChange={(binding: QQBinding) => updateField('qqBinding', binding)}
-            />
           </section>
 
           <hr className="border-gray-100" />

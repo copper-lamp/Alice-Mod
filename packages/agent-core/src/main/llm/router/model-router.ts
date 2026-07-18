@@ -33,6 +33,20 @@ export class DefaultModelRouter implements IModelRouter {
     const startTime = Date.now();
     this.stats.totalResolves++;
 
+    // 0. 优先使用上下文中指定的 Provider（如 qqBotModel 的 providerId）
+    if (context.providerId) {
+      const provider = this.registry.get(context.providerId);
+      if (provider && !this.fallbackHandler.isDegraded(context.providerId)) {
+        const resolved: ResolvedModel = {
+          providerId: context.providerId,
+          model: context.model || provider.metadata.supportedModels[0] || 'default',
+          options: {},
+        };
+        this.updateStats(context.providerId, Date.now() - startTime);
+        return resolved;
+      }
+    }
+
     // 1. 先尝试自定义规则
     for (const rule of [...this.rules].sort((a, b) => b.priority - a.priority)) {
       if (rule.match(context)) {
@@ -47,8 +61,8 @@ export class DefaultModelRouter implements IModelRouter {
       }
     }
 
-    // 2. 工作区指定路由
-    if (context.workspaceId && this.config.workspaces?.[context.workspaceId]) {
+    // 2. 工作区指定路由（空字符串也是合法的 workspaceId）
+    if (context.workspaceId != null && this.config.workspaces?.[context.workspaceId]) {
       const target = this.config.workspaces[context.workspaceId]!;
       if (!this.fallbackHandler.isDegraded(target.providerId)) {
         this.updateStats(target.providerId, Date.now() - startTime);

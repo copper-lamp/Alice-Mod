@@ -236,6 +236,14 @@ export class DatabaseManager implements IDatabaseManager {
     // ── V26: agents.compiled_prompt 列（预编译系统提示词） ──
     this.addColumnIfNotExists(db, 'agents', 'compiled_prompt', 'TEXT');
 
+    // ── V28: agents.enabled 列（智能体是否启用） ──
+    this.addColumnIfNotExists(db, 'agents', 'enabled', 'INTEGER NOT NULL DEFAULT 1');
+
+    // ── V28: agents.qq_persona_json 列（QQ 智能体独立人设） ──
+    this.addColumnIfNotExists(db, 'agents', 'qq_persona_json', 'TEXT');
+    // ── V28: agents.qq_compiled_prompt 列（QQ 智能体预编译系统提示词） ──
+    this.addColumnIfNotExists(db, 'agents', 'qq_compiled_prompt', 'TEXT');
+
     // ── V25: model_configs 表（模型配置持久化） ──
     db.exec(`
       CREATE TABLE IF NOT EXISTS model_configs (
