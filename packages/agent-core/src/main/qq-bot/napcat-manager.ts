@@ -108,6 +108,8 @@ export class NapCatManager {
   private restartTimer: NodeJS.Timeout | null = null;
   private credential: string | null = null;
   private webUiActualPort = DEFAULT_WEB_UI_PORT;
+  /** 标记是否由 start() 的 catch 块/stop() 主动杀进程，防止 exit handler 误触 handleCrash() */
+  private _intentionalShutdown = false;
 
   constructor(options: NapCatManagerOptions) {
     this.options = {
@@ -142,6 +144,10 @@ export class NapCatManager {
     return this.webUiActualPort;
   }
 
+  getOneBotPort(): number {
+    return this.options.oneBotPort || DEFAULT_ONE_BOT_PORT;
+  }
+
   /** 获取 NapCat 安装根目录 */
   getInstallDir(): string {
     return this.options.installDir || path.join(this.options.userDataPath, 'napcat');
@@ -154,6 +160,12 @@ export class NapCatManager {
 
   /** 获取 NapCat 配置文件目录 */
   getConfigDir(): string {
+    // 优先使用 executablePath 所在目录的 config/，因为 NapCat 实际读取的是 launcher.bat 目录下的 config/
+    if (this.options.executablePath) {
+      const execDir = path.dirname(this.options.executablePath);
+      return path.join(execDir, 'config');
+    }
+    // 回退到 installDir 下的 config/
     return path.join(this.getNapCatDir(), 'config');
   }
 
@@ -164,28 +176,39 @@ export class NapCatManager {
   async start(): Promise<void> {
     if (this.status === 'running' || this.status === 'starting') return;
 
-    // 每次启动重新生成 token，避免旧 token 残留导致 "token is invalid"
-    this.options.webUiToken = this.generateSecureToken();
+    // 清除上次的认证凭证，强制重新登录
     this.credential = null;
 
     this.setStatus('starting');
-    this.log('[NapCatManager] 启动 NapCat...');
+    this.log(`[NapCatManager] 启动 NapCat... token=${this.options.webUiToken.substring(0, 8)}..., port=${this.options.webUiPort}, execPath=${this.options.executablePath}`);
 
     try {
-      // 兜底：强制清理任何残留的 NapCat/QQ 进程
-      if (this.process && !this.process.killed) {
-        this.process.kill('SIGKILL');
-        this.process = null;
-      }
-      await this.forceKillNapCatProcesses();
+      // 1. 确保安装目录存在（文档 §4.2 step 1）
+      const napcatDir = this.getNapCatDir();
+      fs.mkdirSync(napcatDir, { recursive: true });
+
+      // 2. 清理残留进程：调用 KillQQ.bat 杀死所有 QQ.exe 进程，释放端口
+      await this.runKillQQBat();
+      this.process = null;
       await this.waitForPortFree(this.options.webUiPort, 3000);
 
+      // 3. 确保可执行文件存在（文档 §4.2 step 2）
       await this.ensureExecutable();
-      this.writeOneBotConfig();
-      this.writeWebUiConfig();
+
+      // 4. 读取现有配置文件，不写入端口与改写 token（文档 §4.2 step 3-4：只读取）
+      this.readOneBotConfig();
+      this.readWebUiConfig();
+
+      // 5. 启动子进程（文档 §4.2 step 5）
       await this.spawnProcess();
+
+      // 6. 等待 WebUI 就绪（文档 §4.2 step 6）
       await this.waitForWebUiReady();
+
+      // 7. WebUI 认证获取 Credential（文档 §4.2 step 7）
       await this.authenticateWebUi();
+
+      // 8. 状态变为 running（文档 §4.2 step 8）
       this.restartAttempts = 0;
       this.setStatus('running');
     } catch (err) {
@@ -193,12 +216,12 @@ export class NapCatManager {
       const enhancedMsg = this.enhanceStartupError(rawMsg);
       this.log(`[NapCatManager] 启动失败: ${enhancedMsg}`);
 
+      // 标记主动关闭，防止 exit handler 误触 handleCrash()
+      this._intentionalShutdown = true;
+
       // 清理可能已经启动的子进程，防止残留
-      if (this.process && !this.process.killed) {
-        this.process.kill('SIGKILL');
-        this.process = null;
-      }
-      await this.forceKillNapCatProcesses();
+      await this.runKillQQBat();
+      this.process = null;
 
       this.setStatus('error');
       throw new Error(enhancedMsg);
@@ -222,8 +245,8 @@ export class NapCatManager {
       }
     }
 
-    // 2. 强制杀死整个进程树（Windows 上 taskkill /T 杀子进程，包括 QQ.exe）
-    await this.forceKillNapCatProcesses();
+    // 2. 调用 KillQQ.bat 杀死所有 QQ.exe 进程，释放端口
+    await this.runKillQQBat();
 
     // 3. 等待 WebUI 端口释放，确保完全清理
     await this.waitForPortFree(this.webUiActualPort, 3000);
@@ -924,60 +947,48 @@ export class NapCatManager {
     return null;
   }
 
-  /** 生成 OneBot v11 配置文件 */
-  private writeOneBotConfig(): void {
-    const configDir = this.getConfigDir();
-    fs.mkdirSync(configDir, { recursive: true });
-
-    const config = {
-      network: {
-        httpServers: [],
-        httpClients: [],
-        websocketServers: [
-          {
-            name: 'McAgentWSServer',
-            enable: true,
-            host: '127.0.0.1',
-            port: this.options.oneBotPort,
-            messagePostFormat: 'array',
-            reportSelfMessage: false,
-            token: this.options.accessToken,
-            enableForcePushEvent: true,
-            debug: false,
-            heartInterval: 30000,
-          },
-        ],
-        websocketClients: [],
-      },
-      musicSignUrl: '',
-      enableLocalFile2Url: false,
-      parseMultMsg: false,
-    };
-
-    fs.writeFileSync(
-      path.join(configDir, 'onebot11.json'),
-      JSON.stringify(config, null, 2),
-      'utf-8',
-    );
+  /** 读取 OneBot 配置文件（仅读取，不写入端口与 token） */
+  private readOneBotConfig(): void {
+    const configPath = path.join(this.getConfigDir(), 'onebot11.json');
+    if (!fs.existsSync(configPath)) {
+      this.log(`[NapCatManager] 未找到 onebot11.json 配置，使用默认值`);
+      return;
+    }
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      const wsServer = config.network?.websocketServers?.[0];
+      if (wsServer?.port) {
+        this.options.oneBotPort = wsServer.port;
+        this.log(`[NapCatManager] 读取 OneBot 配置: port=${wsServer.port}`);
+      }
+      if (wsServer?.token !== undefined) {
+        this.options.accessToken = wsServer.token;
+      }
+    } catch (err) {
+      this.log(`[NapCatManager] 读取 onebot11.json 失败: ${err}`);
+    }
   }
 
-  /** 生成 WebUI 配置文件 */
-  private writeWebUiConfig(): void {
-    const configDir = this.getConfigDir();
-    fs.mkdirSync(configDir, { recursive: true });
-
-    const config = {
-      host: '127.0.0.1',
-      port: this.options.webUiPort,
-      token: this.options.webUiToken,
-      loginRate: 3,
-    };
-
-    fs.writeFileSync(
-      path.join(configDir, 'webui.json'),
-      JSON.stringify(config, null, 2),
-      'utf-8',
-    );
+  /** 读取 WebUI 配置文件（仅读取，不写入端口与 token） */
+  private readWebUiConfig(): void {
+    const configPath = path.join(this.getConfigDir(), 'webui.json');
+    if (!fs.existsSync(configPath)) {
+      this.log(`[NapCatManager] 未找到 webui.json 配置，使用默认值`);
+      return;
+    }
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      if (config.port) {
+        this.options.webUiPort = config.port;
+        this.log(`[NapCatManager] 读取 WebUI 配置: port=${config.port}`);
+      }
+      if (config.token) {
+        this.options.webUiToken = config.token;
+        this.log(`[NapCatManager] 读取 WebUI 配置: token=${config.token.substring(0, 8)}...`);
+      }
+    } catch (err) {
+      this.log(`[NapCatManager] 读取 webui.json 失败: ${err}`);
+    }
   }
 
   /** 启动 NapCat 子进程 */
@@ -1014,25 +1025,25 @@ export class NapCatManager {
 
     this.log(`[NapCatManager] spawn: ${execPath} ${args.join(' ')}`);
 
-    const isBatchFile = execPath.toLowerCase().endsWith('.bat');
     const cwd = this.options.workingDir || napcatDir;
-    const proc = isBatchFile
-      ? spawn('cmd.exe', ['/c', 'chcp 65001 > NUL &', execPath, ...args], {
-          cwd,
-          env: {
-            ...process.env,
-            NAPCAT_WEBUI_SECRET_KEY: this.options.webUiToken,
-            NAPCAT_QUICK_ACCOUNT: this.options.account || '',
-          },
-        })
-      : spawn(execPath, args, {
-          cwd,
-          env: {
-            ...process.env,
-            NAPCAT_WEBUI_SECRET_KEY: this.options.webUiToken,
-            NAPCAT_QUICK_ACCOUNT: this.options.account || '',
-          },
-        });
+    const execDir = path.dirname(execPath);
+    const env = {
+      ...process.env,
+      NAPCAT_WEBUI_SECRET_KEY: this.options.webUiToken,
+      NAPCAT_QUICK_ACCOUNT: this.options.account || '',
+      // NAPCAT_WORKDIR 确保 NapCat 从正确的目录读取 config/ 配置
+      // 因为 launcher.bat 的 runAs 提升权限后会丢失 spawn 的环境变量，
+      // 所以必须通过配置文件路径来保证一致性，同时设置 WORKDIR 作为兜底
+      NAPCAT_WORKDIR: execDir,
+    };
+    this.log(`[NapCatManager] spawn env: cwd=${cwd}, NAPCAT_WORKDIR=${execDir}, NAPCAT_QUICK_ACCOUNT=${env.NAPCAT_QUICK_ACCOUNT}`);
+    // 显式使用 cmd.exe /c 包装 .bat 文件，避免 Node.js 直接 spawn .bat 时的 EINVAL 错误
+    // windowsVerbatimArguments: true 确保路径中的空格和特殊字符被正确处理
+    const proc = spawn(
+      process.env.comspec || 'cmd.exe',
+      ['/d', '/c', `"${execPath}"`, ...args],
+      { cwd, env, windowsVerbatimArguments: true }
+    );
 
     this.process = proc;
 
@@ -1058,7 +1069,11 @@ export class NapCatManager {
     proc.on('exit', (code, signal) => {
       this.log(`[NapCatManager] 子进程退出: code=${code}, signal=${signal}`);
       this.process = null;
-      // status 为 'starting' 时，是被 start() 主动 kill 旧进程，不触发错误重启
+      // 主动关闭（start() 失败/stop()）时，不触发错误重启
+      if (this._intentionalShutdown) {
+        this._intentionalShutdown = false;
+        return;
+      }
       if (this.status !== 'stopping' && this.status !== 'starting') {
         this.handleCrash();
       }
@@ -1090,7 +1105,7 @@ export class NapCatManager {
         await this.delay(1000);
       }
     }
-
+    this.log(`[NapCatManager] WebUI 等待超时 (${WEB_UI_READY_TIMEOUT_MS / 1000}s)`);
     throw new Error('等待 WebUI 就绪超时');
   }
 
@@ -1100,20 +1115,23 @@ export class NapCatManager {
     const logText = this.logs.join('\n');
     const match = logText.match(/WebUi User Panel Url: http:\/\/[^:]+:(\d+)/);
     if (match) {
+      this.log(`[NapCatManager] 从日志检测到 WebUI 端口: ${match[1]}`);
       return parseInt(match[1], 10);
     }
 
     // 回退到配置端口，尝试附近几个端口
     const preferred = this.options.webUiPort;
+    this.log(`[NapCatManager] 尝试扫描端口: ${preferred}~${preferred + 9}`);
     for (let port = preferred; port < preferred + 10; port++) {
       try {
         await this.webUiGet('/api/auth/check', 1000, port);
+        this.log(`[NapCatManager] 端口扫描成功: ${port}`);
         return port;
       } catch {
         // continue
       }
     }
-
+    this.log(`[NapCatManager] 端口扫描未找到 WebUI，回退到配置端口: ${preferred}`);
     return preferred;
   }
 
@@ -1124,9 +1142,13 @@ export class NapCatManager {
       .update(this.options.webUiToken + '.napcat')
       .digest('hex');
 
+    this.log(`[NapCatManager] 认证 WebUI: port=${this.webUiActualPort}, token=${this.options.webUiToken.substring(0, 8)}..., hash=${hash.substring(0, 12)}...`);
+
     const res = await this.webUiPost<
       WebUiResponse<{ Credential?: string; require2FA?: boolean }>
     >('/api/auth/login', { hash }, 10000);
+
+    this.log(`[NapCatManager] WebUI 登录响应: code=${res.code}, message=${res.message}, hasCredential=${!!res.data?.Credential}, require2FA=${!!res.data?.require2FA}`);
 
     if (res.code !== 0 || !res.data?.Credential) {
       throw new Error(res.message || 'WebUI 登录失败');
@@ -1253,36 +1275,46 @@ export class NapCatManager {
   // ════════════════════════════════════════════════════════════
 
   /**
-   * 强制杀死 NapCat 进程树
-   *
-   * 策略（避免误杀用户个人 QQ）：
-   * 1. 优先使用托管进程 PID 精确杀死进程树
-   * 2. 无 PID 时按进程名杀死 NapCat 相关进程（不含 QQ.exe）
-   * 3. taskkill /T 确保进程树全部清理
+   * 调用 KillQQ.bat 杀死所有 QQ.exe 进程，释放端口
+   * 优先查找可执行文件所在目录的 KillQQ.bat，回退到项目 libs 目录
    */
-  private async forceKillNapCatProcesses(): Promise<void> {
-    // 仅通过托管进程 PID 精确杀死进程树
-    // 不按名称杀死进程，避免多账号场景下误杀其他账号的 NapCat 实例
-    if (this.process && this.process.pid) {
-      await this.killProcessTree(this.process.pid);
-      return;
-    }
-    // 无 PID 时不做任何操作（避免误杀其他账号进程）
-    this.log('[NapCatManager] 无托管进程 PID，跳过强制杀进程（多账号安全）');
-  }
+  private async runKillQQBat(): Promise<void> {
+    const candidates: string[] = [];
 
-  /** 通过 PID 杀死整个进程树（Windows taskkill /T, 非 Windows kill 负 PID） */
-  private killProcessTree(pid: number): Promise<void> {
-    return new Promise((resolve) => {
-      if (process.platform === 'win32') {
-        exec(`taskkill /F /T /PID ${pid} 2>nul`, () => resolve());
-      } else {
-        // Unix: 负 PID 杀死进程组
-        try {
-          process.kill(-pid, 'SIGKILL');
-        } catch { /* ignore */ }
-        resolve();
+    // 优先：可执行文件所在目录
+    if (this.options.executablePath) {
+      candidates.push(path.join(path.dirname(this.options.executablePath), 'KillQQ.bat'));
+    }
+    // 其次：NapCat 安装目录
+    candidates.push(path.join(this.getNapCatDir(), 'KillQQ.bat'));
+    // 回退：项目 libs 目录
+    candidates.push(path.join(process.cwd(), 'libs', 'KillQQ.bat'));
+
+    let batPath: string | null = null;
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        batPath = p;
+        break;
       }
+    }
+
+    if (!batPath) {
+      this.log('[NapCatManager] 未找到 KillQQ.bat，直接使用 taskkill');
+      return new Promise((resolve) => {
+        exec('taskkill /f /im QQ.exe 2>nul', () => resolve());
+      });
+    }
+
+    this.log(`[NapCatManager] 调用 KillQQ.bat: ${batPath}`);
+    return new Promise((resolve) => {
+      exec(`"${batPath}"`, (err) => {
+        if (err) {
+          this.log(`[NapCatManager] KillQQ.bat 执行完成（可能无进程需杀）`);
+        } else {
+          this.log(`[NapCatManager] KillQQ.bat 执行成功`);
+        }
+        resolve();
+      });
     });
   }
 
@@ -1308,6 +1340,7 @@ export class NapCatManager {
         server.once('listening', () => {
           // 端口已空闲，关闭测试服务
           server.close();
+          this.log(`[NapCatManager] 端口 ${port} 已释放`);
           resolve();
         });
         server.listen(port, '127.0.0.1');
@@ -1321,7 +1354,7 @@ export class NapCatManager {
    */
   private enhanceStartupError(msg: string): string {
     if (msg.includes('token is invalid')) {
-      return 'WebUI 认证失败（token 无效）。已自动重置 token 并清理残留进程，请重试。';
+      return 'WebUI 认证失败（token 无效）。已清理残留进程，请重试。';
     }
     if (msg.includes('已登录') || msg.includes('重复登录')) {
       return 'QQ 账号已在其他会话中登录，已强制清理旧会话，请重试。';

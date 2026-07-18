@@ -413,7 +413,7 @@ async function connectOneBot(account: QQAccount): Promise<void> {
     }
 
     // V24: 路由消息到绑定的 Agent 实例
-    routeQQMessageToAgent(account.id, msg, client).catch((err) =>
+    routeQQMessageToAgent(account.id, account.qqNumber, msg, client).catch((err) =>
       console.error(`[QQBot] 路由消息到 Agent 失败:`, err),
     )
   })

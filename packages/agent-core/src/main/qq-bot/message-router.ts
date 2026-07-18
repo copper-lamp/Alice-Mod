@@ -28,6 +28,7 @@ import type { AgentConfig } from '../../renderer/src/lib/types'
  */
 export async function routeQQMessageToAgent(
   accountId: string,
+  botQQ: string,
   msg: QQMessage,
   client: OneBotClient,
 ): Promise<boolean> {
@@ -61,7 +62,7 @@ export async function routeQQMessageToAgent(
   }
 
   // 5. V27: mentionOnly 模式过滤 — 仅处理 @ 机器人的消息
-  if (config.qqBinding.mentionOnly && !isAtBot(msg)) {
+  if (config.qqBinding.mentionOnly && !isAtBot(msg, botQQ)) {
     return false
   }
 
@@ -136,11 +137,11 @@ async function findBoundAgent(
 
 /**
  * 检查消息是否 @ 了机器人
- * 检测消息段中是否有 type='at' 的段
+ * 检测消息段中是否有 type='at' 的段，且目标为 @全体成员 或 @机器人
  */
-function isAtBot(msg: QQMessage): boolean {
+function isAtBot(msg: QQMessage, botQQ: string): boolean {
   return msg.segments?.some(
-    seg => seg.type === 'at' && seg.data?.qq === 'all',
+    seg => seg.type === 'at' && seg.data && (seg.data.qq === 'all' || seg.data.qq === String(botQQ)),
   ) ?? false
 }
 
