@@ -11,6 +11,7 @@ import type { NapCatStatus } from '../qq-bot/napcat-manager'
 import { OneBotClient } from '../qq-bot/onebot-client'
 import { routeQQMessageToAgent } from '../qq-bot/message-router'
 import type { QQMessage } from '../qq-bot/types'
+import { getSharedAgentConfigManager } from './agent-handler'
 
 // ── 类型 ──
 
@@ -584,6 +585,24 @@ export function registerQQBotHandlers(win?: BrowserWindow): void {
   // 获取账号列表
   ipcMain.handle('qq-bot:get-accounts', async () => {
     return loadAccounts()
+  })
+
+  // V28：获取 QQ 账号绑定的 Agent 信息（workspaceId + agentId），用于前端加载 LLM 对话历史
+  ipcMain.handle('qq-bot:get-agent-binding', async (_, accountId: string) => {
+    try {
+      const configManager = getSharedAgentConfigManager()
+      const agents = await configManager.list()
+      // 遍历所有 agent，用 get() 获取完整配置检查 qqBinding
+      for (const summary of agents) {
+        const config = await configManager.get(summary.id)
+        if (config?.qqBinding?.enabled && config.qqBinding.accountId === accountId) {
+          return { workspaceId: config.workspaceId ?? '', agentId: config.id! }
+        }
+      }
+      return null
+    } catch {
+      return null
+    }
   })
 
   // 添加账号（手动配置）

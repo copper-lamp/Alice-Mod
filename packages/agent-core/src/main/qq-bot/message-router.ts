@@ -6,6 +6,7 @@
  * 2. 通过 MainAgentRegistry 获取 MainAgent 实例（若未预热则异步构造）
  * 3. 若 Agent 为 QQAgent 子类，调用 handleQQMessage()；否则调用 handle() 基本处理
  * 4. 将 Agent 回复通过 OneBotClient 发送回 QQ
+ *    - V30: 优先使用 qq_send 工具队列中的消息，若 LLM 通过 qq_send 发送了消息，则不重复发送 finalResponse
  *
  * 设计说明：
  * - 本模块不持有 MainAgentRegistry 引用，通过 getMainAgentRegistry() 获取共享单例
@@ -17,6 +18,7 @@
 import type { QQMessage } from './types'
 import type { OneBotClient } from './onebot-client'
 import type { AgentConfig } from '../../renderer/src/lib/types'
+import { pendingQqSends } from '../agent/main-agent-registry'
 
 /**
  * 路由一条 QQ 消息到绑定的 Agent 实例
@@ -89,20 +91,42 @@ export async function routeQQMessageToAgent(
       response = result.finalResponse
     }
 
-    // 7. 发送回复
-    if (response) {
-      const target = msg.groupId ?? msg.userId
-      const messageType = msg.type === 'group' ? 'sendGroupMsg' : 'sendPrivateMsg'
-      try {
-        if (msg.type === 'group') {
-          await client.sendGroupMsg(target, response)
-        } else {
-          await client.sendPrivateMsg(target, response)
-        }
-        console.log(`[MessageRouter] 回复已发送到 ${messageType === 'sendGroupMsg' ? '群' : '私聊'} ${target}`)
-      } catch (err) {
-        console.error(`[MessageRouter] 发送回复失败:`, err)
+    // 7. V30: 仅通过 qq_send 工具队列发送消息
+    // 不允许直接发送 LLM 回复，必须通过 qq_send 工具调用发送
+    // V31: 模拟打字延迟 — 第1条直接发，后续按字数计算输入时间（1秒3字）
+    const pendingSends = pendingQqSends.get(boundAgent.id) ?? []
+
+    for (let i = 0; i < pendingSends.length; i++) {
+      const pending = pendingSends[i]
+      const target = pending.target || msg.groupId || msg.userId
+
+      // 第1条直接发，后续消息按字数延迟
+      if (i > 0) {
+        const delayMs = calculateTypingDelay(pending.content)
+        console.log(`[MessageRouter] 模拟打字延迟 ${delayMs}ms（${pending.content.length}字）`)
+        await sleep(delayMs)
       }
+
+      try {
+        if (pending.type === 'private_msg' || pending.type === 'private') {
+          await client.sendPrivateMsg(target, pending.content)
+        } else {
+          await client.sendGroupMsg(target, pending.content)
+        }
+        console.log(`[MessageRouter] qq_send 消息已发送到 ${target}`)
+      } catch (err) {
+        console.error(`[MessageRouter] 发送 qq_send 消息失败:`, err)
+      }
+    }
+
+    // 清空队列
+    if (pendingSends.length > 0) {
+      pendingQqSends.delete(boundAgent.id)
+    }
+
+    // 如果 LLM 没有通过 qq_send 发送消息，记录警告（不直接发送回复）
+    if (pendingSends.length === 0 && response) {
+      console.log(`[MessageRouter] LLM 未通过 qq_send 工具发送消息，回复已丢弃: ${response.slice(0, 100)}`)
     }
 
     return true
@@ -156,4 +180,21 @@ function formatQQPrompt(msg: QQMessage): string {
     parts.push(`[私聊] 来自用户 ${msg.userId}（${msg.userName}）：${msg.content}`)
   }
   return parts.join('\n')
+}
+
+/**
+ * V31: 计算打字延迟（模拟真人输入速度）
+ * 1秒可以打3个字，取整
+ * @param content 消息内容
+ * @returns 延迟毫秒数
+ */
+function calculateTypingDelay(content: string): number {
+  const charsPerSecond = 3
+  const charCount = content.length
+  return Math.ceil((charCount / charsPerSecond) * 1000)
+}
+
+/** sleep 辅助函数 */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }

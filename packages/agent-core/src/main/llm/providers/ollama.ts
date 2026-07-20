@@ -172,9 +172,7 @@ export class OllamaProvider extends BaseProvider {
         return msg;
       }
       if (m.role === 'tool') {
-        const content = Array.isArray(m.content) ? m.content[0] : m.content;
-        const tc = content as any;
-        return { role: 'tool', content: JSON.stringify(tc?.result || {}) };
+        return { role: 'tool', content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) };
       }
       return m;
     });

@@ -167,9 +167,7 @@ export class OpenAIProvider extends BaseProvider {
         return msg;
       }
       if (m.role === 'tool') {
-        const content = Array.isArray(m.content) ? m.content[0] : m.content;
-        const tc = content as any;
-        return { role: 'tool', tool_call_id: tc?.toolCallId || '', content: JSON.stringify(tc?.result || {}) };
+        return { role: 'tool', tool_call_id: m.tool_call_id ?? '', content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) };
       }
       return m;
     });

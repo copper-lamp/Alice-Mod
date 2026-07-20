@@ -192,6 +192,8 @@ export interface BuildParams {
 
 /** 玩家状态 */
 export interface PlayerState {
+  /** V30: 跳过状态注入（QQ 来源时不注入游戏状态） */
+  skip?: boolean;
   health: number;
   hunger: number;
   saturation: number;

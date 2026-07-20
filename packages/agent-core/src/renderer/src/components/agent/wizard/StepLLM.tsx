@@ -52,7 +52,14 @@ const StepLLM: React.FC = () => {
       {showSameAsMain && (
         <Checkbox
           isSelected={selection.sameAsMain}
-          onChange={(checked) => onChange({ ...selection, sameAsMain: checked })}
+          onChange={(checked) => {
+            if (checked) {
+              // 与主模型相同：清空具体配置，让后端回退到 mainModel
+              onChange({ providerId: '', modelId: '', modelName: '', sameAsMain: true })
+            } else {
+              onChange({ ...selection, sameAsMain: false })
+            }
+          }}
           className="mb-3"
         >
           与主智能体相同

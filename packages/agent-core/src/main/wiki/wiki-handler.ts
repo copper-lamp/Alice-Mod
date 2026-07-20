@@ -15,6 +15,11 @@ export function setWikiClient(client: WikiClient): void {
   wikiClient = client
 }
 
+/** 获取 Wiki 客户端实例（供 pipeline 中间件本地调用） */
+export function getWikiClient(): WikiClient | null {
+  return wikiClient
+}
+
 export function registerWikiHandlers(): void {
   // 搜索 Wiki
   ipcMain.handle('wiki:search', async (_event, params: { query: string; limit?: number }) => {

@@ -1,7 +1,7 @@
 /** 对话消息 */
 export interface ChatMessage {
   id: string
-  role: 'user' | 'assistant' | 'system'
+  role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   thinking?: string
   toolCalls?: ToolCallInfo[]
@@ -20,6 +20,7 @@ export interface ToolCallInfo {
   result?: {
     success: boolean
     data?: unknown
+    error?: string
     duration_ms?: number
   }
   status: 'pending' | 'running' | 'success' | 'error'

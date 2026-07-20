@@ -8,7 +8,7 @@
 import { WIKI_SEARCH_TOOL, WIKI_GET_PAGE_TOOL, WIKI_GET_SECTION_TOOL } from './wiki-tools'
 
 export { WikiClient } from './wiki-client'
-export { setWikiClient, registerWikiHandlers } from './wiki-handler'
+export { setWikiClient, getWikiClient, registerWikiHandlers } from './wiki-handler'
 export { WIKI_SEARCH_TOOL, WIKI_GET_PAGE_TOOL, WIKI_GET_SECTION_TOOL } from './wiki-tools'
 export { wikiSearch, wikiGetPage, wikiGetSection } from './wiki-tools'
 export { renderSearchResults, renderPageSummary, renderPageContent } from './wiki-formatter'

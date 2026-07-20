@@ -150,10 +150,32 @@ function toConversationMessage(msg: LLMMessage): ConversationMessage {
 
 /** ConversationMessage → Message（llm Provider 格式） */
 function toProviderMessage(msg: ConversationMessage): Message {
-  return {
+  const result: Record<string, unknown> = {
     role: msg.role,
     content: msg.content,
   };
+  if (msg.tool_call_id) {
+    result.tool_call_id = msg.tool_call_id;
+  }
+  // 必须包含 tool_calls 字段，否则 LLM Provider 无法将 tool_calls
+  // 传递给 API，导致模型不理解工具调用上下文
+  if (msg.tool_calls && msg.tool_calls.length > 0) {
+    result.tool_calls = msg.tool_calls.map((tc) => {
+      let args: Record<string, unknown> = {};
+      if (typeof tc.function.arguments === 'string') {
+        try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+      } else {
+        args = tc.function.arguments as Record<string, unknown>;
+      }
+      return {
+        type: 'tool_call' as const,
+        toolCallId: tc.id,
+        toolName: tc.function.name,
+        arguments: args,
+      };
+    });
+  }
+  return result as unknown as Message;
 }
 
 /**
@@ -224,6 +246,49 @@ function extractContent(content: LlmLLMResponse['message']['content']): string {
   return '';
 }
 
+/**
+ * V30: 增强的 thinking 过滤函数
+ *
+ * 覆盖所有常见 LLM 思考格式：
+ * - <thinking>...</thinking>（XML 标签）
+ * - thinking...</thinking>（纯文本标记）
+ * - [thinking]...[/thinking]（BBcode 风格）
+ * - 【思考】...（中文格式）
+ * - {thinking}...{/thinking}（JSON 风格）
+ * - 独立的 "thinking" / "response" 前缀
+ * - 大小写不敏感匹配
+ */
+function filterThinkingContent(content: string): string {
+  // 1. 先清理所有带标签的 thinking 块（跨行）
+  let result = content
+    // XML 标签格式 <thinking>...</thinking>
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    // 纯文本格式 thinking...</thinking>
+    .replace(/^thinking[\s\S]*?^<\/thinking>/gim, '')
+    // BBcode 风格 [thinking]...[/thinking]
+    .replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '')
+    // 中文格式 【思考】...
+    .replace(/【思考】[\s\S]*?(?:\n|$)/g, '')
+    // JSON 风格 {thinking}...{/thinking}
+    .replace(/\{thinking\}[\s\S]*?\{\/thinking\}/gi, '')
+    // 注释风格 <!-- thinking ... -->
+    .replace(/<!--\s*thinking[\s\S]*?-->/gi, '');
+
+  // 2. 清理独立的 "thinking" / "response" 前缀行（大小写不敏感）
+  result = result
+    .replace(/^\s*thinking\s*$/gim, '')
+    .replace(/^\s*response\s*$/gim, '')
+    .replace(/^\s*\[thinking\]\s*$/gim, '')
+    .replace(/^\s*\[\/thinking\]\s*$/gim, '');
+
+  // 3. 清理多余的空白行
+  result = result
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return result;
+}
+
 /** 把 BuildSource 映射到 MainAgentEvent.source */
 function toBuildSource(source: MainAgentEvent['source']): BuildSource {
   switch (source) {
@@ -284,16 +349,22 @@ export class MainAgent {
         ? 'qqBotModel'
         : 'mainModel';
       let modelSel = this.deps.agentConfig.llmConfig[modelKey];
+      // V31 FIX: 如果 sameAsMain 为 true，回退到 mainModel
+      if (modelSel?.sameAsMain && modelKey === 'qqBotModel') {
+        modelSel = this.deps.agentConfig.llmConfig.mainModel;
+      }
       // V20 FIX: 如果 qqBotModel 未配置（providerId 为空字符串），回退到 mainModel
       if (!modelSel?.providerId && modelKey === 'qqBotModel') {
         modelSel = this.deps.agentConfig.llmConfig.mainModel;
       }
 
       // ── 2. 加载历史 ──
+      // V28 FIX: QQ 来源时加载更多历史记录（支持更长的对话上下文）
+      const historyLimit = event.source === 'qq' ? maxRounds * 8 : maxRounds * 2;
       const historyEntries = await this.deps.historyStore.load(
         this.deps.workspaceId,
         this.deps.agentId,
-        { limit: maxRounds * 2 },
+        { limit: historyLimit },
       );
       const history: ConversationMessage[] = historyEntries.map((e) => ({
         role: e.role,
@@ -323,14 +394,37 @@ export class MainAgent {
         }
       }
 
+      // V28: 兼容旧数据 — 惰性编译 QQ 提示词并回填
+      if (event.source === 'qq' && !this.deps.agentConfig.qqCompiledPrompt) {
+        try {
+          const { PromptCompiler } = await import('../prompt/compiler/prompt-compiler');
+          const qqCompiled = PromptCompiler.compileQQ(this.deps.agentConfig);
+          this.deps.agentConfig.qqCompiledPrompt = qqCompiled;
+          // 异步回填到数据库（不阻塞推理）
+          const { getSharedAgentConfigManager } = await import('../ipc/agent-handler');
+          getSharedAgentConfigManager().updateCompiledPrompt(this.deps.agentId, undefined, qqCompiled).catch(err =>
+            console.warn(`[MainAgent] QQ 提示词惰性编译回填失败 ${this.deps.agentId}:`, err),
+          );
+        } catch {
+          // 回退到动态组装
+        }
+      }
+
+      // V28 FIX: QQ 来源时使用 qqCompiledPrompt（与主 Agent 完全独立的提示词）
+      const effectiveSystemPrompt = (event.source === 'qq' && this.deps.agentConfig.qqCompiledPrompt)
+        ? this.deps.agentConfig.qqCompiledPrompt
+        : (this.deps.agentConfig.compiledPrompt ?? undefined);
+
       const buildParams: BuildParams = {
         workspaceId: this.deps.workspaceId,
         userInput: event.prompt,
         history,
-        state: this.getPlaceholderPlayerState(),
+        // V30: QQ 来源不注入游戏状态（聊天 Agent 不需要玩家状态信息）
+        state: event.source === 'qq' ? { skip: true, health: 0, hunger: 0, saturation: 0, position: { x: 0, y: 0, z: 0, dimension: '' }, statusEffects: [] } : this.getPlaceholderPlayerState(),
         source: toBuildSource(event.source),
         // V26: 优先使用预编译提示词，避免运行时动态组装
-        systemOverride: this.deps.agentConfig.compiledPrompt ?? undefined,
+        // V28 FIX: QQ 来源时自动使用 qqCompiledPrompt
+        systemOverride: effectiveSystemPrompt,
         extraContext: {
           excludeTools,
           // V22：透传 Orchestrator 注入的进展状态与技能文本
@@ -368,7 +462,13 @@ export class MainAgent {
               providerId: modelSel?.providerId,
               model: modelSel?.modelName,
             };
-            return this.deps.modelRouter.resolve(ctx);
+            const routerResult = await this.deps.modelRouter.resolve(ctx);
+            // V31 FIX: 确保使用用户配置的模型名，而不是路由器可能返回的默认模型
+            // 路由器可能因为 provider 未找到、降级等 fallback 到其他模型
+            if (modelSel?.modelName) {
+              routerResult.model = modelSel.modelName;
+            }
+            return routerResult;
           },
         );
 
@@ -380,6 +480,10 @@ export class MainAgent {
 
         // c. 调用 LLM（通过 observer 包装）
         const llmMessages = messages.map(toProviderMessage);
+        // V28: QQ 来源时输出完整上下文日志（调试用）
+        if (event.source === 'qq' && rounds === 0) {
+          console.log(`[MainAgent] QQ 完整上下文 (${this.deps.agentId}):\n${llmMessages.map(m => `[${m.role}]\n${m.content}`).join('\n---\n')}`);
+        }
         const response = await this.deps.observer.wrap(
           resolved.providerId,
           resolved.model,
@@ -392,8 +496,8 @@ export class MainAgent {
         totalTokens += response.usage.totalTokens;
         lastResponse = response;
 
-        // d. 持久化 assistant 消息
-        const assistantContent = extractContent(response.message.content);
+        // d. 持久化 assistant 消息（V30: 增强的 thinking 过滤，覆盖所有常见格式）
+        const assistantContent = filterThinkingContent(extractContent(response.message.content));
         await this.deps.historyStore.append({
           workspaceId: this.deps.workspaceId,
           agentId: this.deps.agentId,
@@ -445,15 +549,22 @@ export class MainAgent {
           // g. 从 conversation 同步 messages（pipeline 已注入 tool_result）
           messages = conversation.getMessages().map(toConversationMessage);
 
-          // h. 持久化 tool 结果
+          // h. 持久化 tool 结果（包含完整结果信息，供前端展示）
           for (const toolResult of pipelineResult.toolResults) {
+            const payload: Record<string, unknown> = {
+              success: toolResult.success,
+            };
+            if (toolResult.data) payload.data = toolResult.data;
+            if (toolResult.error) payload.error = toolResult.error;
+            if (toolResult.durationMs >= 0) payload.duration_ms = toolResult.durationMs;
+
             await this.deps.historyStore.append({
               workspaceId: this.deps.workspaceId,
               agentId: this.deps.agentId,
               source: event.source,
               eventId: event.metadata?.eventId as string | undefined,
               role: 'tool',
-              content: toolResult.error ?? JSON.stringify(toolResult.data ?? {}),
+              content: JSON.stringify(payload),
               toolCallId: toolResult.toolCallId,
               createdAt: Date.now(),
             });
@@ -481,7 +592,9 @@ export class MainAgent {
       }
 
       // ── 5. 返回结果 ──
-      const finalResponse = lastResponse ? extractContent(lastResponse.message.content) : '';
+      // V30: 增强的 thinking 过滤（覆盖所有常见格式）
+      const rawContent = lastResponse ? extractContent(lastResponse.message.content) : '';
+      const finalResponse = filterThinkingContent(rawContent);
       const truncated = rounds >= maxRounds && lastResponse?.finishReason === 'tool_calls';
 
       return {

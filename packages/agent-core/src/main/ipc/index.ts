@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron'
 import { join } from 'node:path'
-import { registerChatHandlers } from './chat-handler'
+import { registerChatHandlers, setChatHistoryStore } from './chat-handler'
 import { registerConfigHandlers } from './config-handler'
 import { registerWindowHandlers } from './window-handler'
 import { registerDashboardHandlers } from './dashboard-handler'
@@ -221,6 +221,9 @@ export async function bootstrapAndWireAgents(tcpServer: TcpServer): Promise<Main
     maxRounds: 5,
     orchestratorFactory,
   })
+
+  // V28：注入 chat-history store 到 IPC handler，使前端能查询 LLM 对话历史
+  setChatHistoryStore(_historyStore)
 
   return _agentRegistry
 }

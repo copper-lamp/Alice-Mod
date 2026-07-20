@@ -155,14 +155,16 @@ export class GeminiProvider extends BaseProvider {
         }
 
         if (m.role === 'tool') {
-          const content = Array.isArray(m.content) ? m.content[0] : m.content;
-          const tc = content as any;
+          let parsedContent: unknown = {};
+          try {
+            parsedContent = typeof m.content === 'string' ? JSON.parse(m.content) : m.content;
+          } catch { /* ignore parse errors */ }
           return {
             role: 'function',
             parts: [{
               functionResponse: {
-                name: tc?.toolCallId || '',
-                response: { result: tc?.result || {}, success: tc?.success },
+                name: m.tool_call_id ?? '',
+                response: parsedContent,
               },
             }],
           };

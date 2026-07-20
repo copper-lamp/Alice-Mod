@@ -17,6 +17,9 @@ export class DefaultStateInjector implements IStateInjector {
   };
 
   format(state: PlayerState): string {
+    // V30: skip 标记时返回空字符串（QQ 来源不注入游戏状态）
+    if (state.skip) return '';
+
     const lines: string[] = [];
 
     lines.push('## 当前状态');

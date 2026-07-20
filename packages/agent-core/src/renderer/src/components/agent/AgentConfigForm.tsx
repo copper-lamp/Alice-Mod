@@ -181,40 +181,172 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId }) => {
                 添加模型
               </Button>
             </div>
-            <Select
-              className="w-full"
-              placeholder="请选择智能体使用的模型"
-              selectedKey={form.llmConfig.mainModel.modelId || undefined}
-              onSelectionChange={(key) => {
-                if (key) {
-                  const model = models.find(m => m.id === key)
-                  if (model) {
-                    updateField('llmConfig', {
-                      ...form.llmConfig,
-                      mainModel: {
-                        providerId: model.providerId,
-                        modelId: model.id,
-                        modelName: model.modelName,
-                      },
-                    })
-                  }
-                }
-              }}
-            >
-              <Select.Trigger className="w-full">
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {models.map((model) => (
-                    <ListBox.Item key={model.id} id={model.id} textValue={`${model.providerName} - ${model.modelName}`}>
-                      {model.providerName} - {model.modelName}
-                    </ListBox.Item>
-                  ))}
-                </ListBox>
-              </Select.Popover>
-            </Select>
+            <div className="space-y-4">
+              {/* 主智能体模型 */}
+              <div className="p-4 bg-white rounded-lg border border-gray-200">
+                <h4 className="text-sm font-medium text-gray-700 mb-1">主智能体模型</h4>
+                <p className="text-xs text-gray-400 mb-3">主智能体使用的主要 LLM 模型，负责核心决策和工具调用</p>
+                <Select
+                  className="w-full"
+                  placeholder="请选择模型"
+                  selectedKey={form.llmConfig.mainModel.modelId || undefined}
+                  onSelectionChange={(key) => {
+                    if (key) {
+                      const model = models.find(m => m.id === key)
+                      if (model) {
+                        updateField('llmConfig', {
+                          ...form.llmConfig,
+                          mainModel: {
+                            providerId: model.providerId,
+                            modelId: model.id,
+                            modelName: model.modelName,
+                          },
+                        })
+                      }
+                    }
+                  }}
+                >
+                  <Select.Trigger className="w-full">
+                    <Select.Value />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      {models.map((model) => (
+                        <ListBox.Item key={model.id} id={model.id} textValue={`${model.providerName} - ${model.modelName}`}>
+                          {model.providerName} - {model.modelName}
+                        </ListBox.Item>
+                      ))}
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
+              </div>
+
+              {/* QQ 机器人模型 */}
+              <div className="p-4 bg-white rounded-lg border border-gray-200">
+                <h4 className="text-sm font-medium text-gray-700 mb-1">QQ 机器人模型</h4>
+                <p className="text-xs text-gray-400 mb-3">QQ 机器人使用的 LLM 模型，用于回复游戏外消息</p>
+                <Checkbox
+                  isSelected={form.llmConfig.qqBotModel.sameAsMain ?? true}
+                  onChange={(checked) => {
+                    if (checked) {
+                      // 与主模型相同：清空具体配置，让后端回退到 mainModel
+                      updateField('llmConfig', {
+                        ...form.llmConfig,
+                        qqBotModel: { providerId: '', modelId: '', modelName: '', sameAsMain: true },
+                      })
+                    } else {
+                      updateField('llmConfig', {
+                        ...form.llmConfig,
+                        qqBotModel: { ...form.llmConfig.qqBotModel, sameAsMain: false },
+                      })
+                    }
+                  }}
+                  className="mb-3"
+                >
+                  与主智能体相同
+                </Checkbox>
+                {(!form.llmConfig.qqBotModel.sameAsMain) && (
+                  <Select
+                    className="w-full"
+                    placeholder="请选择模型"
+                    selectedKey={form.llmConfig.qqBotModel.modelId || undefined}
+                    onSelectionChange={(key) => {
+                      if (key) {
+                        const model = models.find(m => m.id === key)
+                        if (model) {
+                          updateField('llmConfig', {
+                            ...form.llmConfig,
+                            qqBotModel: {
+                              providerId: model.providerId,
+                              modelId: model.id,
+                              modelName: model.modelName,
+                              sameAsMain: false,
+                            },
+                          })
+                        }
+                      }
+                    }}
+                  >
+                    <Select.Trigger className="w-full">
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        {models.map((model) => (
+                          <ListBox.Item key={model.id} id={model.id} textValue={`${model.providerName} - ${model.modelName}`}>
+                            {model.providerName} - {model.modelName}
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                )}
+              </div>
+
+              {/* 压缩模型 */}
+              <div className="p-4 bg-white rounded-lg border border-gray-200">
+                <h4 className="text-sm font-medium text-gray-700 mb-1">压缩模型</h4>
+                <p className="text-xs text-gray-400 mb-3">用于对话历史压缩、上下文精炼的模型，通常使用轻量模型</p>
+                <Checkbox
+                  isSelected={form.llmConfig.compressionModel.sameAsMain ?? true}
+                  onChange={(checked) => {
+                    if (checked) {
+                      updateField('llmConfig', {
+                        ...form.llmConfig,
+                        compressionModel: { providerId: '', modelId: '', modelName: '', sameAsMain: true },
+                      })
+                    } else {
+                      updateField('llmConfig', {
+                        ...form.llmConfig,
+                        compressionModel: { ...form.llmConfig.compressionModel, sameAsMain: false },
+                      })
+                    }
+                  }}
+                  className="mb-3"
+                >
+                  与主智能体相同
+                </Checkbox>
+                {(!form.llmConfig.compressionModel.sameAsMain) && (
+                  <Select
+                    className="w-full"
+                    placeholder="请选择模型"
+                    selectedKey={form.llmConfig.compressionModel.modelId || undefined}
+                    onSelectionChange={(key) => {
+                      if (key) {
+                        const model = models.find(m => m.id === key)
+                        if (model) {
+                          updateField('llmConfig', {
+                            ...form.llmConfig,
+                            compressionModel: {
+                              providerId: model.providerId,
+                              modelId: model.id,
+                              modelName: model.modelName,
+                              sameAsMain: false,
+                            },
+                          })
+                        }
+                      }
+                    }}
+                  >
+                    <Select.Trigger className="w-full">
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        {models.map((model) => (
+                          <ListBox.Item key={model.id} id={model.id} textValue={`${model.providerName} - ${model.modelName}`}>
+                            {model.providerName} - {model.modelName}
+                          </ListBox.Item>
+                        ))}
+                      </ListBox>
+                    </Select.Popover>
+                  </Select>
+                )}
+              </div>
+            </div>
           </section>
 
           <hr className="border-gray-100" />

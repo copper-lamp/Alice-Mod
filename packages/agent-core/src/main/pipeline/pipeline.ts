@@ -23,6 +23,7 @@ import type {
   ProcessOptions,
   PipelineError,
   ToolCallContent,
+  ToolResultContent,
   MiddlewareContext,
   ExecutionLayer,
   CollectResult,
@@ -302,6 +303,23 @@ export class FunctionCallingPipeline extends EventEmitter {
         collectOptions,
         abortSignal,
       );
+
+      // V31 FIX: 合并中间件结果（来自 middleware.before 处理的知识工具、QQ 工具等）
+      // 这些结果被中间件推入 ctx.results，但 allResults 仅包含分发器分发的工具结果，
+      // 若不合并则中间件结果不会被注入到 LLM 对话上下文中
+      if (ctx.results && ctx.results.length > 0) {
+        for (const mr of ctx.results) {
+          const toolResult = mr as ToolResultContent;
+          allResults.results.push(toolResult);
+          if (toolResult.success && !toolResult.cancelled) {
+            allResults.successCount++;
+          } else if (!toolResult.success && !toolResult.cancelled) {
+            allResults.failCount++;
+          }
+        }
+        allResults.hasErrors = allResults.hasErrors || allResults.failCount > 0;
+      }
+
       const collectDuration = Date.now() - dispatchStart;
 
       // ── 6. 兜底处理 ──

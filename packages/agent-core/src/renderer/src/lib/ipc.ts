@@ -28,7 +28,15 @@ export const chatApi = {
     window.electronAPI.invoke('chat:stream', { workspaceId, message }) as Promise<void>,
 
   history: (workspaceId: string, limit?: number) =>
-    window.electronAPI.invoke('chat:history', { workspaceId, limit }) as Promise<ChatMessage[]>
+    window.electronAPI.invoke('chat:history', { workspaceId, limit }) as Promise<ChatMessage[]>,
+
+  /** V28：获取 QQ 专属 LLM 对话历史 */
+  qqHistory: (workspaceId: string, agentId: string, limit?: number) =>
+    window.electronAPI.invoke('chat:qq-history', { workspaceId, agentId, limit }) as Promise<ChatMessage[]>,
+
+  /** 清除 QQ 对话历史 */
+  clearQQHistory: (workspaceId: string, agentId: string) =>
+    window.electronAPI.invoke('chat:clear-qq-history', { workspaceId, agentId }) as Promise<{ success: boolean; deleted?: number; error?: string }>,
 }
 
 /** IPC 调用封装 - 配置 */

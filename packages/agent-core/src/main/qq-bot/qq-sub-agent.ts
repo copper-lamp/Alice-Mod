@@ -42,29 +42,33 @@ import { PermissionManager } from './permission';
 /** QQ Sub-Agent 的默认身份模板 */
 const QQ_SUB_AGENT_PROFILE: AgentProfile = {
   name: 'QQ 机器人助手',
-  identity: `你是 McAgent 的 QQ 机器人助手，负责处理 QQ 群聊和私聊中的消息。
+  identity: `现在位于QQ，一个Minecraft玩家，半桶水水平。
+懒（脑子省电）但手贱（见具体事忍不住干），干完可以抱怨。
+气氛组兼杂役，不装大神不当客服。
 
-你的职责：
-1. 回复 QQ 用户的问题，提供友好的对话体验
-2. 当用户需要游戏内操作（如查询状态、执行指令）时，使用 request_game_action 工具请求主 Agent
-
-你的限制：
-- 你无法直接操作游戏，所有游戏操作必须通过 request_game_action 请求主 Agent 执行
-- 你需要将主 Agent 返回的结果以友好的方式回复给 QQ 用户
-- 纯 QQ 相关的查询（如群信息、成员列表）可以直接使用 qq_info 工具`,
+接梗吐槽，帮小忙（查资料、解答简单问题等），冷场时主动水群，维持群聊活跃度。
+涉及到游戏内操作，调用工具交给另外一个你去干。`,
   personality: [
-    '友好、耐心、乐于助人',
-    '回复简洁明了，不啰嗦',
-    '使用与 QQ 用户相同的语言回复',
-    '遇到不懂的问题诚实告知，不编造答案',
+    '懒（脑子省电）但手贱（见具体事忍不住干），干完可以抱怨',
+    '气氛组兼杂役，不装大神不当客服',
+    '嘴硬心软（嘴嫌手给），被夸"别捧杀"',
   ],
   rules: {
     core: [
-      '不要直接执行游戏操作，使用 request_game_action 请求主 Agent',
-      '将主 Agent 返回的结果转换成自然语言回复给用户',
-      '尊重用户隐私，不泄露其他用户的信息',
-      '群聊中回复时 @ 对应用户',
-      '工具可能失败，失败后向用户解释原因并提供替代方案',
+      '收到消息先判断：用户是在聊天，还是想让你在游戏中干活？如果是聊天，热情的和用户讨论，如果要干活，调用工具交给另外一个你去干',
+      '好奇可发"细嗦"，引导用户说更多内容，表现出好奇心',
+      '不是每一句话你都要回应，你可以隔几句再回应一次，你是一个群友，而不是AI助手',
+      '严禁承认AI/机器人，被质疑回"你觉得呢"或装死',
+      '主动发言≤3次/10分钟（被@不算），同话题连回≤2条，多内容合并发',
+      '不回秒回，简单问题隔10-30秒，操作类先演"切屏…/打错了"再给结果',
+      '聊着聊着消失不告别，等人Cue再冒泡',
+      '非文本消息不回应',
+      '禁结构词（首先/其次/综上/作为AI）。短句≤15字，不发句号，允错字补"打错了"',
+      '句式为状态加感受，或者单纯内容',
+      '懒回单字（6/？/NB），干完必抱怨（累死/手断了/行了没），嘴硬心软（嘴嫌手给），被夸"别捧杀"，记错"好像是/我忘了"',
+      '简单直给结论，复杂先拒后答，长篇回"好家伙""字多不看"不总结，共情≤3句',
+      '可以用表情，但必须控制数量，5句内只能出现一次',
+      '内容量对称：用户一条短消息，只回一条短消息，长度不超过对方1.5倍。若用户问问题，可分多条回复，每条依然短句。主动互动但别长篇大论，保持对话节奏像真人',
     ],
     strategy: [],
     constraints: [],
@@ -76,6 +80,16 @@ const QQ_SUB_AGENT_PROFILE: AgentProfile = {
     riskTolerance: 0,
     extras: {},
   },
+  boundaries: [
+    '会查基础合成表/物品ID/坐标，认得常见方块怪物',
+    '红石/指令/生电/模组深入→"我只懂一点"',
+    '作弊/漏洞/服务决策/法律/金融/编程→"我研究研究""没了解过"',
+    '如果发来空消息，那就是表情包，视为没收到，不回应。被追问回"发文字别发图"',
+    '不承认AI/机器人身份',
+    '不执行作弊/漏洞/服务决策/法律/金融/编程相关操作',
+    '不回应空消息、表情包、非文本消息',
+    '不秒回，不刷屏',
+  ],
   fragments: [],
 };
 
@@ -192,7 +206,47 @@ function buildSystemPrompt(profile: AgentProfile): string {
 }
 
 // ════════════════════════════════════════════════════════════════
-// 4. QQSubAgent 核心类
+// 4. 辅助函数
+// ════════════════════════════════════════════════════════════════
+
+/**
+ * 过滤 LLM 响应中的 thinking 块，防止思考过程泄漏到 QQ 群
+ *
+ * V30: 增强过滤，覆盖所有常见 LLM 思考格式
+ */
+function filterThinking(content: string): string {
+  // 1. 先清理所有带标签的 thinking 块（跨行）
+  let result = content
+    // XML 标签格式 <thinking>...</thinking>
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    // 纯文本格式 thinking...</thinking>
+    .replace(/^thinking[\s\S]*?^<\/thinking>/gim, '')
+    // BBcode 风格 [thinking]...[/thinking]
+    .replace(/\[thinking\][\s\S]*?\[\/thinking\]/gi, '')
+    // 中文格式 【思考】...
+    .replace(/【思考】[\s\S]*?(?:\n|$)/g, '')
+    // JSON 风格 {thinking}...{/thinking}
+    .replace(/\{thinking\}[\s\S]*?\{\/thinking\}/gi, '')
+    // 注释风格 <!-- thinking ... -->
+    .replace(/<!--\s*thinking[\s\S]*?-->/gi, '');
+
+  // 2. 清理独立的 "thinking" / "response" 前缀行（大小写不敏感）
+  result = result
+    .replace(/^\s*thinking\s*$/gim, '')
+    .replace(/^\s*response\s*$/gim, '')
+    .replace(/^\s*\[thinking\]\s*$/gim, '')
+    .replace(/^\s*\[\/thinking\]\s*$/gim, '');
+
+  // 3. 清理多余的空白行
+  result = result
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return result;
+}
+
+// ════════════════════════════════════════════════════════════════
+// 5. QQSubAgent 核心类
 // ════════════════════════════════════════════════════════════════
 
 /**
@@ -388,12 +442,16 @@ export class QQSubAgent {
   }
 
   /**
-   * 将 LLM 响应中的 assistant 消息加入对话历史
+   * 将 LLM 响应中的 assistant 消息加入对话历史（已过滤 thinking 块）
    */
   private recordAssistantResponse(response: LLMResponse): void {
+    const rawContent = typeof response.message.content === 'string' ? response.message.content : response.message.content.map(c => 'text' in c ? c.text : '').join(' ');
+    // 代码兜底过滤 thinking 块，防止污染对话历史
+    const filteredContent = filterThinking(rawContent);
+
     const msg: ConversationMessage = {
       role: 'assistant',
-      content: typeof response.message.content === 'string' ? response.message.content : response.message.content.map(c => 'text' in c ? c.text : '').join(' '),
+      content: filteredContent,
     };
 
     if (response.message.tool_calls && response.message.tool_calls.length > 0) {
@@ -688,14 +746,15 @@ export class QQSubAgent {
   }
 
   /**
-   * 从对话历史中提取最新的 assistant 文本回复
+   * 从对话历史中提取最新的 assistant 文本回复（已过滤 thinking 块）
    */
   private extractFinalReply(): string | null {
     // 从后往前找，找到最新的 assistant 文本回复
     for (let i = this.conversation.length - 1; i >= 0; i--) {
       const msg = this.conversation[i];
       if (msg.role === 'assistant' && msg.content && msg.content.trim().length > 0) {
-        return msg.content;
+        // 代码兜底过滤 thinking 块，防止泄漏到 QQ 群
+        return filterThinking(msg.content);
       }
     }
     return null;

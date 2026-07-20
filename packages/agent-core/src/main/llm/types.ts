@@ -19,6 +19,8 @@ export interface Message {
   id?: string;
   /** 时间戳 */
   timestamp?: number;
+  /** 工具调用 ID（role=tool 时必填，用于匹配工具调用结果） */
+  tool_call_id?: string;
 }
 
 /** 辅助消息（含可选工具调用） */

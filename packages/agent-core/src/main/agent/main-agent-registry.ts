@@ -40,6 +40,52 @@ import { MainAgent } from './main-agent';
 import { BatchToolDispatcher } from '../pipeline/batch-tool-dispatcher';
 import { BatchResultCollector } from '../pipeline/batch-result-collector';
 import { NOTIFY_QQ_TOOL_SCHEMA } from '../qq-bot/tools/notify_qq';
+import { WIKI_TOOL_SCHEMAS, wikiSearch, wikiGetPage, wikiGetSection, getWikiClient } from '../wiki';
+import { SEARCH_TOOL_SCHEMAS, webSearch, webFetch, getSearchClient } from '../search';
+import { ToolCategory, type ToolSchema, type ParamDefinition } from '@mcagent/shared';
+
+// ════════════════════════════════════════════════════════════════
+// V30: qq_send / qq_info 工具定义（ToolSchema 格式）
+// ════════════════════════════════════════════════════════════════
+
+/** qq_send 工具定义 */
+const QQ_SEND_TOOL_SCHEMA_LOCAL: ToolSchema = {
+  name: 'qq_send',
+  description: '发送 QQ 消息，支持群消息、私聊、图片、文件四种方式。当需要向 QQ 群或用户发送消息时使用此工具。回复用户消息时必须使用此工具。',
+  category: ToolCategory.QQ,
+  parameters: {
+    type: { type: 'string', description: '发送类型：group_msg=发送到群聊（回复群消息时用）, private_msg=发送私聊（回复私聊时用）, image=发送图片, file=发送文件', required: true } as ParamDefinition,
+    target: { type: 'string', description: '目标 ID：群聊时填群号，私聊时填对方 QQ 号', required: true } as ParamDefinition,
+    content: { type: 'string', description: '消息内容（type=group_msg 或 private_msg 时必填，纯文本消息内容）', required: false } as ParamDefinition,
+    file_url: { type: 'string', description: '文件/图片 URL（type=image 或 file 时必填，文件的网络可访问 URL）', required: false } as ParamDefinition,
+    file_name: { type: 'string', description: '文件名（type=file 时必填，如 "screenshot.png"）', required: false } as ParamDefinition,
+  },
+};
+
+/** qq_info 工具定义 */
+const QQ_INFO_TOOL_SCHEMA_LOCAL: ToolSchema = {
+  name: 'qq_info',
+  description: '查询 QQ 群信息、群成员列表或用户信息',
+  category: ToolCategory.QQ,
+  parameters: {
+    type: { type: 'string', description: '查询类型：group=群信息, members=群成员, user=用户信息', required: true } as ParamDefinition,
+    target_id: { type: 'string', description: '目标 ID（群号或 QQ 号）', required: true } as ParamDefinition,
+  },
+};
+
+/** request_game_action 工具定义 */
+const REQUEST_GAME_ACTION_TOOL_SCHEMA_LOCAL: ToolSchema = {
+  name: 'request_game_action',
+  description: '请求主 Agent 执行游戏内的操作。当 QQ 用户需要查询游戏状态、执行游戏指令或进行任何游戏内操作时使用此工具。',
+  category: ToolCategory.Task,
+  parameters: {
+    description: { type: 'string', description: '对用户请求的自然语言描述，包含所有必要信息，主 Agent 将据此理解并执行', required: true } as ParamDefinition,
+    priority: { type: 'string', description: '优先级：normal=普通, high=紧急（如玩家遇险）', required: false } as ParamDefinition,
+  },
+};
+
+/** V30: 待发送的 QQ 消息队列（key = agentId, value = 待发送消息） */
+export const pendingQqSends = new Map<string, { target: string; content: string; type: string }[]>();
 
 /** Registry 依赖（由 ipc/index.ts 启动时注入） */
 export interface MainAgentRegistryDeps {
@@ -213,7 +259,16 @@ export class MainAgentRegistry {
     agentConfig: AgentConfig,
   ): MainAgent {
     // V27: 注册 notify_qq 本地工具（供 LLM 可见）
-    this.deps.toolRegistry.registerLocal(workspaceId, [NOTIFY_QQ_TOOL_SCHEMA]);
+    // V30: 同时注册 qq_send / qq_info / request_game_action 工具
+    //       以及内置工具（Wiki / 搜索），使其不依赖 workspace 连接即可用
+    this.deps.toolRegistry.registerLocal(workspaceId, [
+      NOTIFY_QQ_TOOL_SCHEMA,
+      QQ_SEND_TOOL_SCHEMA_LOCAL,
+      QQ_INFO_TOOL_SCHEMA_LOCAL,
+      REQUEST_GAME_ACTION_TOOL_SCHEMA_LOCAL,
+      ...WIKI_TOOL_SCHEMAS,
+      ...SEARCH_TOOL_SCHEMAS,
+    ]);
 
     // 独立 pipeline + 注入 dispatcher/collector
     const pipeline = this.deps.pipelineFactory();
@@ -221,6 +276,7 @@ export class MainAgentRegistry {
     pipeline.setCollector(new BatchResultCollector());
 
     // V27: 添加 notify_qq 本地处理器中间件
+    // V30: 添加 qq_send / qq_info 本地处理器中间件
     pipeline.use({
       name: 'notify_qq_handler',
       before: async (ctx: MiddlewareContext): Promise<MiddlewareContext> => {
@@ -286,6 +342,214 @@ export class MainAgentRegistry {
 
         // 从 pipeline 调度中移除所有 notify_qq 调用（已本地处理）
         ctx.calls = ctx.calls.filter((c) => c.toolName !== 'notify_qq');
+        return ctx;
+      },
+    });
+
+    // V30: qq_send / qq_info / request_game_action 本地处理器中间件
+    pipeline.use({
+      name: 'qq_send_handler',
+      before: async (ctx: MiddlewareContext): Promise<MiddlewareContext> => {
+        const qqSendCalls = ctx.calls.filter((c) => c.toolName === 'qq_send');
+        const qqInfoCalls = ctx.calls.filter((c) => c.toolName === 'qq_info');
+        const gameActionCalls = ctx.calls.filter((c) => c.toolName === 'request_game_action');
+        if (qqSendCalls.length === 0 && qqInfoCalls.length === 0 && gameActionCalls.length === 0) return ctx;
+
+        // 处理 qq_send 调用
+        for (const call of qqSendCalls) {
+          const startTime = Date.now();
+          const params = call.arguments as Record<string, unknown>;
+          const sendType = params.type as string;
+          const target = params.target as string;
+          const content = (params.content as string) ?? '';
+
+          // 存入待发送队列（由 message-router 消费）
+          const pending = pendingQqSends.get(agentId) ?? [];
+          pending.push({ target, content, type: sendType });
+          pendingQqSends.set(agentId, pending);
+
+          console.log(`[MainAgentRegistry] qq_send 已排队: type=${sendType}, target=${target}, content=${content.slice(0, 50)}`);
+
+          ctx.results = ctx.results ?? [];
+          ctx.results.push({
+            type: 'tool_result',
+            toolCallId: call.toolCallId,
+            toolName: 'qq_send',
+            success: true,
+            data: { message: '消息已加入发送队列' },
+            durationMs: Date.now() - startTime,
+          } as any);
+        }
+
+        // 处理 qq_info 调用
+        for (const call of qqInfoCalls) {
+          const startTime = Date.now();
+          const params = call.arguments as Record<string, unknown>;
+          const infoType = params.type as string;
+          const targetId = params.target_id as string;
+
+          // 返回一个占位结果（实际信息由上层填充）
+          ctx.results = ctx.results ?? [];
+          ctx.results.push({
+            type: 'tool_result',
+            toolCallId: call.toolCallId,
+            toolName: 'qq_info',
+            success: true,
+            data: { status: 'query_dispatched', type: infoType, target_id: targetId },
+            durationMs: Date.now() - startTime,
+          } as any);
+        }
+
+        // 处理 request_game_action 调用
+        for (const call of gameActionCalls) {
+          const startTime = Date.now();
+          const params = call.arguments as Record<string, unknown>;
+          const description = (params.description as string) ?? '';
+          const priority = (params.priority as 'normal' | 'high') ?? 'normal';
+
+          // 查找当前 workspace 下的 QQ Agent
+          const qqAgent = this.findQQAgent(workspaceId);
+          if (!qqAgent || typeof (qqAgent as any).requestGameAction !== 'function') {
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: 'request_game_action',
+              success: false,
+              error: '未找到 QQ Agent 或 requestGameAction 不可用',
+              durationMs: Date.now() - startTime,
+            } as any);
+            continue;
+          }
+
+          try {
+            const result = await (qqAgent as any).requestGameAction(description, priority);
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: 'request_game_action',
+              success: result.success,
+              data: { summary: result.summary, details: result.details, duration_ms: result.durationMs },
+              error: result.error,
+              durationMs: Date.now() - startTime,
+            } as any);
+          } catch (err) {
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: 'request_game_action',
+              success: false,
+              error: err instanceof Error ? err.message : '请求游戏操作异常',
+              durationMs: Date.now() - startTime,
+            } as any);
+          }
+        }
+
+        // 从 pipeline 调度中移除所有已本地处理的调用
+        ctx.calls = ctx.calls.filter((c) => c.toolName !== 'qq_send' && c.toolName !== 'qq_info' && c.toolName !== 'request_game_action');
+        return ctx;
+      },
+    });
+
+    // V31: 知识工具（Wiki / 搜索）本地处理器中间件
+    // 避免在无 workspace 连接时通过 BatchToolDispatcher 分发到 ConnectionResolver
+    pipeline.use({
+      name: 'knowledge_tools_handler',
+      before: async (ctx: MiddlewareContext): Promise<MiddlewareContext> => {
+        const KNOWLEDGE_TOOLS = new Set([
+          'web_search',
+          'web_fetch',
+          'minecraft_wiki_search',
+          'minecraft_wiki_get_page',
+          'minecraft_wiki_get_section',
+        ]);
+        const knowledgeCalls = ctx.calls.filter((c) => KNOWLEDGE_TOOLS.has(c.toolName));
+        if (knowledgeCalls.length === 0) return ctx;
+
+        for (const call of knowledgeCalls) {
+          const startTime = Date.now();
+          const params = call.arguments as Record<string, unknown>;
+
+          try {
+            let result: { success: boolean; data?: string; error?: string; duration?: number };
+
+            switch (call.toolName) {
+              case 'web_search': {
+                const client = getSearchClient();
+                if (!client) {
+                  result = { success: false, error: '搜索客户端未初始化', duration: 0 };
+                  break;
+                }
+                result = await webSearch(client, params as any);
+                break;
+              }
+              case 'web_fetch': {
+                const client = getSearchClient();
+                if (!client) {
+                  result = { success: false, error: '搜索客户端未初始化', duration: 0 };
+                  break;
+                }
+                result = await webFetch(client, params as any);
+                break;
+              }
+              case 'minecraft_wiki_search': {
+                const client = getWikiClient();
+                if (!client) {
+                  result = { success: false, error: 'Wiki 客户端未初始化', duration: 0 };
+                  break;
+                }
+                result = await wikiSearch(client, params as any);
+                break;
+              }
+              case 'minecraft_wiki_get_page': {
+                const client = getWikiClient();
+                if (!client) {
+                  result = { success: false, error: 'Wiki 客户端未初始化', duration: 0 };
+                  break;
+                }
+                result = await wikiGetPage(client, params as any);
+                break;
+              }
+              case 'minecraft_wiki_get_section': {
+                const client = getWikiClient();
+                if (!client) {
+                  result = { success: false, error: 'Wiki 客户端未初始化', duration: 0 };
+                  break;
+                }
+                result = await wikiGetSection(client, params as any);
+                break;
+              }
+              default:
+                result = { success: false, error: `未知知识工具: ${call.toolName}`, duration: 0 };
+            }
+
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: call.toolName,
+              success: result.success,
+              data: result.success ? { content: result.data } : undefined,
+              error: result.success ? undefined : result.error,
+              durationMs: result.duration ?? Date.now() - startTime,
+            } as any);
+          } catch (err) {
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: call.toolName,
+              success: false,
+              error: err instanceof Error ? err.message : `${call.toolName} 执行异常`,
+              durationMs: Date.now() - startTime,
+            } as any);
+          }
+        }
+
+        // 从 pipeline 调度中移除所有已本地处理的知识工具调用
+        ctx.calls = ctx.calls.filter((c) => !KNOWLEDGE_TOOLS.has(c.toolName));
         return ctx;
       },
     });

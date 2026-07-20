@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import type { ChatMessage } from '../../lib/types'
 import ThinkingBlock from './ThinkingBlock'
 import ToolCallList from './ToolCallList'
@@ -24,10 +24,92 @@ const SourceTag: React.FC<{ source: ChatMessage['source'] }> = ({ source }) => {
   return null
 }
 
+/** 检测是否为工具结果 JSON */
+function isToolResultContent(content: string): boolean {
+  if (!content || content.length < 3) return false
+  try {
+    const parsed = JSON.parse(content)
+    // 只要有 success/error/data/duration_ms 任一字段就视为工具结果
+    return parsed && typeof parsed === 'object' && (
+      'success' in parsed || 'error' in parsed || 'data' in parsed || 'duration_ms' in parsed
+    )
+  } catch {
+    return false
+  }
+}
+
+/** 工具结果卡片 — 可展开查看完整内容 */
+const ToolResultCard: React.FC<{ content: string }> = ({ content }) => {
+  const [expanded, setExpanded] = useState(false)
+  let parsed: Record<string, unknown> | null = null
+  try {
+    parsed = JSON.parse(content)
+  } catch { /* not JSON */ }
+
+  const isSuccess = parsed?.success === true
+  const statusIcon = isSuccess
+    ? (
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    )
+    : (
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="3">
+        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    )
+
+  return (
+    <div className="mb-2">
+      <div className="flex items-center gap-1.5 mb-1">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+        </svg>
+        <span className="text-xs text-gray-500">
+          工具返回结果
+        </span>
+      </div>
+      <div className="flex items-start gap-2 py-1.5 px-2 bg-gray-50 rounded-md border border-gray-100 text-xs">
+        <span className="mt-0.5 flex-shrink-0">{statusIcon}</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-gray-700">{isSuccess ? '成功' : '失败'}</span>
+            {parsed?.duration_ms != null && (
+              <span className="text-gray-400">{parsed.duration_ms as number}ms</span>
+            )}
+          </div>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-1 text-blue-500 hover:text-blue-700 transition-colors mt-1"
+          >
+            <svg
+              width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              className={`transition-transform ${expanded ? 'rotate-90' : ''}`}
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span className="text-[11px]">
+              {expanded ? '收起返回内容' : `查看返回内容 (${content.length}字符)`}
+            </span>
+          </button>
+          {expanded && (
+            <div className="mt-1 p-2 bg-white rounded border border-gray-200">
+              <pre className="text-[11px] text-gray-600 whitespace-pre-wrap break-words max-h-60 overflow-y-auto leading-relaxed">
+                {JSON.stringify(parsed, null, 2) || content}
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** 单条消息 */
 const MessageBubble: React.FC<{ message: ChatMessage }> = React.memo(({ message }) => {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
+  const isTool = (message as any).role === 'tool' || isToolResultContent(message.content)
 
   // 用户消息 -> 蓝色气泡（右侧）
   if (isUser) {
@@ -55,6 +137,18 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = React.memo(({ message 
         <div className="bg-gray-100 text-gray-500 text-xs rounded-lg px-3 py-1.5 max-w-[90%]">
           <p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
         </div>
+      </div>
+    )
+  }
+
+  // 工具结果消息 -> 可展开卡片
+  if (isTool) {
+    return (
+      <div className="mb-4">
+        <p className="text-[10px] text-gray-400 mb-1">
+          {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+        </p>
+        <ToolResultCard content={message.content} />
       </div>
     )
   }

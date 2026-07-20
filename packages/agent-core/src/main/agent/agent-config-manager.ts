@@ -132,11 +132,13 @@ export class AgentConfigManager {
 
   /**
    * V26：更新指定 agent 的预编译提示词（用于惰性编译回填）
+   * V28：支持同时回填 qqCompiledPrompt
    */
-  async updateCompiledPrompt(agentId: string, compiledPrompt: string): Promise<void> {
+  async updateCompiledPrompt(agentId: string, compiledPrompt: string | undefined, qqCompiledPrompt?: string): Promise<void> {
     const existing = this.cache.get(agentId)
     if (existing) {
-      existing.compiledPrompt = compiledPrompt
+      if (compiledPrompt !== undefined) existing.compiledPrompt = compiledPrompt
+      if (qqCompiledPrompt !== undefined) existing.qqCompiledPrompt = qqCompiledPrompt
       this.saveToDb(agentId, existing)
     }
   }
