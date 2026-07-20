@@ -55,7 +55,7 @@ const PROVIDER_INFO: Record<string, { name: string; baseUrl: string }> = {
 // ════════════════════════════════════════════════════════════════
 // 注册表缓存（Layer 1 数据源）
 // ════════════════════════════════════════════════════════════════
-const REGISTRY_URL = 'https://llm-registry.com/api/v1/models'
+const REGISTRY_URL = 'https://models.dev/api.json'
 const REFRESH_INTERVAL = 60 * 60 * 1000 // 1 小时
 
 interface RegistryModelEntry {
@@ -106,7 +106,7 @@ function saveCacheSync(): void {
 /** 从远程注册表拉取模型数据 */
 async function fetchRegistry(): Promise<void> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 10000)
+  const timeout = setTimeout(() => controller.abort(), 30000)
 
   try {
     const res = await fetch(REGISTRY_URL, { signal: controller.signal })
@@ -114,26 +114,33 @@ async function fetchRegistry(): Promise<void> {
       console.warn('[ModelRegistry] 远程拉取失败:', res.status)
       return
     }
-    const data = (await res.json()) as {
-      models?: Array<{
-        id: string
-        specs?: { contextWindow?: number }
-        apiSupport?: { tools?: boolean }
+    const raw = (await res.json()) as Record<string, {
+      api?: string
+      env?: string[]
+      models?: Record<string, {
+        id?: string
+        tool_call?: boolean
+        limit?: { context?: number }
       }>
-    }
-    if (!data.models || !Array.isArray(data.models)) {
+    }>
+    if (!raw || typeof raw !== 'object') {
       console.warn('[ModelRegistry] 远程数据格式异常')
       return
     }
 
     const newCache = new Map<string, RegistryModelEntry>()
-    for (const model of data.models) {
-      if (!model.id) continue
-      const lowerId = model.id.toLowerCase()
-      newCache.set(lowerId, {
-        contextWindow: model.specs?.contextWindow ?? 4096,
-        supportsFunctionCalling: model.apiSupport?.tools ?? false,
-      })
+    let modelCount = 0
+    for (const provider of Object.values(raw)) {
+      if (!provider.models || typeof provider.models !== 'object') continue
+      for (const model of Object.values(provider.models)) {
+        if (!model.id) continue
+        const lowerId = model.id.toLowerCase()
+        newCache.set(lowerId, {
+          contextWindow: model.limit?.context ?? 4096,
+          supportsFunctionCalling: model.tool_call ?? false,
+        })
+        modelCount++
+      }
     }
 
     registryCache = newCache

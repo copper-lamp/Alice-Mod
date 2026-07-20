@@ -37,7 +37,7 @@ V30 重构 AC 的模型配置模块（`model-handler.ts`），解决当前硬编
 
 | 需求 ID | 需求名称 | 优先级 | 说明 |
 |---------|---------|--------|------|
-| V30-REQ-01 | 远程注册表拉取 | P0 | 启动时从 `llm-registry.com` 拉取模型元数据并缓存 |
+| V30-REQ-01 | 远程注册表拉取 | P0 | 启动时从 `models.dev/api.json` 拉取模型元数据并缓存 |
 | V30-REQ-02 | 本地缓存 | P0 | 注册表数据缓存到内存及本地文件，离线可用 |
 | V30-REQ-03 | Provider 级别默认值 | P0 | 注册表未覆盖时，按 Provider 返回合理默认值 |
 | V30-REQ-04 | 用户手动输入 | P0 | 陌生模型允许用户手动输入 contextWindow 和 FC 支持 |
@@ -80,7 +80,7 @@ ModelList (前端) 展示已有模型
 
 | 验收项 | 预期结果 |
 |--------|---------|
-| 启动时拉取注册表 | 应用启动后自动拉取 `llm-registry.com/api/v1/models` |
+| 启动时拉取注册表 | 应用启动后自动拉取 `models.dev/api.json` |
 | 注册表命中 | 输入 `gpt-5.2`，自动返回正确的 contextWindow 和 FC |
 | Provider 默认值命中 | 输入 `doubao-pro-256k`，注册表未收录，回退到 `doubao` 默认值 |
 | 完全未知模型 | 输入 `my-custom-model`，返回默认值 4096/true，前端显示"手动填写"提示 |

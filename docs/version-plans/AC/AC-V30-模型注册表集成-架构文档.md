@@ -15,7 +15,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Layer 1: 远程注册表 (llm-registry.com)             │
+│                    Layer 1: 远程注册表 (models.dev)             │
 │                                                                     │
 │  · 启动时异步拉取，缓存到内存 + 本地文件                               │
 │  · 每小时后台刷新一次                                                 │
@@ -58,29 +58,24 @@
 
 ## 第2章 数据模型
 
-### 2.1 Registry 响应格式 (llm-registry.com)
+### 2.1 Registry 响应格式 (models.dev)
 
 ```json
 {
-  "total": 1632,
-  "models": [
-    {
-      "id": "gpt-4o",
-      "name": "GPT-4o",
-      "provider": "OpenAI",
-      "family": "gpt",
-      "status": "active",
-      "specs": {
-        "contextWindow": 128000,
-        "maxOutputTokens": 16384
-      },
-      "apiSupport": {
-        "tools": true,
-        "vision": true,
-        "structuredOutput": true
+  "deepseek": {
+    "api": "https://api.deepseek.com/v1",
+    "env": ["DEEPSEEK_API_KEY"],
+    "models": {
+      "deepseek/deepseek-v4-flash": {
+        "id": "deepseek/deepseek-v4-flash",
+        "name": "DeepSeek V4 Flash",
+        "tool_call": true,
+        "limit": { "context": 65536, "output": 65536 },
+        "modalities": { "input": ["text"], "output": ["text"] },
+        "cost": { "input": 0.15, "output": 0.6 }
       }
     }
-  ]
+  }
 }
 ```
 
@@ -168,10 +163,9 @@ getAutoContextWindow(modelName, providerId)
 拉取后的注册表数据需要映射到内部格式：
 
 ```
-registry model.id = "gpt-4o"          → 缓存 key: "gpt-4o"
-registry model.id = "claude-3-5-sonnet" → 缓存 key: "claude-3-5-sonnet"
-registry model.apiSupport.tools         → supportsFunctionCalling
-registry model.specs.contextWindow      → contextWindow
+registry model.id = "deepseek/deepseek-v4-flash"  → 缓存 key: "deepseek/deepseek-v4-flash"
+registry model.tool_call                         → supportsFunctionCalling
+registry model.limit.context                      → contextWindow
 ```
 
 ---

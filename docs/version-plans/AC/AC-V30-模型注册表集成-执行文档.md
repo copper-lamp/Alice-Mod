@@ -43,11 +43,12 @@ const PROVIDER_DEFAULTS: Record<string, { contextWindow: number; supportsFC: boo
   claude:    { contextWindow: 200000, supportsFC: true },
   // ... 共 16 个 Provider
 }
-
+```typescript
 // ─── 注册表缓存 ───
-const REGISTRY_URL = 'https://llm-registry.com/api/v1/models'
+const REGISTRY_URL = 'https://models.dev/api.json'
 const CACHE_FILE = 'model-registry-cache.json'
 const REFRESH_INTERVAL = 60 * 60 * 1000 // 1 小时
+const REGISTRY_TIMEOUT = 30000 // 3.2MB 数据需 30s
 
 let registryCache: Map<string, { contextWindow: number; supportsFC: boolean }> | null = null
 let registryLastUpdated = 0
@@ -188,7 +189,8 @@ git checkout -- packages/agent-core/src/main/ipc/model-handler.ts
 
 | 风险 | 影响 | 应对措施 |
 |------|------|---------|
-| llm-registry.com 不可用 | 注册表数据无法拉取 | 使用本地缓存 + Provider 默认值兜底 |
-| 注册表返回数据格式变化 | 解析失败 | 添加 try-catch 和类型校验 |
+| models.dev 不可用 | 3.2MB 注册表数据无法拉取 | 使用本地缓存 + Provider 默认值兜底 |
+| 注册表数据格式变化 | 解析失败 | 添加 try-catch 和类型校验 |
+| 首次拉取较慢（~13s） | 首次启动时自动配置延迟 | 后台异步拉取，不阻塞启动，使用 Provider 默认值作为过渡 |
 | 缓存文件损坏 | 启动时加载失败 | 删除损坏缓存，重新拉取 |
 | 新增 Provider 需更新前端 | 前端 Provider 列表与服务端不同步 | 后端统一提供，前端动态获取 |
