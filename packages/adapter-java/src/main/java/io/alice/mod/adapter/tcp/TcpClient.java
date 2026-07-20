@@ -58,6 +58,9 @@ public final class TcpClient {
     /** 批量工具调用方法名 */
     private static final String METHOD_TOOL_CALL_BATCH = "tool_call_batch";
 
+    /** 假人控制方法名 */
+    private static final String METHOD_BOT_CONTROL = "bot_control";
+
     /** 移动类工具名称前缀列表（用于批量调用依赖分析） */
     private static final List<String> MOVEMENT_PREFIXES = List.of("move_to", "ride", "dismount");
 
@@ -309,6 +312,7 @@ public final class TcpClient {
         switch (request.method()) {
             case METHOD_TOOL_CALL -> handleToolCall(request);
             case METHOD_TOOL_CALL_BATCH -> handleToolCallBatch(request);
+            case METHOD_BOT_CONTROL -> callbacks.onBotControl(request, this::sendResponse);
             default -> {
                 LOG.warn("Unknown request method: {}", request.method());
                 // 返回 Method Not Found 错误
@@ -691,6 +695,26 @@ public final class TcpClient {
 
         /** 连接断开。 */
         default void onDisconnected() {}
+
+        /**
+         * 收到假人控制请求（bot_control）。
+         * <p>
+         * Agent Core 通过此方法远程控制假人上线/下线/状态查询。
+         *
+         * @param request  bot_control 请求
+         * @param respond  发送响应：{@code (id, resultJson) → void}
+         */
+        default void onBotControl(JsonRpcMessage.Request request, BiConsumer<JsonRpcId, JsonElement> respond) {
+            JsonObject errData = new JsonObject();
+            errData.addProperty("reason", "not_implemented");
+            errData.addProperty("detail", "bot_control not implemented");
+            JsonRpcMessage.Error err = new JsonRpcMessage.Error(request.id(),
+                    new JsonRpcMessage.ErrorObject(-32601, "Method not implemented", errData));
+            JsonObject error = new JsonObject();
+            error.addProperty("success", false);
+            error.addProperty("message", "bot_control not implemented");
+            respond.accept(request.id(), error);
+        }
 
         /** 收到配置更新通知。 */
         default void onConfigUpdate(JsonElement params) {}

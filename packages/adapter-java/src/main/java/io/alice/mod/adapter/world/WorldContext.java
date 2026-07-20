@@ -1,9 +1,11 @@
 package io.alice.mod.adapter.world;
 
+import io.alice.mod.adapter.bot.BotEventDispatcher;
 import io.alice.mod.adapter.bot.BotManager;
 import io.alice.mod.adapter.config.AlicePaths;
 import io.alice.mod.adapter.config.ConfigManager;
 import io.alice.mod.adapter.entry.InstanceFileGenerator;
+import io.alice.mod.adapter.mixin.MixinEventBridge;
 import io.alice.mod.adapter.persistence.ConfigRepository;
 import io.alice.mod.adapter.persistence.DatabaseManager;
 import io.alice.mod.adapter.persistence.EventLogRepository;
@@ -28,9 +30,12 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
+import carpet.patches.EntityPlayerMPFake;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,9 +45,13 @@ import io.alice.mod.adapter.agent.AgentConfigReader;
 
 import java.nio.file.Path;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 世界上下文 — 每个 Minecraft 世界（存档/服务器）对应一个实例。
@@ -122,6 +131,12 @@ public class WorldContext {
         // 1. BotManager 初始化（从 SavedData 恢复假人注册表）
         botManager.init(server);
 
+        // 1.5. 注册假人生命周期事件监听器（桥接 BotEventDispatcher → EventDispatcher → TCP）
+        registerBotEventListeners();
+
+        // 1.6. 设置 Mixin 事件桥接器（供 ChatEventMixin / AttackEventMixin 使用）
+        MixinEventBridge.setDispatcher(eventDispatcher);
+
         // 2. 初始化数据库
         try {
             databaseManager.initialize();
@@ -137,8 +152,14 @@ public class WorldContext {
         // 5. V21: 加载智能体配置并创建主智能体假人
         loadAndSpawnAgents();
 
-        // 6. 注册服务端 tick 事件（假人重生检查）
-        ServerTickEvents.END_SERVER_TICK.register(s -> botManager.tick());
+        // 6. 注册服务端 tick 事件（假人重生检查 + 健康度检测）
+        ServerTickEvents.END_SERVER_TICK.register(s -> {
+            botManager.tick();
+            checkBotHealth();
+        });
+
+        // 6.5. 注册玩家连接事件（加入/离开）
+        registerPlayerEventListeners();
 
         // 7. 注册 TcpClient 实例供 TcpService 使用
         TcpServiceImpl.setClient(tcpClient);
@@ -177,6 +198,9 @@ public class WorldContext {
         // 5. 清理 BotManager
         botManager.shutdown();
 
+        // 5.5. 清理 Mixin 事件桥接器
+        MixinEventBridge.clear();
+
         // 6. 清理旧日志并关闭数据库
         try {
             databaseManager.cleanOldLogs(10_000, 5_000);
@@ -210,6 +234,12 @@ public class WorldContext {
             }
 
             @Override
+            public void onBotControl(JsonRpcMessage.Request request,
+                                     TcpClient.BiConsumer<JsonRpcId, JsonElement> respond) {
+                handleBotControl(request, respond);
+            }
+
+            @Override
             public void onHandshakeSuccess(HandshakeResult result) {
                 LOG.info("Handshake success: session={}, world='{}'",
                         result.sessionId(), identity.worldName());
@@ -218,6 +248,7 @@ public class WorldContext {
                 generateInstanceFile(true);
 
                 registerTools();
+                sendWorldOnline();
                 statusCollector.start();
             }
 
@@ -262,6 +293,9 @@ public class WorldContext {
     /** 复用的 Gson 实例，用于 JSON 参数解析 */
     private static final Gson ARGS_GSON = new GsonBuilder().setLenient().create();
 
+    /** 工具执行超时时间（秒）。 */
+    private static final int TOOL_TIMEOUT_SECONDS = 30;
+
     private void handleToolCall(JsonRpcMessage.Request request,
                                 TcpClient.BiConsumer<JsonRpcId, JsonElement> respond) {
         JsonObject params = request.params() != null
@@ -282,13 +316,50 @@ public class WorldContext {
         if (tool == null) {
             JsonObject error = new JsonObject();
             error.addProperty("success", false);
-            error.addProperty("message", "Tool not found: " + toolName);
+            JsonObject errObj = new JsonObject();
+            errObj.addProperty("reason", "TOOL_NOT_FOUND");
+            errObj.addProperty("detail", "Tool not found: " + toolName);
+            errObj.addProperty("suggestion", "Check available tools with register_tools response");
+            error.add("error", errObj);
             respond.accept(request.id(), error);
             return;
         }
 
         long start = System.currentTimeMillis();
-        ToolResult result = tool.invoke(args);
+
+        // 异步执行工具，带超时
+        ToolResult result;
+        try {
+            result = CompletableFuture.supplyAsync(() -> tool.invoke(args))
+                    .get(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            long duration = System.currentTimeMillis() - start;
+            LOG.warn("Tool '{}' timed out after {}s", toolName, TOOL_TIMEOUT_SECONDS);
+            JsonObject error = new JsonObject();
+            error.addProperty("success", false);
+            JsonObject errObj = new JsonObject();
+            errObj.addProperty("reason", "TOOL_TIMEOUT");
+            errObj.addProperty("detail", "Tool execution timed out after " + TOOL_TIMEOUT_SECONDS + "s");
+            errObj.addProperty("suggestion", "Simplify the task or check if the bot is in a valid state");
+            error.add("error", errObj);
+            error.addProperty("duration_ms", duration);
+            respond.accept(request.id(), error);
+            return;
+        } catch (Exception e) {
+            long duration = System.currentTimeMillis() - start;
+            LOG.warn("Tool '{}' execution failed: {}", toolName, e.getMessage());
+            JsonObject error = new JsonObject();
+            error.addProperty("success", false);
+            JsonObject errObj = new JsonObject();
+            errObj.addProperty("reason", "TOOL_EXECUTION_ERROR");
+            errObj.addProperty("detail", "Tool execution error: " + e.getMessage());
+            errObj.addProperty("suggestion", "Check the tool parameters and bot state");
+            error.add("error", errObj);
+            error.addProperty("duration_ms", duration);
+            respond.accept(request.id(), error);
+            return;
+        }
+
         long duration = System.currentTimeMillis() - start;
 
         // 记录工具执行日志（V11）
@@ -305,22 +376,181 @@ public class WorldContext {
             }
         }
 
-        JsonObject response = new JsonObject();
-        response.addProperty("success", result.success());
-        response.addProperty("message", result.message());
-        response.addProperty("duration_ms", duration);
-        if (result.data() != null && !result.data().isEmpty()) {
-            // 使用 Gson 将复杂嵌套对象（如 Map）正确序列化为 JSON
-            JsonElement dataJson = ARGS_GSON.toJsonTree(result.data());
-            if (dataJson.isJsonObject()) {
-                response.add("data", dataJson.getAsJsonObject());
-            } else {
-                response.add("data", dataJson);
-            }
-        }
+        JsonObject response = buildToolResponse(result, duration);
 
         respond.accept(request.id(), response);
         LOG.info("Tool '{}' completed in {}ms: success={}", toolName, duration, result.success());
+    }
+
+    /**
+     * 构建工具调用响应 JSON。
+     * <p>
+     * 成功时：
+     * <pre>{ "success": true, "data": { "message": "...", ... }, "duration_ms": N }</pre>
+     * 失败时：
+     * <pre>{ "success": false, "error": { "reason": "...", "detail": "...", "suggestion": "..." }, "duration_ms": N }</pre>
+     */
+    private static JsonObject buildToolResponse(ToolResult result, long durationMs) {
+        JsonObject response = new JsonObject();
+        response.addProperty("success", result.success());
+        response.addProperty("duration_ms", durationMs);
+
+        if (result.success()) {
+            // 成功：data 字段
+            JsonObject dataObj = new JsonObject();
+            if (result.message() != null && !result.message().isEmpty()) {
+                dataObj.addProperty("message", result.message());
+            }
+            if (result.data() != null && !result.data().isEmpty()) {
+                JsonElement dataJson = ARGS_GSON.toJsonTree(result.data());
+                if (dataJson.isJsonObject()) {
+                    for (var entry : dataJson.getAsJsonObject().entrySet()) {
+                        dataObj.add(entry.getKey(), entry.getValue());
+                    }
+                } else {
+                    dataObj.add("data", dataJson);
+                }
+            }
+            response.add("data", dataObj);
+        } else {
+            // 失败：error 对象
+            JsonObject errorObj = new JsonObject();
+            errorObj.addProperty("reason",
+                    result.errorCode() != null ? result.errorCode() : "UNKNOWN_ERROR");
+            errorObj.addProperty("detail",
+                    result.errorMessage() != null ? result.errorMessage()
+                            : (result.message() != null ? result.message() : "Unknown error"));
+            if (result.errorDetails() != null && !result.errorDetails().isEmpty()) {
+                JsonElement detailsJson = ARGS_GSON.toJsonTree(result.errorDetails());
+                if (detailsJson.isJsonObject()) {
+                    errorObj.add("details", detailsJson.getAsJsonObject());
+                }
+            }
+            response.add("error", errorObj);
+        }
+
+        return response;
+    }
+
+    // ---- 世界在线通知 ---- //
+
+    /** 握手成功后通知 Agent Core 世界上线。 */
+    private void sendWorldOnline() {
+        JsonObject params = new JsonObject();
+        params.addProperty("instance_id", identity.instanceId());
+        params.addProperty("world_name", identity.worldName());
+        params.addProperty("bot_count", botManager.onlineCount());
+        params.addProperty("uptime_seconds", 0);
+        tcpClient.sendNotification("world_online", params);
+        LOG.info("Sent world_online: world='{}', bots={}", identity.worldName(), botManager.onlineCount());
+    }
+
+    // ---- 假人控制（bot_control） ---- //
+
+    /**
+     * 处理 Agent Core 发来的假人控制请求。
+     * <p>
+     * 支持三种操作：
+     * <ul>
+     *   <li>{@code online} — 创建假人并上线</li>
+     *   <li>{@code offline} — 假人下线（休眠）</li>
+     *   <li>{@code status} — 查询假人状态</li>
+     * </ul>
+     */
+    private void handleBotControl(JsonRpcMessage.Request request,
+                                  TcpClient.BiConsumer<JsonRpcId, JsonElement> respond) {
+        JsonObject params = request.params() != null
+                ? request.params().getAsJsonObject()
+                : new JsonObject();
+
+        String action = params.has("action") ? params.get("action").getAsString() : "";
+        String botName = params.has("bot_name") ? params.get("bot_name").getAsString() : "";
+
+        JsonObject result = new JsonObject();
+
+        try {
+            switch (action) {
+                case "online" -> {
+                    if (botName.isEmpty()) {
+                        result.addProperty("success", false);
+                        result.addProperty("message", "bot_name is required");
+                        break;
+                    }
+                    ServerLevel overworld = server.overworld();
+                    Vec3 spawnPos = new Vec3(
+                            overworld.getSharedSpawnPos().getX() + 0.5,
+                            overworld.getSharedSpawnPos().getY(),
+                            overworld.getSharedSpawnPos().getZ() + 0.5
+                    );
+                    botManager.spawn(botName, overworld, spawnPos);
+                    result.addProperty("success", true);
+                    result.addProperty("message", "Bot '" + botName + "' spawned");
+                    result.addProperty("bot_name", botName);
+                }
+                case "offline" -> {
+                    if (botName.isEmpty()) {
+                        result.addProperty("success", false);
+                        result.addProperty("message", "bot_name is required");
+                        break;
+                    }
+                    EntityPlayerMPFake bot = botManager.findByName(botName);
+                    if (bot != null) {
+                        botManager.despawn(bot);
+                        result.addProperty("success", true);
+                        result.addProperty("message", "Bot '" + botName + "' despawned");
+                    } else {
+                        result.addProperty("success", false);
+                        result.addProperty("message", "Bot '" + botName + "' not found or not online");
+                    }
+                    result.addProperty("bot_name", botName);
+                }
+                case "status" -> {
+                    String target = botName.isEmpty() ? null : botName;
+                    result.addProperty("success", true);
+                    result.addProperty("online_count", botManager.onlineCount());
+                    if (target != null) {
+                        EntityPlayerMPFake bot = botManager.findByName(target);
+                        if (bot != null) {
+                            result.addProperty("online", true);
+                            result.addProperty("health", bot.getHealth());
+                            result.addProperty("max_health", bot.getMaxHealth());
+                            result.addProperty("food", bot.getFoodData().getFoodLevel());
+                            result.addProperty("x", bot.getX());
+                            result.addProperty("y", bot.getY());
+                            result.addProperty("z", bot.getZ());
+                            result.addProperty("dimension", ((ServerLevel) bot.level()).dimension().location().toString());
+                        } else {
+                            result.addProperty("online", false);
+                            result.addProperty("message", "Bot '" + botName + "' is offline");
+                        }
+                    } else {
+                        // 返回所有假人状态摘要
+                        JsonArray botsArray = new JsonArray();
+                        for (EntityPlayerMPFake bot : botManager.findAll()) {
+                            JsonObject b = new JsonObject();
+                            b.addProperty("name", bot.getName().getString());
+                            b.addProperty("uuid", bot.getUUID().toString());
+                            b.addProperty("health", bot.getHealth());
+                            b.addProperty("max_health", bot.getMaxHealth());
+                            b.addProperty("x", bot.getX());
+                            b.addProperty("z", bot.getZ());
+                            botsArray.add(b);
+                        }
+                        result.add("bots", botsArray);
+                    }
+                }
+                default -> {
+                    result.addProperty("success", false);
+                    result.addProperty("message", "Unknown action: " + action + " (supported: online, offline, status)");
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("Bot control failed: action={}, bot={}", action, botName, e);
+            result.addProperty("success", false);
+            result.addProperty("message", "Error: " + e.getMessage());
+        }
+
+        respond.accept(request.id(), result);
     }
 
     // ---- 世界下线通知 ---- //
@@ -339,6 +569,129 @@ public class WorldContext {
 
     private void sendEvent(JsonObject eventJson) {
         tcpClient.sendNotification("event", eventJson);
+    }
+
+    // ---- 假人生命周期事件桥接 ---- //
+
+    /**
+     * 注册 BotEventDispatcher 监听器，将假人生命周期事件通过 EventDispatcher 推送到 Agent Core。
+     * <p>
+     * 在 {@link #initialize()} 中调用，确保在假人生成前注册监听器。
+     */
+    private void registerBotEventListeners() {
+        // 假人生成 → 事件推送
+        BotEventDispatcher.ON_SPAWN.add((name, uuid) -> {
+            JsonObject data = new JsonObject();
+            data.addProperty("bot_name", name);
+            data.addProperty("bot_uuid", uuid.toString());
+            eventDispatcher.dispatch("bot_spawn", "info", data);
+        });
+
+        // 假人下线 → 事件推送
+        BotEventDispatcher.ON_DESPAWN.add((name, uuid) -> {
+            JsonObject data = new JsonObject();
+            data.addProperty("bot_name", name);
+            data.addProperty("bot_uuid", uuid.toString());
+            eventDispatcher.dispatch("bot_despawn", "info", data);
+        });
+
+        // 假人死亡 → 事件推送
+        BotEventDispatcher.ON_DEATH.add((name, uuid, deathMessage) -> {
+            JsonObject data = new JsonObject();
+            data.addProperty("bot_name", name);
+            data.addProperty("bot_uuid", uuid.toString());
+            data.addProperty("death_message", deathMessage);
+            eventDispatcher.dispatch("bot_death", "danger", data);
+        });
+
+        // 假人销毁 → 事件推送
+        BotEventDispatcher.ON_DISMISS.add((name, uuid) -> {
+            JsonObject data = new JsonObject();
+            data.addProperty("bot_name", name);
+            data.addProperty("bot_uuid", uuid.toString());
+            eventDispatcher.dispatch("bot_dismiss", "warning", data);
+        });
+
+        // 假人重生 → 事件推送
+        BotEventDispatcher.ON_RESPAWN.add((name, uuid) -> {
+            JsonObject data = new JsonObject();
+            data.addProperty("bot_name", name);
+            data.addProperty("bot_uuid", uuid.toString());
+            eventDispatcher.dispatch("bot_respawn", "info", data);
+        });
+
+        LOG.info("Bot event listeners registered for world '{}'", identity.worldName());
+    }
+
+    // ---- 游戏事件监听（玩家连接 + 健康度检测） ---- //
+
+    /**
+     * 注册玩家连接事件监听器。
+     * <p>
+     * 监听 {@link ServerPlayConnectionEvents#JOIN} 和 {@link ServerPlayConnectionEvents#DISCONNECT}，
+     * 通过 {@link EventDispatcher} 推送到 Agent Core。
+     */
+    private void registerPlayerEventListeners() {
+        // 玩家加入
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            String playerName = handler.getPlayer().getName().getString();
+            UUID playerUuid = handler.getPlayer().getUUID();
+            JsonObject data = new JsonObject();
+            data.addProperty("player_name", playerName);
+            data.addProperty("player_uuid", playerUuid.toString());
+            eventDispatcher.dispatch("player_join", "info", data);
+        });
+
+        // 玩家离开
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            String playerName = handler.getPlayer().getName().getString();
+            UUID playerUuid = handler.getPlayer().getUUID();
+            JsonObject data = new JsonObject();
+            data.addProperty("player_name", playerName);
+            data.addProperty("player_uuid", playerUuid.toString());
+            eventDispatcher.dispatch("player_leave", "info", data);
+        });
+
+        LOG.info("Player event listeners registered for world '{}'", identity.worldName());
+    }
+
+    /**
+     * 每 tick 检查假人健康度，低于阈值时推送事件。
+     * <p>
+     * 检查项：
+     * <ul>
+     *   <li>血量低于 30% → {@code health_low}</li>
+     *   <li>饥饿度低于 6 → {@code hunger_low}</li>
+     * </ul>
+     * 每 20 tick（1 秒）检查一次，避免过于频繁。
+     */
+    private int healthCheckCounter = 0;
+    private static final int HEALTH_CHECK_INTERVAL = 20; // 每 20 tick 检查一次
+
+    private void checkBotHealth() {
+        healthCheckCounter++;
+        if (healthCheckCounter < HEALTH_CHECK_INTERVAL) {
+            return;
+        }
+        healthCheckCounter = 0;
+
+        for (EntityPlayerMPFake bot : botManager.findAll()) {
+            // 低血量检测（< 30%）
+            float health = bot.getHealth();
+            float maxHealth = bot.getMaxHealth();
+            if (health > 0 && health / maxHealth < 0.3f) {
+                eventDispatcher.onHealthLow(health, maxHealth);
+            }
+
+            // 低饥饿度检测（< 6）
+            int food = bot.getFoodData().getFoodLevel();
+            if (food < 6) {
+                JsonObject data = new JsonObject();
+                data.addProperty("food", food);
+                data.addProperty("max_food", 20);
+                eventDispatcher.dispatch("hunger_low", "warning", data);
+            }
+        }
     }
 
     // ---- 参数解析 ---- //
@@ -367,15 +720,63 @@ public class WorldContext {
     // ---- 状态采集 ---- //
 
     private StatusData collectStatus() {
-        // 临时实现，后续接入真实游戏状态
+        List<EntityPlayerMPFake> bots = botManager.findAll();
+        if (bots.isEmpty()) {
+            return null;
+        }
+
+        // 取第一个假人上报（多假人时后续可扩展）
+        EntityPlayerMPFake bot = bots.get(0);
+        ServerLevel level = (ServerLevel) bot.level();
+
+        // 采集装备数据
+        ItemStack mainhand = bot.getMainHandItem();
+        ItemStack offhand = bot.getOffhandItem();
+        ItemStack helmet = bot.getInventory().armor.get(3);
+        ItemStack chestplate = bot.getInventory().armor.get(2);
+        ItemStack leggings = bot.getInventory().armor.get(1);
+        ItemStack boots = bot.getInventory().armor.get(0);
+
+        // 采集背包摘要
+        List<StatusData.ItemEntry> items = new ArrayList<>();
+        int usedSlots = 0;
+        for (int i = 0; i < bot.getInventory().items.size(); i++) {
+            ItemStack stack = bot.getInventory().items.get(i);
+            if (!stack.isEmpty()) {
+                usedSlots++;
+                items.add(new StatusData.ItemEntry(
+                        stack.getItem().getDescriptionId(), stack.getCount()));
+            }
+        }
+
+        // 天气
+        String weather = level.isThundering() ? "thunder"
+                : level.isRaining() ? "rain" : "clear";
+
         return new StatusData(
-                20.0, 20.0, 20, 20, 5.0f,
-                300, 300, 0.0, 64.0, 0.0,
-                "overworld", 0.0f, 0.0f, 0, 0,
-                "air", "air", "air", "air", "air", "air",
-                0, 36,
-                java.util.List.of(), java.util.List.of(),
-                6000, "clear", "normal", "survival"
+                bot.getHealth(), bot.getMaxHealth(),
+                bot.getFoodData().getFoodLevel(), 20, bot.getFoodData().getSaturationLevel(),
+                bot.getAirSupply(), bot.getMaxAirSupply(),
+                bot.getX(), bot.getY(), bot.getZ(),
+                level.dimension().location().toString(),
+                bot.getYRot(), bot.getXRot(),
+                (int) bot.getArmorValue(), 0,
+                !mainhand.isEmpty() ? mainhand.getHoverName().getString() : "air",
+                !offhand.isEmpty() ? offhand.getHoverName().getString() : "air",
+                !helmet.isEmpty() ? helmet.getHoverName().getString() : "air",
+                !chestplate.isEmpty() ? chestplate.getHoverName().getString() : "air",
+                !leggings.isEmpty() ? leggings.getHoverName().getString() : "air",
+                !boots.isEmpty() ? boots.getHoverName().getString() : "air",
+                usedSlots, bot.getInventory().items.size(),
+                items, List.of(),
+                level.getDayTime(), weather,
+                switch (level.getDifficulty()) {
+                    case PEACEFUL -> "peaceful";
+                    case EASY -> "easy";
+                    case NORMAL -> "normal";
+                    case HARD -> "hard";
+                },
+                bot.gameMode.getGameModeForPlayer().getName()
         );
     }
 
