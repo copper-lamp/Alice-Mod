@@ -274,6 +274,28 @@ export class FunctionCallingPipeline extends EventEmitter {
           middlewareBeforeDuration,
         );
         emptyResult.errors = ctx.errors || [];
+
+        // V31 FIX: 合并中间件结果（即使调用被移除），确保 wiki/search 等工具结果被注入对话
+        if (ctx.results && ctx.results.length > 0) {
+          emptyResult.toolResults = ctx.results;
+          emptyResult.stats.total = ctx.results.length;
+          emptyResult.stats.success = ctx.results.filter(r => r.success && !r.cancelled).length;
+          emptyResult.stats.failed = ctx.results.filter(r => !r.success && !r.cancelled).length;
+
+          // 注入到对话上下文，防止 LLM 报 "tool_calls must be followed by tool messages" 错误
+          if (conversation) {
+            const collectResult: CollectResult = {
+              results: ctx.results,
+              successCount: emptyResult.stats.success,
+              failCount: emptyResult.stats.failed,
+              totalDurationMs: emptyResult.totalDurationMs,
+              toolDurations: [],
+              hasErrors: emptyResult.stats.failed > 0,
+            };
+            this.injector.inject(collectResult, conversation);
+          }
+        }
+
         this.updateStatus(PipelinePhase.Completed, startTime);
         this.emit(PipelineEvent.Complete, { pipelineId, result: emptyResult });
         return emptyResult;
