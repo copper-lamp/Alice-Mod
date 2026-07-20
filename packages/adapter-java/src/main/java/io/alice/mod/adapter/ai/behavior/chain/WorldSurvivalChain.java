@@ -3,7 +3,7 @@ package io.alice.mod.adapter.ai.behavior.chain;
 import io.alice.mod.adapter.ai.behavior.SingleTaskChain;
 import io.alice.mod.adapter.ai.behavior.Task;
 import io.alice.mod.adapter.ai.behavior.TaskRunner;
-import io.alice.mod.adapter.ai.state.SmoothInputController;
+
 import io.alice.mod.adapter.api.service.BotHandle;
 import io.alice.mod.adapter.api.types.Vec3;
 import net.minecraft.core.BlockPos;
@@ -11,7 +11,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.AbstractFireBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import org.slf4j.Logger;
@@ -57,7 +56,7 @@ public class WorldSurvivalChain extends SingleTaskChain {
     @Override
     public float getPriority(BotHandle bot) {
         ServerPlayer player = bot.getNativePlayer();
-        if (player == null || !bot.inGame()) {
+        if (player == null || bot.getNativePlayer() == null) {
             return Float.NEGATIVE_INFINITY;
         }
 
@@ -121,9 +120,10 @@ public class WorldSurvivalChain extends SingleTaskChain {
 
     private void handleDrowning(BotHandle bot, ServerPlayer player) {
         boolean avoided = false;
-        if (player.isUnderWater() && player.getAirSupply() < player.getMaxAir()) {
+        if (player.isInWater() && player.getAirSupply() < player.getMaxAirSupply()) {
             // 向上游
-            bot.getSmoothInputController().hold(bot, SmoothInputController.Input.JUMP);
+            String jumpCmd = String.format("player %s jump", bot.name());
+            executeCommand(bot, jumpCmd);
             avoided = true;
             wasAvoidingDrowning = true;
         }
@@ -131,7 +131,7 @@ public class WorldSurvivalChain extends SingleTaskChain {
         // 停止向上游
         if (wasAvoidingDrowning && !avoided) {
             wasAvoidingDrowning = false;
-            bot.getSmoothInputController().release(bot, SmoothInputController.Input.JUMP);
+            // No need to release, just stop jumping
         }
     }
 
@@ -155,7 +155,7 @@ public class WorldSurvivalChain extends SingleTaskChain {
         // 检查玩家周围是否有火方块
         for (BlockPos pos : getBlocksTouchingPlayer(player)) {
             Block b = player.serverLevel().getBlockState(pos).getBlock();
-            if (b instanceof AbstractFireBlock) {
+            if (b == Blocks.FIRE || b == Blocks.SOUL_FIRE) {
                 return true;
             }
         }

@@ -41,7 +41,7 @@ public class UserTaskChain extends SingleTaskChain {
     @Override
     protected void onTick(BotHandle bot) {
         // 不在世界中时不执行
-        if (!bot.inGame()) return;
+        if (bot.getNativePlayer() == null) return;
 
         super.onTick(bot);
     }

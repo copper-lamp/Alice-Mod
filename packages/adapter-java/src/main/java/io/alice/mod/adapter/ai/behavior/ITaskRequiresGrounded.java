@@ -25,8 +25,8 @@ public interface ITaskRequiresGrounded extends ITaskCanForce {
         if (nativePlayer instanceof net.minecraft.server.level.ServerPlayer player) {
             return !(player.onGround()
                     || player.isSwimming()
-                    || player.isTouchingWater()
-                    || player.isClimbing());
+                    || player.isInWater()
+                    || player.onClimbable());
         }
         return false;
     }

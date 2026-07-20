@@ -18,7 +18,7 @@
 import type { QQMessage } from './types'
 import type { OneBotClient } from './onebot-client'
 import type { AgentConfig } from '../../renderer/src/lib/types'
-import { pendingQqSends } from '../agent/main-agent-registry'
+import { getMessageBatcher } from './message-batcher'
 
 /**
  * 路由一条 QQ 消息到绑定的 Agent 实例
@@ -76,58 +76,18 @@ export async function routeQQMessageToAgent(
     return false
   }
 
-  // 6. 处理消息
+  // 6. 通过 MessageBatcher 处理消息
   try {
-    let response: string
+    const batcher = getMessageBatcher(boundAgent.id)
 
-    // 6a. 检查是否为 QQAgent（支持 handleQQMessage）
-    if (typeof (agent as any).handleQQMessage === 'function') {
-      const result = await (agent as any).handleQQMessage(msg)
-      response = result.response ?? ''
-    } else {
-      // 6b. 普通 MainAgent，使用 handle() 基本处理
-      const prompt = formatQQPrompt(msg)
+    // 创建 handler：将合并后的 prompt 发送给 AI
+    const handler = async (prompt: string): Promise<string> => {
       const result = await agent.handle({ source: 'qq', prompt })
-      response = result.finalResponse
+      return result.finalResponse
     }
 
-    // 7. V30: 仅通过 qq_send 工具队列发送消息
-    // 不允许直接发送 LLM 回复，必须通过 qq_send 工具调用发送
-    // V31: 模拟打字延迟 — 第1条直接发，后续按字数计算输入时间（1秒3字）
-    const pendingSends = pendingQqSends.get(boundAgent.id) ?? []
-
-    for (let i = 0; i < pendingSends.length; i++) {
-      const pending = pendingSends[i]
-      const target = pending.target || msg.groupId || msg.userId
-
-      // 第1条直接发，后续消息按字数延迟
-      if (i > 0) {
-        const delayMs = calculateTypingDelay(pending.content)
-        console.log(`[MessageRouter] 模拟打字延迟 ${delayMs}ms（${pending.content.length}字）`)
-        await sleep(delayMs)
-      }
-
-      try {
-        if (pending.type === 'private_msg' || pending.type === 'private') {
-          await client.sendPrivateMsg(target, pending.content)
-        } else {
-          await client.sendGroupMsg(target, pending.content)
-        }
-        console.log(`[MessageRouter] qq_send 消息已发送到 ${target}`)
-      } catch (err) {
-        console.error(`[MessageRouter] 发送 qq_send 消息失败:`, err)
-      }
-    }
-
-    // 清空队列
-    if (pendingSends.length > 0) {
-      pendingQqSends.delete(boundAgent.id)
-    }
-
-    // 如果 LLM 没有通过 qq_send 发送消息，记录警告（不直接发送回复）
-    if (pendingSends.length === 0 && response) {
-      console.log(`[MessageRouter] LLM 未通过 qq_send 工具发送消息，回复已丢弃: ${response.slice(0, 100)}`)
-    }
+    // 添加到批处理队列，batcher 负责合并、发送和 qq_send 消息投递
+    await batcher.add(msg, handler, client)
 
     return true
   } catch (err) {
@@ -167,34 +127,4 @@ function isAtBot(msg: QQMessage, botQQ: string): boolean {
   return msg.segments?.some(
     seg => seg.type === 'at' && seg.data && (seg.data.qq === 'all' || seg.data.qq === String(botQQ)),
   ) ?? false
-}
-
-/**
- * 格式化 QQ 消息为普通 prompt（当 Agent 不是 QQAgent 时使用）
- */
-function formatQQPrompt(msg: QQMessage): string {
-  const parts: string[] = []
-  if (msg.groupId) {
-    parts.push(`[群消息] 来自群 ${msg.groupId}，用户 ${msg.userId}（${msg.userName}）：${msg.content}`)
-  } else {
-    parts.push(`[私聊] 来自用户 ${msg.userId}（${msg.userName}）：${msg.content}`)
-  }
-  return parts.join('\n')
-}
-
-/**
- * V31: 计算打字延迟（模拟真人输入速度）
- * 1秒可以打3个字，取整
- * @param content 消息内容
- * @returns 延迟毫秒数
- */
-function calculateTypingDelay(content: string): number {
-  const charsPerSecond = 3
-  const charCount = content.length
-  return Math.ceil((charCount / charsPerSecond) * 1000)
-}
-
-/** sleep 辅助函数 */
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
 }

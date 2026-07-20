@@ -355,13 +355,32 @@ export class MainAgentRegistry {
         const gameActionCalls = ctx.calls.filter((c) => c.toolName === 'request_game_action');
         if (qqSendCalls.length === 0 && qqInfoCalls.length === 0 && gameActionCalls.length === 0) return ctx;
 
-        // 处理 qq_send 调用
+        // 处理 qq_send 调用（含去重：同一轮 LLM 响应中，相同内容发往相同目标只发一次）
+        const dedupSet = new Set<string>();
         for (const call of qqSendCalls) {
           const startTime = Date.now();
           const params = call.arguments as Record<string, unknown>;
           const sendType = params.type as string;
           const target = params.target as string;
           const content = (params.content as string) ?? '';
+
+          // 去重检查：同一轮中相同内容发往相同目标只发一次
+          const dedupKey = `${target}:${content}`;
+          if (dedupSet.has(dedupKey)) {
+            console.log(`[MainAgentRegistry] qq_send 去重: type=${sendType}, target=${target}, content=${content.slice(0, 50)}`);
+            // 仍然返回成功结果，避免 LLM 困惑
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: 'qq_send',
+              success: true,
+              data: { message: '消息已加入发送队列（去重，实际未发送）' },
+              durationMs: Date.now() - startTime,
+            } as any);
+            continue;
+          }
+          dedupSet.add(dedupKey);
 
           // 存入待发送队列（由 message-router 消费）
           const pending = pendingQqSends.get(agentId) ?? [];

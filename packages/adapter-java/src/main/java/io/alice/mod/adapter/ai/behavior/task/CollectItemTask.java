@@ -5,9 +5,11 @@ import io.alice.mod.adapter.ai.behavior.Task;
 import io.alice.mod.adapter.api.service.BotHandle;
 import io.alice.mod.adapter.api.types.Vec3;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -139,13 +141,12 @@ public class CollectItemTask extends Task implements ITaskRequiresGrounded {
         ItemEntity closest = null;
         double minDist = COLLECT_RANGE * COLLECT_RANGE;
 
-        for (ItemEntity item : player.serverLevel().getEntities().getAll()
-                .stream()
-                .filter(e -> e instanceof ItemEntity)
-                .map(e -> (ItemEntity) e)
-                .filter(e -> e.isAlive() && targetItems.contains(e.getItem().getItem()))
-                .toList()) {
-
+        for (Entity entity : player.serverLevel().getEntities(
+                player,
+                AABB.ofSize(player.position(), COLLECT_RANGE * 2, COLLECT_RANGE * 2, COLLECT_RANGE * 2),
+                e -> e instanceof ItemEntity && e.isAlive() && targetItems.contains(((ItemEntity) e).getItem().getItem())
+        )) {
+            ItemEntity item = (ItemEntity) entity;
             double dist = item.distanceToSqr(player);
             if (dist < minDist) {
                 minDist = dist;

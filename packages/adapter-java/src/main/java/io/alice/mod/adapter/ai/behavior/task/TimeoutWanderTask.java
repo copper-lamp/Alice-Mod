@@ -45,7 +45,7 @@ public class TimeoutWanderTask extends Task implements ITaskRequiresGrounded {
             Blocks.TWISTING_VINES, Blocks.TWISTING_VINES_PLANT,
             Blocks.WEEPING_VINES_PLANT, Blocks.BIG_DRIPLEAF,
             Blocks.BIG_DRIPLEAF_STEM, Blocks.SMALL_DRIPLEAF,
-            Blocks.GRASS, Blocks.FERN, Blocks.LARGE_FERN,
+            Blocks.SHORT_GRASS, Blocks.FERN, Blocks.LARGE_FERN,
             Blocks.DANDELION, Blocks.POPPY, Blocks.BLUE_ORCHID,
             Blocks.ALLIUM, Blocks.AZURE_BLUET, Blocks.RED_TULIP,
             Blocks.ORANGE_TULIP, Blocks.WHITE_TULIP, Blocks.PINK_TULIP,
@@ -131,7 +131,8 @@ public class TimeoutWanderTask extends Task implements ITaskRequiresGrounded {
     @Override
     protected void onStop(BotHandle bot, Task interruptTask) {
         // 停止所有移动输入
-        bot.getMovementExecutor().stop(bot);
+        String stopCmd = String.format("player %s stop", bot.name());
+        executeCommand(bot, stopCmd);
         LOG.debug("TimeoutWanderTask: stopped");
     }
 

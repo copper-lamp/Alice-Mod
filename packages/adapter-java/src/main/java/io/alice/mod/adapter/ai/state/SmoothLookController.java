@@ -182,8 +182,7 @@ public class SmoothLookController {
         // 通知客户端更新
         player.connection.teleport(
                 player.getX(), player.getY(), player.getZ(),
-                yaw, pitch,
-                java.util.Collections.emptySet()
+                yaw, pitch
         );
     }
 

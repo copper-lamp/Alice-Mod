@@ -202,8 +202,8 @@ public class MovementExecutor {
         if (player == null) return;
 
         context.setOnGround(player.onGround());
-        context.setInWater(player.isTouchingWater());
-        context.setOnLadder(player.isClimbing());
+        context.setInWater(player.isInWater());
+        context.setOnLadder(player.onClimbable());
         context.setInLava(player.isInLava());
         context.setOnFire(player.isOnFire());
         context.setFoodLevel(bot.foodLevel());

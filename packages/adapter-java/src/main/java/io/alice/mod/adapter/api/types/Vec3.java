@@ -25,4 +25,9 @@ public record Vec3(double x, double y, double z) {
         double dz = this.z - other.z;
         return Math.sqrt(dx * dx + dz * dz);
     }
+
+    /** 计算向量的长度（模）。 */
+    public double length() {
+        return Math.sqrt(x * x + y * y + z * z);
+    }
 }

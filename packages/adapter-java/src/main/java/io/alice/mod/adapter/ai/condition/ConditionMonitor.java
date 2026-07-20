@@ -6,6 +6,7 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.phys.AABB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -153,7 +154,7 @@ public class ConditionMonitor {
      * 检测是否正在快速下落。
      */
     private boolean isFalling(ServerPlayer player) {
-        if (player.onGround() || player.isSwimming() || player.isClimbing() || player.isInWater()) {
+        if (player.onGround() || player.isSwimming() || player.onClimbable() || player.isInWater()) {
             return false;
         }
         return player.getDeltaMovement().y < FALL_SPEED_THRESHOLD;
@@ -163,15 +164,13 @@ public class ConditionMonitor {
      * 检测是否有爬行者即将爆炸。
      */
     private boolean isCreeperAboutToExplode(ServerPlayer player) {
-        List<Creeper> creepers = player.serverLevel().getEntities().getAll()
-                .stream()
-                .filter(e -> e instanceof Creeper)
-                .map(e -> (Creeper) e)
-                .filter(c -> c.isAlive() && c.distanceTo(player) < CREEPER_DANGER_DISTANCE)
-                .toList();
+        AABB area = player.getBoundingBox().inflate(CREEPER_DANGER_DISTANCE);
+        List<Entity> entities = player.serverLevel().getEntities(player, area,
+                e -> e instanceof Creeper);
 
-        for (Creeper creeper : creepers) {
-            if (creeper.getSwellDir() > 0) {
+        for (Entity entity : entities) {
+            Creeper creeper = (Creeper) entity;
+            if (creeper.isAlive() && creeper.getSwellDir() > 0) {
                 return true;
             }
         }
@@ -186,15 +185,11 @@ public class ConditionMonitor {
     private boolean isHostileThreat(ServerPlayer player) {
         float health = player.getHealth();
         double alertRange = (health < LOW_HEALTH) ? HOSTILE_ALERT_DISTANCE : HOSTILE_ALERT_DISTANCE * 0.5;
+        AABB area = player.getBoundingBox().inflate(alertRange);
+        List<Entity> entities = player.serverLevel().getEntities(player, area,
+                e -> e instanceof Monster m && m.isAlive());
 
-        List<Monster> hostiles = player.serverLevel().getEntities().getAll()
-                .stream()
-                .filter(e -> e instanceof Monster)
-                .map(e -> (Monster) e)
-                .filter(m -> m.isAlive() && m.distanceTo(player) < alertRange)
-                .toList();
-
-        return !hostiles.isEmpty();
+        return !entities.isEmpty();
     }
 
     /**

@@ -4,7 +4,6 @@ import io.alice.mod.adapter.ai.behavior.ITaskOverridesGrounded;
 import io.alice.mod.adapter.ai.behavior.Task;
 import io.alice.mod.adapter.api.service.BotHandle;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
@@ -76,22 +75,17 @@ public class EatTask extends Task implements ITaskOverridesGrounded {
             return null;
         }
 
-        // 检查背包中是否有食物
+        // 检查背包中是否有食物（使用 DataComponent 系统，Minecraft 1.21+）
         ItemStack bestFood = null;
-        int bestScore = -1;
 
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
             ItemStack stack = player.getInventory().getItem(i);
-            if (stack.isEmpty() || !stack.isEdible()) continue;
+            if (stack.isEmpty()) continue;
 
-            FoodProperties food = stack.getItem().getFoodProperties();
-            if (food == null) continue;
-
-            // 评分：考虑饥饿恢复和饱和度
-            int score = food.getNutrition() * 2 + (int) food.getSaturationModifier();
-            if (score > bestScore) {
-                bestScore = score;
+            // 检查物品是否有 food 组件
+            if (stack.has(net.minecraft.core.component.DataComponents.FOOD)) {
                 bestFood = stack;
+                break;
             }
         }
 

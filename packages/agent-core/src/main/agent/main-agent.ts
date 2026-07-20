@@ -315,6 +315,8 @@ function toBuildSource(source: MainAgentEvent['source']): BuildSource {
 function sanitizeHistory(messages: ConversationMessage[]): ConversationMessage[] {
   const result: ConversationMessage[] = [];
   let expectedToolCallIds = new Set<string>();
+  // 记录最近一条有 tool_calls 的 assistant 消息在 result 中的索引
+  let lastAssistantIdx = -1;
 
   for (const msg of messages) {
     if (msg.role === 'tool' && msg.tool_call_id) {
@@ -328,19 +330,33 @@ function sanitizeHistory(messages: ConversationMessage[]): ConversationMessage[]
     }
 
     if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+      // 前一轮未完成的 tool_calls 被新 assistant 覆盖
       if (expectedToolCallIds.size > 0) {
-        console.warn(`[MainAgent] 清理未完成的 tool_calls: ${Array.from(expectedToolCallIds).join(', ')}`);
+        console.warn(`[MainAgent] 清理未完成的 tool_calls (被新 assistant 覆盖): ${Array.from(expectedToolCallIds).join(', ')}`);
+        // 移除前一条 assistant 的 tool_calls
+        result[lastAssistantIdx] = { role: 'assistant', content: result[lastAssistantIdx]?.content ?? '' };
       }
       expectedToolCallIds = new Set(msg.tool_calls.map(tc => tc.id));
+      lastAssistantIdx = result.length;
       result.push(msg);
       continue;
     }
 
+    // 非 tool、非 assistant-with-tool_calls 的消息
     if (expectedToolCallIds.size > 0) {
       console.warn(`[MainAgent] 清理未完成的 tool_calls (遇到非 tool 消息): ${Array.from(expectedToolCallIds).join(', ')}`);
+      // 移除前一条 assistant 的 tool_calls
+      result[lastAssistantIdx] = { role: 'assistant', content: result[lastAssistantIdx]?.content ?? '' };
       expectedToolCallIds.clear();
+      lastAssistantIdx = -1;
     }
     result.push(msg);
+  }
+
+  // 处理消息数组末尾未完成的 tool_calls
+  if (expectedToolCallIds.size > 0 && lastAssistantIdx >= 0) {
+    console.warn(`[MainAgent] 清理末尾未完成的 tool_calls: ${Array.from(expectedToolCallIds).join(', ')}`);
+    result[lastAssistantIdx] = { role: 'assistant', content: result[lastAssistantIdx]?.content ?? '' };
   }
 
   return result;

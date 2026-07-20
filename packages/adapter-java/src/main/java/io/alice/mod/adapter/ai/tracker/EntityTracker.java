@@ -10,6 +10,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,10 +77,9 @@ public class EntityTracker extends Tracker {
         if (player == null) return;
 
         // 扫描附近实体
-        List<Entity> all = player.serverLevel().getEntities().getAll()
-                .stream()
-                .filter(e -> e != player && e.distanceTo(player) < scanRadius)
-                .collect(Collectors.toList());
+        AABB area = player.getBoundingBox().inflate(scanRadius);
+        List<Entity> all = player.serverLevel().getEntities(player, area,
+                e -> e != player && e.distanceTo(player) < scanRadius);
 
         for (Entity entity : all) {
             nearbyEntities.add(entity);

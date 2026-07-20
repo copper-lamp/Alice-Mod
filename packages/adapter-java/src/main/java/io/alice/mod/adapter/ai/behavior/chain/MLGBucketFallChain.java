@@ -3,7 +3,7 @@ package io.alice.mod.adapter.ai.behavior.chain;
 import io.alice.mod.adapter.ai.behavior.SingleTaskChain;
 import io.alice.mod.adapter.ai.behavior.Task;
 import io.alice.mod.adapter.ai.behavior.TaskRunner;
-import io.alice.mod.adapter.ai.state.SmoothInputController;
+
 import io.alice.mod.adapter.api.service.BotHandle;
 import io.alice.mod.adapter.api.types.Vec3;
 import net.minecraft.server.level.ServerPlayer;
@@ -67,7 +67,7 @@ public class MLGBucketFallChain extends SingleTaskChain {
     @Override
     public float getPriority(BotHandle bot) {
         ServerPlayer player = bot.getNativePlayer();
-        if (player == null || !bot.inGame()) {
+        if (player == null || bot.getNativePlayer() == null) {
             return Float.NEGATIVE_INFINITY;
         }
 
@@ -126,7 +126,7 @@ public class MLGBucketFallChain extends SingleTaskChain {
      */
     public boolean isFallingOhNo(ServerPlayer player) {
         // 游泳/水中/地面/攀爬时不下落
-        if (player.isSwimming() || player.isInWater() || player.onGround() || player.isClimbing()) {
+        if (player.isSwimming() || player.isInWater() || player.onGround() || player.onClimbable()) {
             return false;
         }
 
@@ -207,13 +207,14 @@ public class MLGBucketFallChain extends SingleTaskChain {
                 bot.name(), "chorus_fruit");
         executeCommand(bot, command);
         // 按住右键
-        bot.getSmoothInputController().hold(bot, SmoothInputController.Input.USE);
+        String useCmd = String.format("player %s useItem", bot.name());
+        executeCommand(bot, useCmd);
         LOG.debug("MLGBucketFallChain: eating chorus fruit for levitation");
     }
 
     private void stopChorusFruit(BotHandle bot) {
         doingChorusFruit = false;
-        bot.getSmoothInputController().release(bot, SmoothInputController.Input.USE);
+        // No need to release, the Carpet command is one-shot
     }
 
     // ──────────────────────────────────────────────

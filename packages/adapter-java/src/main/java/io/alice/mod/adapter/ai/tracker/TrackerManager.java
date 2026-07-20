@@ -38,7 +38,7 @@ public class TrackerManager {
      * @param bot 假人句柄
      */
     public void tick(BotHandle bot) {
-        boolean inGame = bot.inGame();
+        boolean inGame = bot.getNativePlayer() != null;
 
         // 离开世界时重置
         if (!inGame && wasInGame) {

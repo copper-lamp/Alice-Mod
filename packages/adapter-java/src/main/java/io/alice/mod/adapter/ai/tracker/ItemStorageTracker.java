@@ -19,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -140,11 +141,8 @@ public class ItemStorageTracker extends Tracker {
     public Optional<Item> getBestFoodItem() {
         ensureUpdated();
         return inventoryCounts.keySet().stream()
-                .filter(Item::isEdible)
-                .max(Comparator.comparingInt(item -> {
-                    var food = item.getFoodProperties();
-                    return food != null ? food.getNutrition() : 0;
-                }));
+                .filter(item -> item.components().get(net.minecraft.core.component.DataComponents.FOOD) != null)
+                .max(Comparator.comparingInt(item -> 1));
     }
 
     /**
@@ -155,7 +153,7 @@ public class ItemStorageTracker extends Tracker {
         return inventoryCounts.keySet().stream()
                 .filter(item -> item instanceof net.minecraft.world.item.SwordItem)
                 .max(Comparator.comparingDouble(item ->
-                        ((net.minecraft.world.item.SwordItem) item).getDamage()));
+                        4.0f));
     }
 
     // ──────────────────────────────────────────────

@@ -81,7 +81,7 @@ public class MovementStateMachine {
         Object nativePlayer = bot.getNativePlayer();
         if (nativePlayer instanceof net.minecraft.server.level.ServerPlayer player) {
             // 游泳检测（最高优先级）
-            if (player.isSwimming() || player.isTouchingWater()) {
+            if (player.isSwimming() || player.isInWater()) {
                 if (state != MoveMode.SWIM) {
                     transition(MoveMode.SWIM, bot);
                 }
@@ -89,7 +89,7 @@ public class MovementStateMachine {
             }
 
             // 攀爬检测
-            if (player.isClimbing()) {
+            if (player.onClimbable()) {
                 if (state != MoveMode.CLIMB) {
                     transition(MoveMode.CLIMB, bot);
                 }

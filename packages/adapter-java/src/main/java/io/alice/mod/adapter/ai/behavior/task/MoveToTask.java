@@ -4,8 +4,8 @@ import io.alice.mod.adapter.ai.behavior.ITaskRequiresGrounded;
 import io.alice.mod.adapter.ai.behavior.Task;
 import io.alice.mod.adapter.api.service.BotHandle;
 import io.alice.mod.adapter.api.types.PathConstraints;
-import io.alice.mod.adapter.api.types.PathResult;
 import io.alice.mod.adapter.api.types.Vec3;
+import io.alice.mod.adapter.ai.action.ActionController;
 import io.alice.mod.adapter.ai.state.MovementExecutor;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
@@ -52,7 +52,7 @@ public class MoveToTask extends Task implements ITaskRequiresGrounded {
     // ──────────────────────────────────────────────
 
     public MoveToTask(Vec3 destination) {
-        this(destination, PathConstraints.defaults(), true);
+        this(destination, PathConstraints.DEFAULT, true);
     }
 
     public MoveToTask(Vec3 destination, PathConstraints constraints, boolean allowWander) {
@@ -71,7 +71,7 @@ public class MoveToTask extends Task implements ITaskRequiresGrounded {
         retryCount = 0;
         pathfinding = false;
         initialPathFailed = false;
-        executor = bot.getMovementExecutor();
+        executor = new MovementExecutor(new ActionController());
         executor.reset();
         LOG.debug("MoveToTask: start -> {}", destination);
     }
@@ -160,24 +160,9 @@ public class MoveToTask extends Task implements ITaskRequiresGrounded {
     // ──────────────────────────────────────────────
 
     private void startPathfinding(BotHandle bot) {
-        // 使用 PathfindingService 规划路径
-        bot.getPathfindingService().findPath(
-                bot.position(),
-                destination,
-                constraints,
-                this::onPathResult
-        );
-    }
-
-    private void onPathResult(PathResult result) {
-        if (result == null || result.points() == null || result.points().isEmpty()) {
-            initialPathFailed = true;
-            return;
-        }
-
-        // 应用路径到执行器
-        executor.start(bot, result, destination);
-        pathfinding = false;
+        // TODO: 集成 PathfindingService 进行异步路径规划
+        // 当前 PathfindingService 为桩实现（stub），暂时标记为路径规划失败
+        initialPathFailed = true;
     }
 
     private void applyPathResult(BotHandle bot) {

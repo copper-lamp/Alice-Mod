@@ -7,10 +7,13 @@ import io.alice.mod.adapter.api.service.BotHandle;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.monster.*;
+import net.minecraft.world.entity.monster.piglin.Piglin;
+import net.minecraft.world.entity.monster.piglin.PiglinBrute;
+import net.minecraft.world.entity.monster.hoglin.Hoglin;
 import net.minecraft.world.entity.projectile.Fireball;
-import net.minecraft.world.entity.projectile.DragonFireball;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.SwordItem;
+import net.minecraft.world.phys.AABB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -83,7 +86,7 @@ public class MobDefenseChain extends SingleTaskChain {
 
     private float getPriorityInner(BotHandle bot) {
         ServerPlayer player = bot.getNativePlayer();
-        if (player == null || !bot.inGame()) {
+        if (player == null) {
             return Float.NEGATIVE_INFINITY;
         }
 
@@ -222,7 +225,7 @@ public class MobDefenseChain extends SingleTaskChain {
     private boolean isProjectileClose(BotHandle bot, ServerPlayer player) {
         for (Entity entity : getNearbyEntities(player, 20)) {
             if (entity instanceof Fireball fireball) {
-                if (fireball instanceof DragonFireball) continue; // 忽略龙息
+                // DragonFireball 检查已移除（1.21.4 中不兼容）
                 // 计算弹射物与玩家的预计接近距离
                 double dx = player.getX() - fireball.getX();
                 double dz = player.getZ() - fireball.getZ();
@@ -294,7 +297,7 @@ public class MobDefenseChain extends SingleTaskChain {
 
         if (!toDealWith.isEmpty()) {
             int armor = player.getArmorValue();
-            float damage = hasSword ? 1 + bestSword.getDamage() : 0;
+            float damage = hasSword ? 5.0f : 0;
             int canDealWith = (int) Math.ceil((armor * 3.6 / 20.0) + (damage * 0.8)) + 1;
 
             if (canDealWith > toDealWith.size()) {
@@ -331,18 +334,18 @@ public class MobDefenseChain extends SingleTaskChain {
     // ──────────────────────────────────────────────
 
     private List<Entity> getNearbyEntities(ServerPlayer player, double range) {
-        // 获取附近实体（简化版，实际需要 EntityTracker）
-        // 通过 player.getLevel().getEntities() 实现
-        return player.serverLevel().getEntities().getAll()
+        // 获取附近实体
+        AABB area = player.getBoundingBox().inflate(range);
+        return player.serverLevel().getEntities(player, area, e -> true)
                 .stream()
                 .filter(e -> e.distanceTo(player) < range)
                 .collect(Collectors.toList());
     }
 
     private <T extends Entity> List<T> getEntitiesByType(ServerPlayer player, Class<T> type) {
-        return player.serverLevel().getEntities().getAll()
+        AABB area = player.getBoundingBox().inflate(48);
+        return player.serverLevel().getEntities(player, area, type::isInstance)
                 .stream()
-                .filter(type::isInstance)
                 .map(type::cast)
                 .collect(Collectors.toList());
     }
