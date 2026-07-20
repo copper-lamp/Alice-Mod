@@ -1,16 +1,10 @@
 import React from 'react'
-import { RadioGroup, Radio, Select, Label, ListBox } from '@heroui/react'
-
-interface AgentSchedule {
-  mode: 'always' | 'scheduled'
-  startTime?: string
-  endTime?: string
-  timezone?: string
-}
+import { RadioGroup, Radio, Select, ListBox, TextArea } from '@heroui/react'
+import type { AgentSchedule } from '../../../lib/types'
 
 interface ScheduleSectionProps {
-  schedule: AgentSchedule
-  onChange: (schedule: AgentSchedule) => void
+  schedule?: AgentSchedule
+  onChange: (schedule: AgentSchedule | undefined) => void
 }
 
 const TIMEZONE_OPTIONS = [
@@ -24,57 +18,75 @@ const TIMEZONE_OPTIONS = [
   { value: 'UTC', label: 'UTC (协调世界时)' }
 ]
 
+const defaultSchedule: AgentSchedule = {
+  mode: 'disabled',
+  timezone: 'Asia/Shanghai',
+}
+
 const ScheduleSection: React.FC<ScheduleSectionProps> = ({ schedule, onChange }) => {
+  const safe = schedule ?? defaultSchedule
+
+  const update = (patch: Partial<AgentSchedule>) => {
+    onChange({ ...safe, ...patch })
+  }
+
   return (
     <div className="space-y-4">
       {/* 模式选择 */}
-      <RadioGroup value={schedule.mode} onChange={(val) => onChange({ ...schedule, mode: val as 'always' | 'scheduled' })}>
-        <Radio value="always" className="border-border group cursor-pointer rounded-lg border-2 p-3 hover:border-blue-300 data-[selected=true]:border-blue-500">
+      <RadioGroup value={safe.mode} onChange={(val) => {
+        if (val === 'disabled') {
+          onChange(undefined)
+        } else {
+          update({ mode: val as 'cron' | 'interval' })
+        }
+      }}>
+        <Radio value="disabled" className="border-border group cursor-pointer rounded-lg border-2 p-3 hover:border-blue-300 data-[selected=true]:border-blue-500">
           <Radio.Content>
             <Radio.Control>
               <Radio.Indicator />
             </Radio.Control>
-            始终启用
+            关闭定时触发
           </Radio.Content>
         </Radio>
-        <Radio value="scheduled" className="border-border group cursor-pointer rounded-lg border-2 p-3 hover:border-blue-300 data-[selected=true]:border-blue-500">
+        <Radio value="cron" className="border-border group cursor-pointer rounded-lg border-2 p-3 hover:border-blue-300 data-[selected=true]:border-blue-500">
           <Radio.Content>
             <Radio.Control>
               <Radio.Indicator />
             </Radio.Control>
-            定时启用
+            Cron 表达式
+          </Radio.Content>
+        </Radio>
+        <Radio value="interval" className="border-border group cursor-pointer rounded-lg border-2 p-3 hover:border-blue-300 data-[selected=true]:border-blue-500">
+          <Radio.Content>
+            <Radio.Control>
+              <Radio.Indicator />
+            </Radio.Control>
+            固定间隔
           </Radio.Content>
         </Radio>
       </RadioGroup>
 
-      {schedule.mode === 'scheduled' && (
+      {safe.mode === 'cron' && (
         <div className="space-y-3 pl-1">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-gray-500 font-medium mb-1 block">开始时间</label>
-              <input
-                type="time"
-                value={schedule.startTime ?? ''}
-                onChange={e => onChange({ ...schedule, startTime: e.target.value })}
-                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 bg-white"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 font-medium mb-1 block">结束时间</label>
-              <input
-                type="time"
-                value={schedule.endTime ?? ''}
-                onChange={e => onChange({ ...schedule, endTime: e.target.value })}
-                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 bg-white"
-              />
-            </div>
+          <div>
+            <label className="text-xs text-gray-500 font-medium mb-1 block">Cron 表达式</label>
+            <input
+              type="text"
+              value={safe.cronExpression ?? ''}
+              onChange={e => update({ cronExpression: e.target.value })}
+              placeholder="例如: 0 */30 * * * * (每30分钟), 0 9 * * * (每天9点)"
+              className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 bg-white"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              格式: 秒 分 时 日 月 周，例如 <code className="bg-gray-100 px-1 rounded">0 0 9 * * *</code> 每天9点
+            </p>
           </div>
 
           <div>
             <label className="text-xs text-gray-500 font-medium mb-1 block">时区</label>
             <Select
-              selectedKey={schedule.timezone ?? 'Asia/Shanghai'}
-              onSelectionChange={(key) => onChange({ ...schedule, timezone: key as string })}
+              selectedKey={safe.timezone ?? 'Asia/Shanghai'}
+              onSelectionChange={(key) => update({ timezone: key as string })}
             >
               <Select.Trigger>
                 <Select.Value />
@@ -91,6 +103,44 @@ const ScheduleSection: React.FC<ScheduleSectionProps> = ({ schedule, onChange })
                 </ListBox>
               </Select.Popover>
             </Select>
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500 font-medium mb-1 block">触发提示词（可选）</label>
+            <TextArea
+              value={safe.prompt ?? ''}
+              onChange={(e) => update({ prompt: e.target.value })}
+              placeholder="定时触发时发送给 AI 的提示词，如：检查当前游戏状态并汇报"
+              rows={2}
+              className="w-full resize-none"
+            />
+          </div>
+        </div>
+      )}
+
+      {safe.mode === 'interval' && (
+        <div className="space-y-3 pl-1">
+          <div>
+            <label className="text-xs text-gray-500 font-medium mb-1 block">间隔时间（秒）</label>
+            <input
+              type="number"
+              min={10}
+              value={safe.intervalSeconds ?? 300}
+              onChange={e => update({ intervalSeconds: Math.max(10, parseInt(e.target.value) || 300) })}
+              className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 bg-white"
+            />
+            <p className="text-xs text-gray-400 mt-1">最小间隔 10 秒，建议 60 秒以上</p>
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-500 font-medium mb-1 block">触发提示词（可选）</label>
+            <TextArea
+              value={safe.prompt ?? ''}
+              onChange={(e) => update({ prompt: e.target.value })}
+              placeholder="定时触发时发送给 AI 的提示词，如：检查当前游戏状态并汇报"
+              rows={2}
+              className="w-full resize-none"
+            />
           </div>
         </div>
       )}

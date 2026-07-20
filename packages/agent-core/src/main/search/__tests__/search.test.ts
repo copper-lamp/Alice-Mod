@@ -65,32 +65,17 @@ describe('SearchClient', () => {
     expect(results).toEqual([])
   })
 
-  it('should parse DDG HTML correctly', () => {
-    // DuckDuckGo HTML 格式的模拟响应
-    const mockHtml = `
-      <html><body>
-      <div class="result">
-        <a class="result__a" href="https://example.com/test">Test Title</a>
-        <a class="result__snippet">Test snippet content</a>
-      </div>
-      <div class="result">
-        <a class="result__a" href="/redirect?uddg=https%3A%2F%2Fexample.org">Another Result</a>
-        <a class="result__snippet">Another snippet</a>
-      </div>
-      </body></html>
-    `
-    const results = (client as any).parseDdgHtml(mockHtml, 'test')
-    expect(results.length).toBe(2)
-    expect(results[0].title).toBe('Test Title')
-    expect(results[0].url).toBe('https://example.com/test')
-    expect(results[0].snippet).toBe('Test snippet content')
-    expect(results[1].title).toBe('Another Result')
+  it('should have default engines', () => {
+    const engines = client.getAvailableEngines()
+    expect(engines).toContain('bing')
+    expect(engines).toContain('baidu')
   })
 
-  it('should strip HTML tags correctly', () => {
-    const html = '<p>Hello <b>World</b> &amp; Friends</p>'
-    const result = (client as any).stripTags(html)
-    expect(result).toBe('Hello World & Friends')
+  it('should handle empty engines gracefully', async () => {
+    const emptyClient = new SearchClient([])
+    const { results, total } = await emptyClient.search('test', 5)
+    expect(total).toBe(0)
+    expect(results).toEqual([])
   })
 })
 

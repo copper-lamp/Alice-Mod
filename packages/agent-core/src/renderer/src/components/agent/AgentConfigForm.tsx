@@ -4,8 +4,9 @@ import { useAgentStore } from '../../stores/agentStore'
 import { useModelStore } from '../../stores/modelStore'
 import { useUIStore } from '../../stores/uiStore'
 import { memoryApi } from '../../lib/ipc'
-import type { AgentConfig, AgentPersona, AgentToolConfig, QQBinding, ModelSelection, AgentSkillConfig } from '../../lib/types'
+import type { AgentConfig, AgentPersona, AgentToolConfig, QQBinding, ModelSelection, AgentSkillConfig, AgentSchedule } from '../../lib/types'
 import BasicInfoSection from './sections/BasicInfoSection'
+import ScheduleSection from './sections/ScheduleSection'
 
 interface AgentConfigFormProps {
   agentId?: string
@@ -469,6 +470,20 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId }) => {
                 </table>
               </div>
             )}
+          </section>
+
+          <hr className="border-gray-100" />
+
+          {/* V32: 定时调度配置 */}
+          <section>
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">定时触发</h3>
+            <p className="text-xs text-gray-400 mb-3">
+              配置定时任务让 QQ 智能体在指定时间自动触发。需要先绑定 QQ 账号并启用 QQ 智能体。
+            </p>
+            <ScheduleSection
+              schedule={form.schedule}
+              onChange={(schedule) => updateField('schedule', schedule)}
+            />
           </section>
 
           <hr className="border-gray-100" />

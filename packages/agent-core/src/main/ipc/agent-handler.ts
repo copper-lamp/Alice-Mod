@@ -40,6 +40,13 @@ export function registerAgentHandlers(): void {
         )
       }
 
+      // V32: 同步创建定时触发器
+      if (id && config.schedule && config.schedule.mode !== 'disabled') {
+        syncAgentTrigger(id, config).catch(err =>
+          console.warn(`[AgentHandler] 创建 Agent 触发器失败:`, err),
+        )
+      }
+
       return { id, success: true }
     } catch (err) {
       return { id: '', success: false, error: (err as Error).message }
@@ -52,6 +59,11 @@ export function registerAgentHandlers(): void {
     if (success) {
       const { getMainAgentRegistry } = await import('./index')
       getMainAgentRegistry().invalidate('', id)
+
+      // V32: 同步更新/删除定时触发器
+      syncAgentTrigger(id, { ...config, id }).catch(err =>
+        console.warn(`[AgentHandler] 更新 Agent 触发器失败:`, err),
+      )
     }
     return { success }
   })
@@ -62,6 +74,11 @@ export function registerAgentHandlers(): void {
     if (success) {
       const { getMainAgentRegistry } = await import('./index')
       getMainAgentRegistry().invalidate('', id)
+
+      // V32: 删除定时触发器
+      removeAgentTrigger(id).catch(err =>
+        console.warn(`[AgentHandler] 删除 Agent 触发器失败:`, err),
+      )
     }
     return { success }
   })
@@ -185,4 +202,127 @@ async function exportAllAgents(): Promise<void> {
     }
   }
   console.log(`[AgentHandler] 已导出 ${agents.length} 个智能体配置到模组目录`)
+}
+
+// ════════════════════════════════════════════════════════════════
+// V32: 定时触发器同步
+// ════════════════════════════════════════════════════════════════
+
+/**
+ * 根据 Agent 的 schedule 配置，在 TriggerModule 中创建或更新定时触发器
+ */
+async function syncAgentTrigger(agentId: string, config: AgentConfig): Promise<void> {
+  const schedule = config.schedule
+  if (!schedule || schedule.mode === 'disabled') {
+    // 关闭定时触发 → 删除已有触发器
+    await removeAgentTrigger(agentId)
+    return
+  }
+
+  let triggerModule: import('../trigger/index').TriggerModule
+  try {
+    const { getTriggerModule } = await import('../trigger/index')
+    triggerModule = getTriggerModule()
+  } catch {
+    console.warn('[AgentHandler] TriggerModule 未就绪，跳过触发器同步')
+    return
+  }
+
+  const triggerId = `agent-schedule-${agentId}`
+  const existing = triggerModule.getTrigger(triggerId)
+
+  const workspaceId = config.workspaceId ?? ''
+  const prompt = schedule.prompt ?? '执行定时任务'
+
+  // 构造 action: send_llm → qq_sub_agent
+  const action = {
+    type: 'send_llm' as const,
+    config: {
+      target: 'qq_sub_agent' as const,
+      prompt,
+      includeEventContext: true,
+    },
+  }
+
+  // 构造 rule 和 schedule
+  if (schedule.mode === 'cron' && schedule.cronExpression) {
+    if (existing) {
+      triggerModule.updateTrigger(triggerId, {
+        rule: { type: 'cron', value: schedule.cronExpression },
+        action,
+        targetAgentId: agentId,
+        enabled: true,
+      })
+    } else {
+      // 创建新触发器
+      triggerModule.createTrigger(
+        {
+          workspaceId,
+          name: `Agent ${config.name} 定时触发`,
+          description: `Agent ${config.name} 的 QQ 定时触发（${schedule.cronExpression}）`,
+          source: 'cron',
+          priority: 0,
+          rule: { type: 'cron', value: schedule.cronExpression },
+          action,
+          cooldownSeconds: 0,
+          enabled: true,
+          targetAgentId: agentId,
+        },
+        {
+          triggerId,
+          scheduleType: 'cron',
+          cronExpression: schedule.cronExpression,
+        },
+      )
+    }
+  } else if (schedule.mode === 'interval' && schedule.intervalSeconds && schedule.intervalSeconds > 0) {
+    if (existing) {
+      triggerModule.updateTrigger(triggerId, {
+        rule: { type: 'interval', value: schedule.intervalSeconds },
+        action,
+        targetAgentId: agentId,
+        enabled: true,
+      })
+    } else {
+      triggerModule.createTrigger(
+        {
+          workspaceId,
+          name: `Agent ${config.name} 定时触发`,
+          description: `Agent ${config.name} 的 QQ 定时触发（每 ${schedule.intervalSeconds}s）`,
+          source: 'cron',
+          priority: 0,
+          rule: { type: 'interval', value: schedule.intervalSeconds },
+          action,
+          cooldownSeconds: 0,
+          enabled: true,
+          targetAgentId: agentId,
+        },
+        {
+          triggerId,
+          scheduleType: 'interval',
+          intervalSeconds: schedule.intervalSeconds,
+        },
+      )
+    }
+  }
+}
+
+/**
+ * 删除 Agent 对应的定时触发器
+ */
+async function removeAgentTrigger(agentId: string): Promise<void> {
+  let triggerModule: import('../trigger/index').TriggerModule
+  try {
+    const { getTriggerModule } = await import('../trigger/index')
+    triggerModule = getTriggerModule()
+  } catch {
+    // TriggerModule 未就绪，忽略
+    return
+  }
+
+  const triggerId = `agent-schedule-${agentId}`
+  const existing = triggerModule.getTrigger(triggerId)
+  if (existing) {
+    triggerModule.deleteTrigger(triggerId)
+  }
 }

@@ -179,6 +179,8 @@ export interface AgentConfig {
   skills?: AgentSkillConfig
   /** V28：智能体是否启用（默认 true），禁用时不响应任何触发事件 */
   enabled?: boolean
+  /** V32：定时调度配置 */
+  schedule?: AgentSchedule
   createdAt?: number
   updatedAt?: number
 }
@@ -391,7 +393,19 @@ export interface ModelSelection {
   sameAsMain?: boolean
 }
 
-/** 工具展示信息 */
+/** V32：定时调度配置 */
+export interface AgentSchedule {
+  /** 调度模式：disabled=关闭, cron=Cron 表达式, interval=固定间隔 */
+  mode: 'disabled' | 'cron' | 'interval'
+  /** Cron 表达式（mode=cron 时有效） */
+  cronExpression?: string
+  /** 间隔秒数（mode=interval 时有效） */
+  intervalSeconds?: number
+  /** 时区 */
+  timezone?: string
+  /** 定时触发时发送的提示词 */
+  prompt?: string
+}
 export interface ToolInfo {
   name: string
   displayName: string

@@ -1,141 +1,238 @@
 /**
  * search-client — 网页搜索客户端
  *
- * 使用 DuckDuckGo HTML API（免费、无需 API Key）进行网页搜索。
- * 参考 free-search-mcp 的实现思路。
+ * 多引擎网页搜索，默认使用 Bing HTML 搜索（国内可访问，无需 API Key）。
+ * 引擎优先级：Bing → 百度 → DuckDuckGo
+ *
+ * 参考 free-search-mcp 的多引擎聚合思路，但以 TypeScript 原生实现，
+ * 无需额外 MCP 进程依赖。
  */
 
 import https from 'node:https'
 import http from 'node:http'
 import type { SearchResult, SearchResponse, FetchedPage } from './search-types'
 
-const DDG_HTML_URL = 'https://html.duckduckgo.com/html'
-const DDG_API_URL = 'https://api.duckduckgo.com'
+// ════════════════════════════════════════════════════════════════
+// 引擎接口
+// ════════════════════════════════════════════════════════════════
 
-export class SearchClient {
-  private userAgent: string
+interface SearchEngine {
+  readonly name: string
+  search(query: string, maxResults: number): Promise<SearchResult[]>
+}
 
-  constructor(userAgent?: string) {
-    this.userAgent = userAgent ?? 'McAgent/1.0 (Search Module; https://github.com/McAgent)'
-  }
+// ════════════════════════════════════════════════════════════════
+// HTTP 工具
+// ════════════════════════════════════════════════════════════════
 
-  /**
-   * HTTP GET 请求
-   */
-  private async fetch(url: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const client = url.startsWith('https') ? https : http
-      client.get(url, {
-        timeout: 15000,
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+
+async function httpGet(url: string, timeout = 15000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https') ? https : http
+    const req = client.get(
+      url,
+      {
+        timeout,
         headers: {
-          'User-Agent': this.userAgent,
-          'Accept': 'text/html,application/xhtml+xml',
+          'User-Agent': USER_AGENT,
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         },
-      }, (res) => {
-        let data = ''
-        res.on('data', (chunk) => { data += chunk })
-        res.on('end', () => resolve(data))
-      }).on('error', reject).on('timeout', function (this: import('http').ClientRequest) {
-        this.destroy()
-        reject(new Error('请求超时'))
-      })
-    })
-  }
-
-  /**
-   * 搜索网页
-   * 先尝试 DuckDuckGo Instant Answer API，如果结果不足再回退到 HTML 搜索
-   */
-  async search(query: string, maxResults: number = 8): Promise<SearchResponse> {
-    if (!query.trim()) {
-      return { results: [], total: 0, query }
-    }
-
-    // 尝试 Instant Answer API
-    try {
-      const apiResults = await this.searchViaApi(query, maxResults)
-      if (apiResults.length > 0) {
-        return { results: apiResults, total: apiResults.length, query }
-      }
-    } catch {
-      // API 失败，回退到 HTML 搜索
-    }
-
-    // 回退：HTML 搜索
-    try {
-      const html = await this.fetch(`${DDG_HTML_URL}?q=${encodeURIComponent(query)}`)
-      const results = this.parseDdgHtml(html, query).slice(0, maxResults)
-      return { results, total: results.length, query }
-    } catch (err) {
-      throw err
-    }
-  }
-
-  /**
-   * 使用 DuckDuckGo Instant Answer API 搜索
-   * https://api.duckduckgo.com/?q=query&format=json&no_html=1
-   */
-  private async searchViaApi(query: string, maxResults: number): Promise<SearchResult[]> {
-    const url = `${DDG_API_URL}/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
-    const text = await this.fetch(url)
-    const data = JSON.parse(text)
-
-    const results: SearchResult[] = []
-
-    // 提取 RelatedTopics
-    const topics = data.RelatedTopics ?? []
-    for (const topic of topics) {
-      if (topic.Result) {
-        const urlMatch = topic.Result.match(/href="([^"]+)"/)
-        results.push({
-          title: topic.Text?.split(' - ')[0] ?? topic.Text ?? '',
-          url: urlMatch ? urlMatch[1] : '',
-          snippet: topic.Text ?? '',
-        })
-      } else if (topic.Topics) {
-        for (const sub of topic.Topics) {
-          const urlMatch = sub.Result?.match(/href="([^"]+)"/)
-          results.push({
-            title: sub.Text?.split(' - ')[0] ?? sub.Text ?? '',
-            url: urlMatch ? urlMatch[1] : '',
-            snippet: sub.Text ?? '',
-          })
+      },
+      (res) => {
+        // 跟随重定向
+        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          const redirectUrl = res.headers.location.startsWith('http')
+            ? res.headers.location
+            : new URL(res.headers.location, url).href
+          httpGet(redirectUrl, timeout).then(resolve).catch(reject)
+          return
         }
-      }
-      if (results.length >= maxResults) break
-    }
+        let data = ''
+        res.on('data', (chunk: string) => { data += chunk })
+        res.on('end', () => resolve(data))
+      },
+    )
+    req.on('error', reject)
+    req.on('timeout', () => {
+      req.destroy()
+      reject(new Error('请求超时'))
+    })
+  })
+}
 
-    // 提取 Abstract
-    if (data.AbstractText) {
-      results.unshift({
-        title: data.Heading ?? '',
-        url: data.AbstractURL ?? '',
-        snippet: data.AbstractText,
-      })
-    }
+function stripTags(html: string): string {
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_m, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_m, n) => String.fromCharCode(Number.parseInt(n, 16)))
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
-    return results.slice(0, maxResults)
+// ════════════════════════════════════════════════════════════════
+// 1. Bing 搜索引擎（默认）
+// ════════════════════════════════════════════════════════════════
+
+const BING_SEARCH_URL = 'https://www.bing.com/search'
+
+class BingEngine implements SearchEngine {
+  readonly name = 'bing'
+
+  async search(query: string, maxResults: number): Promise<SearchResult[]> {
+    const url = `${BING_SEARCH_URL}?q=${encodeURIComponent(query)}&count=${maxResults}&setlang=zh-Hans`
+    const html = await httpGet(url)
+    return this.parseHtml(html, maxResults)
   }
 
-  /**
-   * 解析 DuckDuckGo HTML 搜索结果
-   */
-  private parseDdgHtml(html: string, _query: string): SearchResult[] {
+  private parseHtml(html: string, maxResults: number): SearchResult[] {
     const results: SearchResult[] = []
     const seen = new Set<string>()
 
-    // 匹配 DuckDuckGo 的 HTML 结果行
-    // 查找所有 <a class="result__a" ...> 标题 </a>
+    // Bing 的结果结构：
+    // <li class="b_algo">
+    //   <h2><a href="...">标题</a></h2>
+    //   <p>摘要</p>
+    // </li>
+    const algoRegex = /<li[^>]*class="b_algo"[^>]*>([\s\S]*?)<\/li>/gi
+    let match: RegExpExecArray | null
+
+    while ((match = algoRegex.exec(html)) !== null) {
+      if (results.length >= maxResults) break
+
+      const block = match[1]
+
+      // 提取标题和 URL
+      const linkMatch = block.match(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i)
+      if (!linkMatch) continue
+
+      const url = linkMatch[1]
+      const title = stripTags(linkMatch[2])
+
+      if (!url || !title || seen.has(url)) continue
+      // 跳过 Bing 内部链接
+      if (url.startsWith('https://www.bing.com/') && !url.includes('search?')) continue
+
+      seen.add(url)
+
+      // 提取摘要
+      const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i)
+      const snippet = snippetMatch ? stripTags(snippetMatch[1]) : ''
+
+      results.push({ title, url, snippet })
+    }
+
+    return results
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 2. 百度搜索引擎（国内兜底）
+// ════════════════════════════════════════════════════════════════
+
+const BAIDU_SEARCH_URL = 'https://www.baidu.com/s'
+
+class BaiduEngine implements SearchEngine {
+  readonly name = 'baidu'
+
+  async search(query: string, maxResults: number): Promise<SearchResult[]> {
+    const url = `${BAIDU_SEARCH_URL}?wd=${encodeURIComponent(query)}&rn=${maxResults}`
+    const html = await httpGet(url)
+    return this.parseHtml(html, maxResults)
+  }
+
+  private parseHtml(html: string, maxResults: number): SearchResult[] {
+    const results: SearchResult[] = []
+    const seen = new Set<string>()
+
+    // 百度结果结构：
+    // <div class="result c-container" id="...">
+    //   <h3 class="t"><a href="...">标题</a></h3>
+    //   <div class="c-abstract">摘要</div>
+    // </div>
+    const resultRegex = /<div[^>]*class="result[^"]*c-container[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/gi
+    let match: RegExpExecArray | null
+
+    while ((match = resultRegex.exec(html)) !== null) {
+      if (results.length >= maxResults) break
+
+      const block = match[1]
+
+      // 提取标题和 URL
+      const linkMatch = block.match(/<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i)
+      if (!linkMatch) continue
+
+      let url = linkMatch[1]
+      const title = stripTags(linkMatch[2])
+
+      if (!url || !title || seen.has(url)) continue
+
+      // 百度搜索结果链接是跳转链接，尝试提取真实 URL
+      if (url.includes('baidu.com/link?') || url.includes('baidu.com/s?wd=')) {
+        // 保留百度跳转链接也可用
+      }
+
+      seen.add(url)
+
+      // 提取摘要
+      const snippetMatch = block.match(/<div[^>]*class="c-abstract"[^>]*>([\s\S]*?)<\/div>/i)
+        || block.match(/<span[^>]*class="content-right_[^"]*"[^>]*>([\s\S]*?)<\/span>/i)
+      const snippet = snippetMatch ? stripTags(snippetMatch[1]) : ''
+
+      results.push({ title, url, snippet })
+    }
+
+    return results
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 3. DuckDuckGo 搜索引擎（备用）
+// ════════════════════════════════════════════════════════════════
+
+const DDG_HTML_URL = 'https://html.duckduckgo.com/html'
+
+class DuckDuckGoEngine implements SearchEngine {
+  readonly name = 'duckduckgo'
+
+  async search(query: string, maxResults: number): Promise<SearchResult[]> {
+    const url = `${DDG_HTML_URL}?q=${encodeURIComponent(query)}`
+    const html = await httpGet(url)
+    return this.parseHtml(html, maxResults)
+  }
+
+  private parseHtml(html: string, maxResults: number): SearchResult[] {
+    const results: SearchResult[] = []
+    const seen = new Set<string>()
+
+    // DuckDuckGo HTML 结果
+    // <a class="result__a" href="...">标题</a>
+    // <a class="result__snippet">摘要</a>
     const linkRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi
-    // 查找对应的 snippet: <a class="result__snippet" ...> 摘要 </a>
     const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi
 
     const links: Array<{ url: string; title: string }> = []
-    let match
+    let match: RegExpExecArray | null
 
     while ((match = linkRegex.exec(html)) !== null) {
-      let url = this.cleanDdgUrl(match[1])
-      const title = this.stripTags(match[2]).trim()
+      let url = match[1]
+      // 处理 DDG 重定向链接
+      const redirectMatch = url.match(/uddg=([^&]+)/)
+      if (redirectMatch) {
+        url = decodeURIComponent(redirectMatch[1])
+      } else if (url.startsWith('//')) {
+        url = 'https:' + url
+      }
+      const title = stripTags(match[2]).trim()
       if (url && title && !seen.has(url)) {
         seen.add(url)
         links.push({ url, title })
@@ -144,10 +241,10 @@ export class SearchClient {
 
     const snippets: string[] = []
     while ((match = snippetRegex.exec(html)) !== null) {
-      snippets.push(this.stripTags(match[1]).trim())
+      snippets.push(stripTags(match[1]).trim())
     }
 
-    for (let i = 0; i < links.length; i++) {
+    for (let i = 0; i < links.length && i < maxResults; i++) {
       results.push({
         title: links[i].title,
         url: links[i].url,
@@ -157,41 +254,80 @@ export class SearchClient {
 
     return results
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 主搜索客户端
+// ════════════════════════════════════════════════════════════════
+
+export type EngineName = 'bing' | 'baidu' | 'duckduckgo'
+
+/** 引擎注册表 */
+const ENGINE_REGISTRY: Record<EngineName, () => SearchEngine> = {
+  bing: () => new BingEngine(),
+  baidu: () => new BaiduEngine(),
+  duckduckgo: () => new DuckDuckGoEngine(),
+}
+
+export class SearchClient {
+  private engines: SearchEngine[]
 
   /**
-   * 清理 DuckDuckGo 的跳转链接
+   * @param engineNames 启用的搜索引擎列表，按优先级排列。默认 ['bing', 'baidu']
    */
-  private cleanDdgUrl(url: string): string {
-    if (!url) return ''
-    // 处理 DDG 的重定向链接
-    const redirectMatch = url.match(/uddg=([^&]+)/)
-    if (redirectMatch) {
-      return decodeURIComponent(redirectMatch[1])
-    }
-    if (url.startsWith('//')) return 'https:' + url
-    return url
+  constructor(engineNames: EngineName[] = ['bing', 'baidu']) {
+    this.engines = engineNames
+      .filter((name) => name in ENGINE_REGISTRY)
+      .map((name) => ENGINE_REGISTRY[name]())
   }
 
   /**
-   * 简单的 HTML 标签剥离
+   * 多引擎搜索
+   *
+   * 按优先级依次调用各引擎，只要一个引擎返回结果就停止。
+   * 如果所有引擎都失败，返回空结果。
    */
-  private stripTags(html: string): string {
-    return html
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/\s+/g, ' ')
-      .trim()
+  async search(query: string, maxResults: number = 8): Promise<SearchResponse> {
+    if (!query.trim()) {
+      return { results: [], total: 0, query }
+    }
+
+    const errors: string[] = []
+
+    for (const engine of this.engines) {
+      try {
+        const results = await engine.search(query, maxResults)
+        if (results.length > 0) {
+          return {
+            results: results.slice(0, maxResults),
+            total: results.length,
+            query,
+          }
+        }
+        errors.push(`${engine.name}: 返回空结果`)
+      } catch (err) {
+        errors.push(`${engine.name}: ${(err as Error).message}`)
+        // 继续尝试下一个引擎
+      }
+    }
+
+    // 所有引擎都失败，返回空结果并附带错误信息
+    console.warn('[SearchClient] 所有搜索引擎均失败:', errors.join('; '))
+    return { results: [], total: 0, query }
+  }
+
+  /**
+   * 获取可用引擎列表
+   */
+  getAvailableEngines(): EngineName[] {
+    return this.engines.map((e) => e.name as EngineName)
   }
 
   /**
    * 抓取并提取 URL 正文内容
    */
   async fetchPage(url: string, maxChars: number = 5000): Promise<FetchedPage> {
-    const html = await this.fetch(url)
+    const html = await httpGet(url)
     const title = this.extractTitle(html)
     const content = this.extractMainContent(html).slice(0, maxChars)
 
@@ -203,19 +339,12 @@ export class SearchClient {
     }
   }
 
-  /**
-   * 从 HTML 提取标题
-   */
   private extractTitle(html: string): string {
     const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
-    return match ? this.stripTags(match[1]) : ''
+    return match ? stripTags(match[1]) : ''
   }
 
-  /**
-   * 从 HTML 提取正文内容（移除脚本、样式等）
-   */
   private extractMainContent(html: string): string {
-    // 移除 script、style、nav、footer、header 等
     let text = html
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -224,7 +353,6 @@ export class SearchClient {
       .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
       .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
 
-    // 尝试提取 <main> 或 <article> 内容
     const mainMatch = text.match(/<main[^>]*>([\s\S]*?)<\/main>/i)
       ?? text.match(/<article[^>]*>([\s\S]*?)<\/article>/i)
 
@@ -232,7 +360,7 @@ export class SearchClient {
       text = mainMatch[1]
     }
 
-    return this.stripTags(text)
+    return stripTags(text)
       .replace(/\n{3,}/g, '\n\n')
       .trim()
   }
