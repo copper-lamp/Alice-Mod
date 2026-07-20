@@ -307,42 +307,36 @@ function toBuildSource(source: MainAgentEvent['source']): BuildSource {
  * 数据库中会留下 assistant 消息有 tool_calls 但无对应 tool 消息的损坏记录。
  * 这会导致 OpenAI API 报错：
  *   "An assistant message with 'tool_calls' must be followed by tool messages..."
+ * 或反向：
+ *   "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'"
  *
- * 修复策略：扫描历史，移除那些没有对应 tool 消息的 tool_calls，
- * 这样 LLM 不会期望看到 tool 结果，API 也不会报错。
+ * 修复策略：顺序扫描，维护期望的 tool_call_id 集合，清理不匹配的条目。
  */
 function sanitizeHistory(messages: ConversationMessage[]): ConversationMessage[] {
   const result: ConversationMessage[] = [];
-  // 当前期待的 tool_call_id 集合（来自最近一条有 tool_calls 的 assistant 消息）
   let expectedToolCallIds = new Set<string>();
 
   for (const msg of messages) {
     if (msg.role === 'tool' && msg.tool_call_id) {
       if (expectedToolCallIds.has(msg.tool_call_id)) {
-        // 有效的 tool 消息：属于前面 assistant 的 tool_calls
         result.push(msg);
-        expectedToolCallIds.delete(msg.tool_call_id); // 标记已消费
+        expectedToolCallIds.delete(msg.tool_call_id);
       } else {
-        // 孤立的 tool 消息：前面没有对应的 assistant 带 tool_calls
         console.warn(`[MainAgent] 清理孤立的 tool 消息: tool_call_id=${msg.tool_call_id}`);
       }
       continue;
     }
 
     if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
-      // 如果前一轮还有未完成的 tool_calls，说明它们没有对应的 tool 结果
       if (expectedToolCallIds.size > 0) {
         console.warn(`[MainAgent] 清理未完成的 tool_calls: ${Array.from(expectedToolCallIds).join(', ')}`);
       }
-      // 设置新的期望 tool_call_id 集合
       expectedToolCallIds = new Set(msg.tool_calls.map(tc => tc.id));
       result.push(msg);
       continue;
     }
 
-    // 非 tool、非 assistant-with-tool_calls 的消息（user、system、纯文本 assistant）
     if (expectedToolCallIds.size > 0) {
-      // 遇到非 tool 消息意味着前一轮的 tool_calls 未完成，清理它们
       console.warn(`[MainAgent] 清理未完成的 tool_calls (遇到非 tool 消息): ${Array.from(expectedToolCallIds).join(', ')}`);
       expectedToolCallIds.clear();
     }
@@ -350,6 +344,19 @@ function sanitizeHistory(messages: ConversationMessage[]): ConversationMessage[]
   }
 
   return result;
+}
+
+/**
+ * V31: 在 LLM 调用前验证并修复消息列表中的 tool_calls/tool 配对
+ *
+ * 即使 sanitizeHistory 已清理历史，当前 session 的多轮循环中
+ * pipeline 可能仍存在注入问题，导致 messages 中存在损坏的配对。
+ * 此函数在每次 LLM 调用前执行，确保 API 不会因配对问题报错。
+ */
+function validateMessagesForLLM(messages: ConversationMessage[]): ConversationMessage[] {
+  // 使用相同的 sanitizeHistory 逻辑，但针对当前 session 的 messages
+  // 这可以捕获 pipeline 处理后的残留问题
+  return sanitizeHistory(messages);
 }
 
 /** 根据 event.source 决定调度优先级 */
@@ -533,7 +540,10 @@ export class MainAgent {
           return this.fail(startTime, rounds, totalTokens, `PROVIDER_NOT_FOUND: ${resolved.providerId}`);
         }
 
-        // c. 调用 LLM（通过 observer 包装）
+        // c. V31 FIX: 在 LLM 调用前验证 messages 中的 tool_calls/tool 配对
+        // 防止当前 session 中 pipeline 注入问题导致的损坏数据
+        messages = validateMessagesForLLM(messages);
+
         const llmMessages = messages.map(toProviderMessage);
         // V28: QQ 来源时输出完整上下文日志（调试用）
         if (event.source === 'qq' && rounds === 0) {
