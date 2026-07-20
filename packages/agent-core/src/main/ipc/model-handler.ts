@@ -2,8 +2,10 @@ import { ipcMain } from 'electron'
 import path from 'path'
 import fs from 'node:fs'
 import { app } from 'electron'
-import type { ModelConfigItem } from '../../renderer/src/lib/types'
+import type { ModelConfigItem, UsageStats, ContextTokenInfo } from '../../renderer/src/lib/types'
 import { getDatabaseManager } from '../database'
+import { getLLMObserver } from '../llm/observer/llm-observer'
+import { getChatHistoryStore } from './chat-handler'
 
 // ════════════════════════════════════════════════════════════════
 // Provider 级别默认值（Layer 2 兜底）
@@ -404,6 +406,78 @@ export function registerModelHandlers(): void {
         ? (err.name === 'TimeoutError' || err.name === 'AbortError' ? '连接超时' : err.message)
         : '连接失败'
       return { success: false, message, latencyMs: latency }
+    }
+  })
+
+  // ── llm:usage — 查询 LLM 用量统计 ──
+  ipcMain.handle('llm:usage', async (_event, { period }: { period: string }): Promise<UsageStats> => {
+    try {
+      const observer = getLLMObserver()
+      const allRecords = observer.query({ limit: 10000 })
+
+      const now = Date.now()
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      const todayStartMs = todayStart.getTime()
+      const monthAgo = now - 30 * 24 * 60 * 60 * 1000
+
+      // 今日用量
+      const todayRecords = allRecords.filter(r => r.timestamp >= todayStartMs && r.success)
+      const todayTokens = todayRecords.reduce((sum, r) => sum + r.totalTokens, 0)
+
+      // 本月用量（近30天）
+      const monthRecords = allRecords.filter(r => r.timestamp >= monthAgo && r.success)
+      const monthTokens = monthRecords.reduce((sum, r) => sum + r.totalTokens, 0)
+
+      // 每日用量（近7天）
+      const dailyUsage: { date: string; tokens: number }[] = []
+      const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
+      const recentRecords = allRecords.filter(r => r.timestamp >= sevenDaysAgo && r.success)
+      for (let i = 6; i >= 0; i--) {
+        const dayStart = new Date()
+        dayStart.setDate(dayStart.getDate() - i)
+        dayStart.setHours(0, 0, 0, 0)
+        const dayStartMs = dayStart.getTime()
+        const dayEndMs = dayStartMs + 24 * 60 * 60 * 1000
+        const dayRecords = recentRecords.filter(r => r.timestamp >= dayStartMs && r.timestamp < dayEndMs)
+        const tokens = dayRecords.reduce((sum, r) => sum + r.totalTokens, 0)
+        const date = `${dayStart.getMonth() + 1}/${dayStart.getDate()}`
+        dailyUsage.push({ date, tokens })
+      }
+
+      return { todayTokens, monthTokens, dailyUsage }
+    } catch (err) {
+      console.error('[llm:usage] 查询失败:', err)
+      return { todayTokens: 0, monthTokens: 0, dailyUsage: [] }
+    }
+  })
+
+  // ── llm:context-tokens — 查询上下文 Token 用量 ──
+  ipcMain.handle('llm:context-tokens', async (_event, { workspaceId }: { workspaceId: string }): Promise<ContextTokenInfo> => {
+    try {
+      const store = getChatHistoryStore()
+      if (!store) {
+        return { used: 0, max: 128000, percentage: 0, breakdown: { system: 0, history: 0, tools: 0, state: 0 } }
+      }
+
+      // 查询所有 agent 的历史 token 总量作为「已用」
+      const stats = await store.getStats(workspaceId, '')
+      const used = stats.totalTokens
+      const max = 128000 // 默认上下文窗口，后续可从模型配置获取
+      const percentage = max > 0 ? (used / max) * 100 : 0
+
+      // 粗略拆分：按 role 估算
+      const breakdown = {
+        system: Math.round(used * 0.1),   // 估算系统提示词约占 10%
+        history: Math.round(used * 0.7),   // 历史对话约占 70%
+        tools: Math.round(used * 0.15),    // 工具定义约占 15%
+        state: Math.round(used * 0.05),    // 状态信息约占 5%
+      }
+
+      return { used, max, percentage, breakdown }
+    } catch (err) {
+      console.error('[llm:context-tokens] 查询失败:', err)
+      return { used: 0, max: 128000, percentage: 0, breakdown: { system: 0, history: 0, tools: 0, state: 0 } }
     }
   })
 }

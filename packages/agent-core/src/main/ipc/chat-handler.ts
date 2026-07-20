@@ -14,6 +14,11 @@ export function setChatHistoryStore(store: ChatHistoryStore): void {
   historyStore = store
 }
 
+/** 获取 ChatHistoryStore 实例（供其他 handler 使用） */
+export function getChatHistoryStore(): ChatHistoryStore | null {
+  return historyStore
+}
+
 /**
  * 将 ToolCallPart 转换为前端 ToolCallInfo 格式
  * 可选 result 参数用于填充工具调用结果
