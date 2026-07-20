@@ -43,6 +43,7 @@ import { NOTIFY_QQ_TOOL_SCHEMA } from '../qq-bot/tools/notify_qq';
 import { WIKI_TOOL_SCHEMAS, wikiSearch, wikiGetPage, wikiGetSection, getWikiClient } from '../wiki';
 import { SEARCH_TOOL_SCHEMAS, webSearch, webFetch, getSearchClient } from '../search';
 import { ToolCategory, type ToolSchema, type ParamDefinition } from '@mcagent/shared';
+import { StickerGroupRegistry } from '../qq-bot/sticker-group-registry';
 
 // ════════════════════════════════════════════════════════════════
 // V30: qq_send / qq_info 工具定义（ToolSchema 格式）
@@ -51,14 +52,16 @@ import { ToolCategory, type ToolSchema, type ParamDefinition } from '@mcagent/sh
 /** qq_send 工具定义 */
 const QQ_SEND_TOOL_SCHEMA_LOCAL: ToolSchema = {
   name: 'qq_send',
-  description: '发送 QQ 消息，支持群消息、私聊、图片、文件四种方式。当需要向 QQ 群或用户发送消息时使用此工具。回复用户消息时必须使用此工具。',
+  description: '发送 QQ 消息，支持群消息、私聊、图片、文件、内置表情、表情组六种方式。当需要向 QQ 群或用户发送消息时使用此工具。回复用户消息时必须使用此工具。',
   category: ToolCategory.QQ,
   parameters: {
-    type: { type: 'string', description: '发送类型：group_msg=发送到群聊（回复群消息时用）, private_msg=发送私聊（回复私聊时用）, image=发送图片, file=发送文件', required: true } as ParamDefinition,
+    type: { type: 'string', description: '发送类型：group_msg=发送到群聊（回复群消息时用）, private_msg=发送私聊（回复私聊时用）, image=发送图片, file=发送文件, face=发送指定内置表情（需填 face_id）, sticker=发送表情组（系统随机选，需填 sticker_group）', required: true } as ParamDefinition,
     target: { type: 'string', description: '目标 ID：群聊时填群号，私聊时填对方 QQ 号', required: true } as ParamDefinition,
     content: { type: 'string', description: '消息内容（type=group_msg 或 private_msg 时必填，纯文本消息内容）', required: false } as ParamDefinition,
     file_url: { type: 'string', description: '文件/图片 URL（type=image 或 file 时必填，文件的网络可访问 URL）', required: false } as ParamDefinition,
     file_name: { type: 'string', description: '文件名（type=file 时必填，如 "screenshot.png"）', required: false } as ParamDefinition,
+    face_id: { type: 'number', description: '内置表情 ID（type=face 时必填，范围 0-350，如 9=偷笑, 76=点赞, 107=流泪, 307=裂开）', required: false } as ParamDefinition,
+    sticker_group: { type: 'string', description: '表情组名（type=sticker 时必填，如 "蚌"/"赞"/"哭"/"嗨"），系统从组内随机选一个表情发送', required: false } as ParamDefinition,
   },
 };
 
@@ -84,8 +87,20 @@ const REQUEST_GAME_ACTION_TOOL_SCHEMA_LOCAL: ToolSchema = {
   },
 };
 
+/** V31: 待发送的 QQ 消息队列条目（支持 face 和 sticker 类型） */
+export interface PendingQqSend {
+  target: string;
+  content: string;
+  type: string;
+  faceId?: number;     // type=face 时具体表情 ID
+  stickerId?: string;  // type=sticker 时具体贴图 ID
+}
+
 /** V30: 待发送的 QQ 消息队列（key = agentId, value = 待发送消息） */
-export const pendingQqSends = new Map<string, { target: string; content: string; type: string }[]>();
+export const pendingQqSends = new Map<string, PendingQqSend[]>();
+
+/** V31: 全局表情组注册表单例 */
+export const stickerGroupRegistry = new StickerGroupRegistry();
 
 /** Registry 依赖（由 ipc/index.ts 启动时注入） */
 export interface MainAgentRegistryDeps {
@@ -355,20 +370,69 @@ export class MainAgentRegistry {
         const gameActionCalls = ctx.calls.filter((c) => c.toolName === 'request_game_action');
         if (qqSendCalls.length === 0 && qqInfoCalls.length === 0 && gameActionCalls.length === 0) return ctx;
 
-        // 处理 qq_send 调用（含去重：同一轮 LLM 响应中，相同内容发往相同目标只发一次）
+        // V31: 处理 qq_send 调用（含去重 + 表情组随机解析）
         const dedupSet = new Set<string>();
         for (const call of qqSendCalls) {
           const startTime = Date.now();
           const params = call.arguments as Record<string, unknown>;
           const sendType = params.type as string;
           const target = params.target as string;
-          const content = (params.content as string) ?? '';
 
-          // 去重检查：同一轮中相同内容发往相同目标只发一次
-          const dedupKey = `${target}:${content}`;
+          const content = (params.content as string) ?? '';
+          let resolvedType = sendType;
+          let faceId: number | undefined;
+          let stickerId: string | undefined;
+          let errorMsg: string | undefined;
+
+          if (sendType === 'face') {
+            // 内置表情：直接取 face_id
+            faceId = params.face_id as number | undefined;
+            if (faceId === undefined) {
+              errorMsg = '发送内置表情时必须指定 face_id';
+            }
+          } else if (sendType === 'sticker') {
+            // 表情组：从 StickerGroupRegistry 随机选一个
+            const groupName = params.sticker_group as string | undefined;
+            if (!groupName) {
+              const availableGroups = stickerGroupRegistry.listGroups();
+              errorMsg = `表情组名不能为空，可用组名：${availableGroups.join('、')}`;
+            } else {
+              const picked = stickerGroupRegistry.pickRandom(groupName);
+              if (!picked) {
+                const availableGroups = stickerGroupRegistry.listGroups();
+                errorMsg = `表情组 "${groupName}" 不存在，可用组名：${availableGroups.join('、')}`;
+              } else {
+                // 根据随机结果确定具体类型和 ID
+                resolvedType = picked.type;
+                if (picked.type === 'face') {
+                  faceId = parseInt(picked.id);
+                } else {
+                  stickerId = picked.id;
+                }
+              }
+            }
+          }
+
+          // 参数校验失败
+          if (errorMsg) {
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: 'qq_send',
+              success: false,
+              error: errorMsg,
+              durationMs: Date.now() - startTime,
+            } as any);
+            continue;
+          }
+
+          // 去重检查（表情按 target:type:id 去重）
+          const dedupKey = sendType === 'group_msg' || sendType === 'private_msg'
+            ? `${target}:${content}`
+            : `${target}:${resolvedType}:${faceId ?? stickerId ?? ''}`;
           if (dedupSet.has(dedupKey)) {
-            console.log(`[MainAgentRegistry] qq_send 去重: type=${sendType}, target=${target}, content=${content.slice(0, 50)}`);
-            // 仍然返回成功结果，避免 LLM 困惑
+            console.log(`[MainAgentRegistry] qq_send 去重: type=${sendType}, target=${target}`);
             ctx.results = ctx.results ?? [];
             ctx.results.push({
               type: 'tool_result',
@@ -382,12 +446,12 @@ export class MainAgentRegistry {
           }
           dedupSet.add(dedupKey);
 
-          // 存入待发送队列（由 message-router 消费）
+          // 存入待发送队列（由 message-router / message-batcher 消费）
           const pending = pendingQqSends.get(agentId) ?? [];
-          pending.push({ target, content, type: sendType });
+          pending.push({ target, content, type: resolvedType, faceId, stickerId });
           pendingQqSends.set(agentId, pending);
 
-          console.log(`[MainAgentRegistry] qq_send 已排队: type=${sendType}, target=${target}, content=${content.slice(0, 50)}`);
+          console.log(`[MainAgentRegistry] qq_send 已排队: type=${resolvedType}, target=${target}${faceId !== undefined ? `, faceId=${faceId}` : ''}${stickerId ? `, stickerId=${stickerId}` : ''}`);
 
           ctx.results = ctx.results ?? [];
           ctx.results.push({

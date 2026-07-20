@@ -18,7 +18,7 @@
 │                    Layer 1: 远程注册表 (models.dev)             │
 │                                                                     │
 │  · 启动时异步拉取，缓存到内存 + 本地文件                               │
-│  · 每小时后台刷新一次                                                 │
+│  · 每天后台刷新一次                                                     │
 │  · 提供精确的 contextWindow + supportsFunctionCalling                 │
 │  · 拉取失败 → 使用本地缓存 / Provider 默认值                            │
 └─────────────────────────┬───────────────────────────────────────────┘
@@ -138,7 +138,7 @@ const PROVIDER_DEFAULTS: Record<string, { contextWindow: number; supportsFC: boo
     │     ├─ 成功 → 覆盖内存缓存，写入本地文件
     │     └─ 失败 → 保留原有缓存 / Provider 默认值
     │
-    └─ 3. 启动定时器 (1 小时间隔)
+    └─ 3. 启动定时器 (24 小时间隔)
           └─ 每次触发 → 重新拉取注册表
 ```
 

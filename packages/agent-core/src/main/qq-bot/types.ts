@@ -201,16 +201,28 @@ export type QQSubAgentEvent =
 export type QQSubAgentEventHandler = (event: QQSubAgentEvent) => void;
 
 // ════════════════════════════════════════════════════════════════
-// 8. 工具 Schema（用于 Function Calling）
+// 8. 表情组配置
+// ════════════════════════════════════════════════════════════════
+
+/** 表情组中的单个表情项 */
+export interface StickerItem {
+  type: 'face' | 'sticker';
+  id: string;  // face 填数字 ID 的字符串，sticker 填贴图 ID
+}
+
+// ════════════════════════════════════════════════════════════════
+// 9. 工具 Schema（用于 Function Calling）
 // ════════════════════════════════════════════════════════════════
 
 /** qq_send 工具参数 */
 export interface QQSendParams {
-  type: 'group_msg' | 'private_msg' | 'image' | 'file';
+  type: 'group_msg' | 'private_msg' | 'image' | 'file' | 'face' | 'sticker';
   target: string;
   content?: string;
   file_url?: string;
   file_name?: string;
+  face_id?: number;         // type=face 时必填
+  sticker_group?: string;   // type=sticker 时必填，表情组名
 }
 
 /** qq_info 工具参数 */
@@ -226,7 +238,7 @@ export interface RequestGameActionParams {
 }
 
 // ════════════════════════════════════════════════════════════════
-// 9. 桥接配置
+// 10. 桥接配置
 // ════════════════════════════════════════════════════════════════
 
 /** 桥接配置 */
@@ -241,7 +253,7 @@ export interface BridgeConfig {
 }
 
 // ════════════════════════════════════════════════════════════════
-// 10. 全局配置
+// 11. 全局配置
 // ════════════════════════════════════════════════════════════════
 
 /** Docker 模式配置（替代 managed 托管模式） */
@@ -303,4 +315,7 @@ export interface QQBotConfig {
     replyPrefix: string;
     maxHistory: number;
   };
+
+  /** 表情组配置：组名 → 表情列表，系统随机发送 */
+  stickerGroups?: Record<string, StickerItem[]>;
 }

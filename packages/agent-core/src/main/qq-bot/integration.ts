@@ -22,6 +22,7 @@ import { DefaultModelRouter, providerRegistry, LLM_CONFIG_DEFAULTS } from '../ll
 import type { TaskManager } from '../task';
 import { getWorkspaceManager } from '../workspace';
 import { getToolDispatcher } from '../pipeline/tool-dispatcher';
+import { stickerGroupRegistry } from '../agent/main-agent-registry';
 
 export interface QQBotIntegrationDeps {
   /** 任务系统（远程指令 / 主 Agent 队列使用） */
@@ -100,6 +101,9 @@ async function startIntegration(config: Partial<QQBotConfig> = {}): Promise<void
   state.running = true;
 
   try {
+    // V31: 初始化表情组注册表
+    stickerGroupRegistry.loadFromConfig(config.stickerGroups);
+
     const wsUrl = config.external?.wsProtocol && config.external.wsHost && config.external.wsPort
       ? `${config.external.wsProtocol}://${config.external.wsHost}:${config.external.wsPort}`
       : 'ws://127.0.0.1:3001';

@@ -100,13 +100,13 @@ const QQ_SUB_AGENT_PROFILE: AgentProfile = {
 /** qq_send 工具 Schema */
 const QQ_SEND_TOOL: ToolDefinition = {
   name: 'qq_send',
-  description: '发送 QQ 消息，支持群消息、私聊、图片、文件四种方式',
+  description: '发送 QQ 消息，支持群消息、私聊、图片、文件、内置表情、表情组六种方式',
   input_schema: {
     type: 'object',
     properties: {
       type: {
         type: 'string',
-        description: '发送类型：group_msg=群消息, private_msg=私聊, image=图片, file=文件',
+        description: '发送类型：group_msg=群消息, private_msg=私聊, image=图片, file=文件, face=内置表情（需填 face_id）, sticker=表情组（系统随机选，需填 sticker_group）',
       },
       target: {
         type: 'string',
@@ -123,6 +123,14 @@ const QQ_SEND_TOOL: ToolDefinition = {
       file_name: {
         type: 'string',
         description: '文件名（文件类型时必填）',
+      },
+      face_id: {
+        type: 'number',
+        description: '内置表情 ID（type=face 时必填，范围 0-350）',
+      },
+      sticker_group: {
+        type: 'string',
+        description: '表情组名（type=sticker 时必填，如 "蚌"/"赞"/"哭"），系统从组内随机选一个表情发送',
       },
     },
     required: ['type', 'target'],
@@ -482,13 +490,59 @@ export class QQSubAgent {
   }> {
     switch (toolName) {
       case 'qq_send': {
-        // 发出 reply 事件，由上层（OneBot 客户端）实际发送
+        const sendType = String(args.type ?? '');
+        const target = String(args.target);
+        const content = String(args.content ?? '');
+
+        // V31: face/sticker 类型直接通过 OneBot 客户端发送
+        if (sendType === 'face') {
+          if (!this.client) {
+            return { success: false, result: {}, error: 'OneBot 客户端未初始化' };
+          }
+          const faceId = args.face_id as number | undefined;
+          if (faceId === undefined) {
+            return { success: false, result: {}, error: '内置表情 ID 不能为空' };
+          }
+          const result = await this.client.sendGroupFace(target, faceId);
+          return {
+            success: result.success,
+            result: result.success ? { message_id: result.messageId } : {},
+            error: result.error,
+          };
+        }
+
+        if (sendType === 'sticker') {
+          if (!this.client) {
+            return { success: false, result: {}, error: 'OneBot 客户端未初始化' };
+          }
+          const groupName = String(args.sticker_group ?? '');
+          if (!groupName) {
+            return { success: false, result: {}, error: '表情组名不能为空' };
+          }
+          // 导入 StickerGroupRegistry 并使用全局单例
+          const { stickerGroupRegistry } = await import('../agent/main-agent-registry');
+          const picked = stickerGroupRegistry.pickRandom(groupName);
+          if (!picked) {
+            const availableGroups = stickerGroupRegistry.listGroups();
+            return { success: false, result: {}, error: `表情组 "${groupName}" 不存在，可用组名：${availableGroups.join('、')}` };
+          }
+          const sendResult = picked.type === 'face'
+            ? await this.client.sendGroupFace(target, parseInt(picked.id))
+            : await this.client.sendGroupSticker(target, picked.id);
+          return {
+            success: sendResult.success,
+            result: sendResult.success ? { message_id: sendResult.messageId } : {},
+            error: sendResult.error,
+          };
+        }
+
+        // 文本/图片/文件类型：发出 reply 事件，由上层（OneBot 客户端）实际发送
         this.emit({
           type: 'reply',
           reply: {
-            type: args.type === 'private_msg' ? 'private' : 'group',
-            targetId: String(args.target),
-            content: String(args.content ?? ''),
+            type: sendType === 'private_msg' ? 'private' : 'group',
+            targetId: target,
+            content,
           },
         });
         return { success: true, result: { message_id: 'pending' } };

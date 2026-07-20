@@ -56,7 +56,7 @@ const PROVIDER_INFO: Record<string, { name: string; baseUrl: string }> = {
 // 注册表缓存（Layer 1 数据源）
 // ════════════════════════════════════════════════════════════════
 const REGISTRY_URL = 'https://models.dev/api.json'
-const REFRESH_INTERVAL = 60 * 60 * 1000 // 1 小时
+const REFRESH_INTERVAL = 24 * 60 * 60 * 1000 // 每天一次
 
 interface RegistryModelEntry {
   contextWindow: number

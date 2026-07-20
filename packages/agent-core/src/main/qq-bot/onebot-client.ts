@@ -177,6 +177,46 @@ export class OneBotClient {
     }
   }
 
+  // ════════════════════════════════════════════════════════════════
+  // V31: 表情发送
+  // ════════════════════════════════════════════════════════════════
+
+  async sendGroupFace(groupId: string, faceId: number): Promise<SendResult> {
+    try {
+      const result = await this.callApi('send_group_msg', {
+        group_id: parseInt(groupId),
+        message: [{ type: 'face', data: { id: String(faceId) } }],
+      });
+      return { success: true, messageId: String(result.data?.message_id ?? '') };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '发送表情失败' };
+    }
+  }
+
+  async sendPrivateFace(userId: string, faceId: number): Promise<SendResult> {
+    try {
+      const result = await this.callApi('send_private_msg', {
+        user_id: parseInt(userId),
+        message: [{ type: 'face', data: { id: String(faceId) } }],
+      });
+      return { success: true, messageId: String(result.data?.message_id ?? '') };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '发送表情失败' };
+    }
+  }
+
+  async sendGroupSticker(groupId: string, stickerId: string): Promise<SendResult> {
+    try {
+      const result = await this.callApi('send_group_msg', {
+        group_id: parseInt(groupId),
+        message: [{ type: 'sticker', data: { id: stickerId } }],
+      });
+      return { success: true, messageId: String(result.data?.message_id ?? '') };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : '发送贴图失败' };
+    }
+  }
+
   async getGroupInfo(groupId: string): Promise<any> {
     const result = await this.callApi('get_group_info', { group_id: parseInt(groupId) });
     return result.data;

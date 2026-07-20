@@ -47,7 +47,7 @@ const PROVIDER_DEFAULTS: Record<string, { contextWindow: number; supportsFC: boo
 // ─── 注册表缓存 ───
 const REGISTRY_URL = 'https://models.dev/api.json'
 const CACHE_FILE = 'model-registry-cache.json'
-const REFRESH_INTERVAL = 60 * 60 * 1000 // 1 小时
+const REFRESH_INTERVAL = 24 * 60 * 60 * 1000 // 每天一次
 const REGISTRY_TIMEOUT = 30000 // 3.2MB 数据需 30s
 
 let registryCache: Map<string, { contextWindow: number; supportsFC: boolean }> | null = null

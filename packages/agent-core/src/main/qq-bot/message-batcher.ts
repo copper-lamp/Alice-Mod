@@ -11,7 +11,7 @@
 
 import type { QQMessage } from './types';
 import type { OneBotClient } from './onebot-client';
-import { pendingQqSends } from '../agent/main-agent-registry';
+import { pendingQqSends, type PendingQqSend } from '../agent/main-agent-registry';
 
 /** 批量消息条目 */
 interface BatchEntry {
@@ -118,7 +118,7 @@ export class MessageBatcher {
       const finalResponse = await handler(merged.prompt);
 
       // 处理 qq_send 队列（发送实际消息）
-      const pendingSends = pendingQqSends.get(this.agentId) ?? [];
+      const pendingSends: PendingQqSend[] = pendingQqSends.get(this.agentId) ?? [];
       for (let i = 0; i < pendingSends.length; i++) {
         const pending = pendingSends[i];
         const target = pending.target || batch[0]?.msg?.groupId || batch[0]?.msg?.userId || '';
@@ -130,12 +130,22 @@ export class MessageBatcher {
         }
 
         try {
-          if (pending.type === 'private_msg' || pending.type === 'private') {
-            await client.sendPrivateMsg(target, pending.content);
-          } else {
-            await client.sendGroupMsg(target, pending.content);
+          switch (pending.type) {
+            case 'private_msg':
+            case 'private':
+              await client.sendPrivateMsg(target, pending.content);
+              break;
+            case 'face':
+              await client.sendGroupFace(target, pending.faceId!);
+              break;
+            case 'sticker':
+              await client.sendGroupSticker(target, pending.stickerId!);
+              break;
+            default: // group_msg, image, file
+              await client.sendGroupMsg(target, pending.content);
+              break;
           }
-          console.log(`[MessageBatcher] qq_send 消息已发送到 ${target}`);
+          console.log(`[MessageBatcher] qq_send 消息已发送到 ${target}, type=${pending.type}`);
         } catch (err) {
           console.error(`[MessageBatcher] 发送 qq_send 消息失败:`, err);
         }
