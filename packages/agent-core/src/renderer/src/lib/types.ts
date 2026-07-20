@@ -181,6 +181,10 @@ export interface AgentConfig {
   enabled?: boolean
   /** V32：定时调度配置 */
   schedule?: AgentSchedule
+  /** V31：QQ 智能体独立工具配置（空 = 跟随主 Agent） */
+  qqTools?: QQAgentToolConfig
+  /** V31：QQ 智能体独立技能配置（空 = 跟随主 Agent） */
+  qqSkills?: QQAgentSkillConfig
   createdAt?: number
   updatedAt?: number
 }
@@ -205,6 +209,24 @@ export interface QQBinding {
   groupIds?: string[]
   /** V27：仅处理 @ 机器人的消息（过滤非 @ 消息） */
   mentionOnly?: boolean
+}
+
+/** V31: QQ 智能体独立工具配置 */
+export interface QQAgentToolConfig {
+  /** 启用的工具列表（空 = 跟随主 Agent 配置） */
+  enabledTools?: Record<string, boolean>
+  /** 是否独立于主 Agent 的工具配置 */
+  independent: boolean
+}
+
+/** V31: QQ 智能体独立技能配置 */
+export interface QQAgentSkillConfig {
+  /** 启用的技能名称列表（空 = 跟随主 Agent 配置） */
+  enabledSkills?: string[]
+  /** 禁用的技能名称列表 */
+  disabledSkills?: string[]
+  /** 是否独立于主 Agent 的技能配置 */
+  independent: boolean
 }
 
 /** 模型配置（UI 管理用） */
@@ -395,12 +417,21 @@ export interface ModelSelection {
 
 /** V32：定时调度配置 */
 export interface AgentSchedule {
-  /** 调度模式：disabled=关闭, cron=Cron 表达式, interval=固定间隔 */
-  mode: 'disabled' | 'cron' | 'interval'
+  /** 调度模式：disabled=关闭, cron=Cron 表达式, interval=固定间隔, random=随机时段 */
+  mode: 'disabled' | 'cron' | 'interval' | 'random'
   /** Cron 表达式（mode=cron 时有效） */
   cronExpression?: string
   /** 间隔秒数（mode=interval 时有效） */
   intervalSeconds?: number
+  /** 随机时段配置（mode=random 时有效） */
+  randomPeriod?: {
+    /** 每日随机时段起止（格式 HH:mm），如 ["08:00", "10:00"] */
+    timeWindow: [string, string]
+    /** 时段内最少触发次数 */
+    minTimes: number
+    /** 时段内最多触发次数 */
+    maxTimes: number
+  }
   /** 时区 */
   timezone?: string
   /** 定时触发时发送的提示词 */

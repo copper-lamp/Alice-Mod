@@ -34,12 +34,6 @@ export async function routeQQMessageToAgent(
   msg: QQMessage,
   client: OneBotClient,
 ): Promise<boolean> {
-  // 0. 过滤机器人自己的消息，避免自循环处理
-  if (msg.userId === botQQ) {
-    console.log(`[MessageRouter] 忽略机器人自己的消息（userId=${msg.userId}）`)
-    return false
-  }
-
   // 1. 懒加载避免循环依赖
   const { getMainAgentRegistry } = await import('../ipc/index')
   const { getSharedAgentConfigManager } = await import('../ipc/agent-handler')

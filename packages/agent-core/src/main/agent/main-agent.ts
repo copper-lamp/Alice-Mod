@@ -565,14 +565,12 @@ export class MainAgent {
         if (event.source === 'qq' && rounds === 0) {
           console.log(`[MainAgent] QQ 完整上下文 (${this.deps.agentId}):\n${llmMessages.map(m => `[${m.role}]\n${m.content}`).join('\n---\n')}`);
         }
-        const response = await this.deps.observer.wrap(
-          resolved.providerId,
-          resolved.model,
-          () => provider.chat(
-            llmMessages,
-            tools.length > 0 ? tools : undefined,
-            resolved.options,
-          ),
+        // V32 FIX: 移除重复的 observer.wrap，base-provider.ts 的 chat() 方法内部已调用 observer.wrap
+        // 避免每次 API 调用被记录两次导致统计翻倍
+        const response = await provider.chat(
+          llmMessages,
+          tools.length > 0 ? tools : undefined,
+          resolved.options,
         );
         totalTokens += response.usage.totalTokens;
         lastResponse = response;
