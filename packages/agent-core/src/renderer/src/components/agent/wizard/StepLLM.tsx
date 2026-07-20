@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Select, ListBox, Checkbox } from '@heroui/react'
+import { Check, X } from 'lucide-react'
 import { useWizardStore } from '../../../stores/wizardStore'
 
 interface ModelItem {
@@ -124,7 +125,7 @@ const StepLLM: React.FC = () => {
           <div className="mt-2 text-xs text-gray-400">
             <span>上下文窗口: {model.contextWindow?.toLocaleString() ?? '未知'}</span>
             <span className="mx-1">·</span>
-            <span>FC: {model.supportsFunctionCalling ? '✅' : '❌'}</span>
+            <span>FC: {model.supportsFunctionCalling ? <Check size={12} className="inline text-green-500" /> : <X size={12} className="inline text-red-400" />}</span>
           </div>
         )
       })()}

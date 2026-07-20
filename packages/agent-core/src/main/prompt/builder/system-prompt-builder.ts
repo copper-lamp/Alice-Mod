@@ -1,15 +1,14 @@
 /**
  * 系统提示词构建器 — V19 优化版
  *
- * 精简为 6 区域结构，去掉冗余的通用描述，动态注入用户配置。
+ * 精简为 5 区域结构，去掉冗余的通用描述，动态注入用户配置。
  *
  * 区域结构：
  *   [区域1] 你是谁（identity + expertise）
- *   [区域2] 你的个性（personality）
- *   [区域3] 行为准则（rules）
- *   [区域4] 工作方式（workflowDescription / workApproach）
- *   [区域5] 沟通与边界（communicationStyle + boundaries）
- *   [区域6] 自定义片段（system_begin / system_end）
+ *   [区域2] 工作流（rules.core）
+ *   [区域3] 工作方式（workflowDescription / workApproach）
+ *   [区域4] 沟通与边界（communicationStyle + boundaries）
+ *   [区域5] 自定义片段（system_begin / system_end）
  */
 
 import type { AgentProfile, ISystemPromptBuilder, IPromptTemplateEngine, PromptFragment } from '../types';
@@ -43,17 +42,10 @@ export class DefaultSystemPromptBuilder implements ISystemPromptBuilder {
     parts.push('\n');
 
     // ════════════════════════════════════════════════════════════════
-    // 区域2: 你的个性（personality）
-    // ════════════════════════════════════════════════════════════════
-    if (profile.personality.length > 0) {
-      parts.push(`## 性格特点\n${profile.personality.map(p => `- ${p}`).join('\n')}\n`);
-    }
-
-    // ════════════════════════════════════════════════════════════════
-    // 区域3: 行为准则（rules.core）
+    // 区域2: 工作流（rules.core）
     // ════════════════════════════════════════════════════════════════
     if (profile.rules.core.length > 0) {
-      parts.push(`## 行为准则\n${profile.rules.core.map(r => `- ${r}`).join('\n')}\n`);
+      parts.push(`## 工作流\n${profile.rules.core.map(r => `- ${r}`).join('\n')}\n`);
     }
 
     // ════════════════════════════════════════════════════════════════
