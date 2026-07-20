@@ -300,6 +300,58 @@ function toBuildSource(source: MainAgentEvent['source']): BuildSource {
   }
 }
 
+/**
+ * 清理对话历史中损坏的 tool_calls 条目
+ *
+ * 当之前的 session 因 pipeline 故障导致 tool 结果未注入时，
+ * 数据库中会留下 assistant 消息有 tool_calls 但无对应 tool 消息的损坏记录。
+ * 这会导致 OpenAI API 报错：
+ *   "An assistant message with 'tool_calls' must be followed by tool messages..."
+ *
+ * 修复策略：扫描历史，移除那些没有对应 tool 消息的 tool_calls，
+ * 这样 LLM 不会期望看到 tool 结果，API 也不会报错。
+ */
+function sanitizeHistory(messages: ConversationMessage[]): ConversationMessage[] {
+  const result: ConversationMessage[] = [];
+  // 当前期待的 tool_call_id 集合（来自最近一条有 tool_calls 的 assistant 消息）
+  let expectedToolCallIds = new Set<string>();
+
+  for (const msg of messages) {
+    if (msg.role === 'tool' && msg.tool_call_id) {
+      if (expectedToolCallIds.has(msg.tool_call_id)) {
+        // 有效的 tool 消息：属于前面 assistant 的 tool_calls
+        result.push(msg);
+        expectedToolCallIds.delete(msg.tool_call_id); // 标记已消费
+      } else {
+        // 孤立的 tool 消息：前面没有对应的 assistant 带 tool_calls
+        console.warn(`[MainAgent] 清理孤立的 tool 消息: tool_call_id=${msg.tool_call_id}`);
+      }
+      continue;
+    }
+
+    if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+      // 如果前一轮还有未完成的 tool_calls，说明它们没有对应的 tool 结果
+      if (expectedToolCallIds.size > 0) {
+        console.warn(`[MainAgent] 清理未完成的 tool_calls: ${Array.from(expectedToolCallIds).join(', ')}`);
+      }
+      // 设置新的期望 tool_call_id 集合
+      expectedToolCallIds = new Set(msg.tool_calls.map(tc => tc.id));
+      result.push(msg);
+      continue;
+    }
+
+    // 非 tool、非 assistant-with-tool_calls 的消息（user、system、纯文本 assistant）
+    if (expectedToolCallIds.size > 0) {
+      // 遇到非 tool 消息意味着前一轮的 tool_calls 未完成，清理它们
+      console.warn(`[MainAgent] 清理未完成的 tool_calls (遇到非 tool 消息): ${Array.from(expectedToolCallIds).join(', ')}`);
+      expectedToolCallIds.clear();
+    }
+    result.push(msg);
+  }
+
+  return result;
+}
+
 /** 根据 event.source 决定调度优先级 */
 function getPriority(source: MainAgentEvent['source']): SchedulePriority {
   switch (source) {
@@ -373,6 +425,9 @@ export class MainAgent {
         tool_call_id: e.toolCallId,
       }));
 
+      // V31 FIX: 清理历史中损坏的 tool_calls（防止之前 session 遗留的损坏数据导致 API 报错）
+      const sanitizedHistory = sanitizeHistory(history);
+
       // ── 3. 构建 prompt ──
       const excludeTools = getExcludeTools(this.deps.agentConfig);
       const profile = mapAgentConfigToProfile(this.deps.agentConfig);
@@ -418,7 +473,7 @@ export class MainAgent {
       const buildParams: BuildParams = {
         workspaceId: this.deps.workspaceId,
         userInput: event.prompt,
-        history,
+        history: sanitizedHistory,
         // V30: QQ 来源不注入游戏状态（聊天 Agent 不需要玩家状态信息）
         state: event.source === 'qq' ? { skip: true, health: 0, hunger: 0, saturation: 0, position: { x: 0, y: 0, z: 0, dimension: '' }, statusEffects: [] } : this.getPlaceholderPlayerState(),
         source: toBuildSource(event.source),
