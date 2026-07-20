@@ -14,6 +14,8 @@ const ModelCard: React.FC<Props> = ({ model }) => {
 
   const [formApiKey, setFormApiKey] = useState(model.apiKey)
   const [formBaseUrl, setFormBaseUrl] = useState(model.baseUrl)
+  const [formContextWindow, setFormContextWindow] = useState(model.contextWindow)
+  const [formFC, setFormFC] = useState(model.supportsFunctionCalling)
 
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; latencyMs: number } | null>(null)
@@ -22,6 +24,8 @@ const ModelCard: React.FC<Props> = ({ model }) => {
     await updateModel(model.id, {
       apiKey: formApiKey,
       baseUrl: formBaseUrl,
+      contextWindow: formContextWindow,
+      supportsFunctionCalling: formFC,
     })
     setEditing(false)
   }
@@ -29,6 +33,8 @@ const ModelCard: React.FC<Props> = ({ model }) => {
   const handleCancel = () => {
     setFormApiKey(model.apiKey)
     setFormBaseUrl(model.baseUrl)
+    setFormContextWindow(model.contextWindow)
+    setFormFC(model.supportsFunctionCalling)
     setEditing(false)
   }
 
@@ -61,7 +67,7 @@ const ModelCard: React.FC<Props> = ({ model }) => {
   // 编辑模式：内联表单
   if (editing) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <input
           type="password"
           value={formApiKey}
@@ -75,15 +81,41 @@ const ModelCard: React.FC<Props> = ({ model }) => {
           placeholder="Base URL"
           className="w-36 px-2 py-1 text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500/20 focus:border-blue-500"
         />
+        <input
+          type="number"
+          value={formContextWindow}
+          onChange={(e) => setFormContextWindow(parseInt(e.target.value) || 4096)}
+          className="w-24 px-2 py-1 text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500/20 focus:border-blue-500"
+          title="Context Window"
+          placeholder="Context Window"
+        />
+        <select
+          value={formFC ? 'true' : 'false'}
+          onChange={(e) => setFormFC(e.target.value === 'true')}
+          className="w-20 px-2 py-1 text-xs border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500/20 focus:border-blue-500"
+          title="Function Calling"
+        >
+          <option value="true">FC: 是</option>
+          <option value="false">FC: 否</option>
+        </select>
         <Button size="sm" onPress={handleSave}>保存</Button>
         <Button size="sm" variant="secondary" onPress={handleCancel}>取消</Button>
       </div>
     )
   }
 
-  // 展示模式：操作按钮
+  // 展示模式：操作按钮 + 模型信息
   return (
     <div className="flex items-center gap-1.5">
+      {/* 上下文窗口标签 */}
+      <span className="text-[10px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100 whitespace-nowrap" title="上下文窗口">
+        {model.contextWindow.toLocaleString()}
+      </span>
+      {/* Function Calling 标签 */}
+      <span className={`text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap ${model.supportsFunctionCalling ? 'text-green-600 bg-green-50 border-green-100' : 'text-gray-400 bg-gray-50 border-gray-100'}`} title="Function Calling">
+        {model.supportsFunctionCalling ? 'FC' : 'no FC'}
+      </span>
+
       <Button size="sm" variant="secondary" onPress={() => setEditing(true)}>
         编辑
       </Button>

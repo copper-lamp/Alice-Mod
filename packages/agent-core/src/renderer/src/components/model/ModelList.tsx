@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Table } from '@heroui/react'
 import type { ModelConfigItem } from '../../lib/types'
 import ModelCard from './ModelCard'
@@ -7,27 +7,32 @@ interface Props {
   models: ModelConfigItem[]
 }
 
-const providerLabels: Record<string, string> = {
-  openai: 'OpenAI',
-  claude: 'Claude',
-  gemini: 'Gemini',
-  ollama: 'Ollama (本地)',
-  deepseek: 'DeepSeek',
-  qwen: '通义千问',
-  moonshot: '月之暗面 (Kimi)',
-  zhipu: '智谱 (GLM)',
-  ernie: '百度文心 (ERNIE)',
-  doubao: '字节豆包',
-  yi: '零一万物 (Yi)',
-  baichuan: '百川 (Baichuan)',
-  minimax: 'MiniMax',
-  spark: '讯飞星火',
-  sensechat: '商汤 (SenseChat)',
-  stepfun: '阶跃星辰 (StepFun)',
+interface ProviderInfo {
+  id: string
+  name: string
+  baseUrl: string
 }
 
 /** 模型列表表格 */
 const ModelList: React.FC<Props> = ({ models }) => {
+  const [providers, setProviders] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    // 从后端获取 Provider 列表
+    window.electronAPI.invoke('provider:full-list')
+      .then((raw) => {
+        const list = (Array.isArray(raw) ? raw : []) as ProviderInfo[]
+        const map: Record<string, string> = {}
+        for (const p of list) {
+          map[p.id] = p.name
+        }
+        setProviders(map)
+      })
+      .catch(() => {
+        // 静默失败，使用 model.providerName 兜底
+      })
+  }, [])
+
   if (models.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-gray-400">
@@ -64,7 +69,7 @@ const ModelList: React.FC<Props> = ({ models }) => {
               {models.map(model => (
                 <Table.Row key={model.id}>
                   <Table.Cell className="font-medium">{model.modelName}</Table.Cell>
-                  <Table.Cell>{providerLabels[model.providerId] || model.providerName}</Table.Cell>
+                  <Table.Cell>{providers[model.providerId] || model.providerName}</Table.Cell>
                   <Table.Cell>
                     <ModelCard model={model} />
                   </Table.Cell>

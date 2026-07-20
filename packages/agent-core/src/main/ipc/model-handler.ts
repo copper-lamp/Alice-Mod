@@ -1,134 +1,207 @@
 import { ipcMain } from 'electron'
+import path from 'path'
+import fs from 'node:fs'
+import { app } from 'electron'
 import type { ModelConfigItem } from '../../renderer/src/lib/types'
 import { getDatabaseManager } from '../database'
 
-/** 模型名 → 上下文窗口大小（自动设置） */
-const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  // OpenAI
-  'gpt-4o': 128000,
-  'gpt-4o-mini': 128000,
-  'gpt-4-turbo': 128000,
-  'gpt-3.5-turbo': 16384,
-  // Claude
-  'claude-3.5-sonnet': 200000,
-  'claude-3.5-haiku': 200000,
-  'claude-3-opus': 200000,
-  // Gemini
-  'gemini-2.0-flash': 1048576,
-  'gemini-1.5-pro': 1048576,
-  'gemini-1.5-flash': 1048576,
-  // Ollama
-  'llama3': 8192,
-  'qwen2.5': 32768,
-  'mistral': 8192,
-  'codellama': 16384,
-  // DeepSeek
-  'deepseek-chat': 65536,
-  'deepseek-coder': 65536,
-  'deepseek-reasoner': 65536,
-  // 通义千问 (Qwen)
-  'qwen-turbo': 32768,
-  'qwen-plus': 131072,
-  'qwen-max': 32768,
-  'qwen-long': 10000000,
-  // 月之暗面 (Moonshot/Kimi)
-  'moonshot-v1-8k': 8192,
-  'moonshot-v1-32k': 32768,
-  'moonshot-v1-128k': 131072,
-  // 智谱 (GLM/Zhipu)
-  'glm-4-plus': 131072,
-  'glm-4-air': 131072,
-  'glm-4-flash': 131072,
-  'glm-4v-plus': 131072,
-  // 百度文心 (ERNIE)
-  'ernie-4.0-turbo': 131072,
-  'ernie-4.0': 131072,
-  'ernie-3.5': 131072,
-  'ernie-speed': 131072,
-  // 字节豆包 (Doubao)
-  'doubao-pro-32k': 32768,
-  'doubao-pro-128k': 131072,
-  'doubao-lite-32k': 32768,
-  // 零一万物 (Yi)
-  'yi-lightning': 16384,
-  'yi-medium': 16384,
-  'yi-large': 32768,
-  'yi-vision': 16384,
-  // 百川 (Baichuan)
-  'baichuan4': 32768,
-  'baichuan3-turbo': 32768,
-  'baichuan3': 32768,
-  // MiniMax
-  'minimax-abab6.5': 16384,
-  'minimax-abab5.5': 16384,
-  // 讯飞星火 (Spark)
-  'spark-4.0-ultra': 8192,
-  'spark-3.5-max': 8192,
-  'spark-3.1': 8192,
-  // SenseTime 商汤 (SenseChat)
-  'sensechat-5': 131072,
-  'sensechat-turbo': 131072,
-  // StepFun 阶跃星辰
-  'step-1': 8192,
-  'step-1v': 8192,
+// ════════════════════════════════════════════════════════════════
+// Provider 级别默认值（Layer 2 兜底）
+// 注册表未覆盖时，按 Provider 返回合理默认值
+// ════════════════════════════════════════════════════════════════
+const PROVIDER_DEFAULTS: Record<string, { contextWindow: number; supportsFC: boolean }> = {
+  openai:     { contextWindow: 128000, supportsFC: true },
+  claude:     { contextWindow: 200000, supportsFC: true },
+  gemini:     { contextWindow: 1048576, supportsFC: false },
+  ollama:     { contextWindow: 4096,   supportsFC: false },
+  deepseek:   { contextWindow: 65536,  supportsFC: true },
+  qwen:       { contextWindow: 131072, supportsFC: true },
+  moonshot:   { contextWindow: 131072, supportsFC: false },
+  zhipu:      { contextWindow: 131072, supportsFC: true },
+  ernie:      { contextWindow: 131072, supportsFC: true },
+  doubao:     { contextWindow: 131072, supportsFC: true },
+  yi:         { contextWindow: 32768,  supportsFC: true },
+  baichuan:   { contextWindow: 32768,  supportsFC: true },
+  minimax:    { contextWindow: 16384,  supportsFC: false },
+  spark:      { contextWindow: 8192,   supportsFC: false },
+  sensechat:  { contextWindow: 131072, supportsFC: false },
+  stepfun:    { contextWindow: 8192,   supportsFC: false },
+  huggingface: { contextWindow: 8192, supportsFC: false },
 }
 
-/** 模型名 → 是否支持 Function Calling */
-const MODEL_FC_SUPPORT: Record<string, boolean> = {
-  'gpt-4o': true,
-  'gpt-4o-mini': true,
-  'gpt-4-turbo': true,
-  'gpt-3.5-turbo': true,
-  'claude-3.5-sonnet': true,
-  'claude-3.5-haiku': true,
-  'deepseek-chat': true,
-  'deepseek-coder': true,
-  'qwen-plus': true,
-  'qwen-max': true,
-  'glm-4-plus': true,
-  'glm-4-air': true,
-  'glm-4-flash': true,
-  'ernie-4.0-turbo': true,
-  'doubao-pro-32k': true,
-  'doubao-pro-128k': true,
-  'yi-large': true,
-  'baichuan4': true,
+// ════════════════════════════════════════════════════════════════
+// Provider 信息（名称 + 默认 Base URL）
+// ════════════════════════════════════════════════════════════════
+const PROVIDER_INFO: Record<string, { name: string; baseUrl: string }> = {
+  openai: { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
+  claude: { name: 'Claude', baseUrl: 'https://api.anthropic.com/v1' },
+  gemini: { name: 'Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
+  ollama: { name: 'Ollama (本地)', baseUrl: 'http://127.0.0.1:11434' },
+  deepseek: { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
+  qwen: { name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+  moonshot: { name: '月之暗面 (Kimi)', baseUrl: 'https://api.moonshot.cn/v1' },
+  zhipu: { name: '智谱 (GLM)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
+  ernie: { name: '百度文心 (ERNIE)', baseUrl: 'https://aip.baidubce.com/rpc/2.0/ai_custom' },
+  doubao: { name: '字节豆包', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+  yi: { name: '零一万物 (Yi)', baseUrl: 'https://api.lingyiwanwu.com/v1' },
+  baichuan: { name: '百川 (Baichuan)', baseUrl: 'https://api.baichuan-ai.com/v1' },
+  minimax: { name: 'MiniMax', baseUrl: 'https://api.minimax.chat/v1' },
+  spark: { name: '讯飞星火', baseUrl: 'https://spark-api.xf-yun.com/v3.5/chat' },
+  sensechat: { name: '商汤 (SenseChat)', baseUrl: 'https://api.sensetime.com/v1' },
+  stepfun: { name: '阶跃星辰 (StepFun)', baseUrl: 'https://api.stepfun.com/v1' },
+  huggingface: { name: 'HuggingFace', baseUrl: 'https://api-inference.huggingface.co/models' },
 }
 
-const PROVIDER_INFO: Record<string, { name: string; baseUrl: string; apiKey: string }> = {
-  openai: { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-****' },
-  claude: { name: 'Claude', baseUrl: 'https://api.anthropic.com/v1', apiKey: 'sk-****' },
-  gemini: { name: 'Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', apiKey: 'AI****' },
-  ollama: { name: 'Ollama (本地)', baseUrl: 'http://127.0.0.1:11434', apiKey: '' },
-  deepseek: { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', apiKey: 'sk-****' },
-  qwen: { name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiKey: 'sk-****' },
-  moonshot: { name: '月之暗面 (Kimi)', baseUrl: 'https://api.moonshot.cn/v1', apiKey: 'sk-****' },
-  zhipu: { name: '智谱 (GLM)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKey: '****' },
-  ernie: { name: '百度文心 (ERNIE)', baseUrl: 'https://aip.baidubce.com/rpc/2.0/ai_custom', apiKey: '****' },
-  doubao: { name: '字节豆包', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', apiKey: '****' },
-  yi: { name: '零一万物 (Yi)', baseUrl: 'https://api.lingyiwanwu.com/v1', apiKey: '****' },
-  baichuan: { name: '百川 (Baichuan)', baseUrl: 'https://api.baichuan-ai.com/v1', apiKey: 'sk-****' },
-  minimax: { name: 'MiniMax', baseUrl: 'https://api.minimax.chat/v1', apiKey: 'sk-****' },
-  spark: { name: '讯飞星火', baseUrl: 'https://spark-api.xf-yun.com/v3.5/chat', apiKey: '****' },
-  sensechat: { name: '商汤 (SenseChat)', baseUrl: 'https://api.sensetime.com/v1', apiKey: '****' },
-  stepfun: { name: '阶跃星辰 (StepFun)', baseUrl: 'https://api.stepfun.com/v1', apiKey: '****' },
+// ════════════════════════════════════════════════════════════════
+// 注册表缓存（Layer 1 数据源）
+// ════════════════════════════════════════════════════════════════
+const REGISTRY_URL = 'https://llm-registry.com/api/v1/models'
+const REFRESH_INTERVAL = 60 * 60 * 1000 // 1 小时
+
+interface RegistryModelEntry {
+  contextWindow: number
+  supportsFunctionCalling: boolean
 }
 
-/** 生成自动上下文窗口 */
-function getAutoContextWindow(modelName: string): number {
-  const lower = modelName.toLowerCase()
-  for (const [key, value] of Object.entries(MODEL_CONTEXT_WINDOWS)) {
-    if (lower.includes(key) || lower === key) return value
+let registryCache: Map<string, RegistryModelEntry> | null = null
+let registryLastUpdated = 0
+
+/** 获取缓存文件路径 */
+function getCacheFilePath(): string {
+  const userDataPath = app.getPath('userData')
+  return path.join(userDataPath, 'model-registry-cache.json')
+}
+
+/** 从本地加载缓存 */
+function loadCacheSync(): void {
+  try {
+    const filePath = getCacheFilePath()
+    if (!fs.existsSync(filePath)) return
+    const raw = fs.readFileSync(filePath, 'utf-8')
+    const data = JSON.parse(raw) as { models: Record<string, RegistryModelEntry>; lastUpdated: number }
+    registryCache = new Map(Object.entries(data.models || {}))
+    registryLastUpdated = data.lastUpdated || 0
+    console.info('[ModelRegistry] 本地缓存加载完成，模型数:', registryCache.size)
+  } catch {
+    // 缓存损坏，忽略
+    registryCache = null
   }
-  // 默认值
+}
+
+/** 保存缓存到本地 */
+function saveCacheSync(): void {
+  try {
+    if (!registryCache) return
+    const filePath = getCacheFilePath()
+    const data = {
+      models: Object.fromEntries(registryCache),
+      lastUpdated: Date.now(),
+    }
+    fs.writeFileSync(filePath, JSON.stringify(data), 'utf-8')
+  } catch {
+    // 写入失败不影响主流程
+  }
+}
+
+/** 从远程注册表拉取模型数据 */
+async function fetchRegistry(): Promise<void> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10000)
+
+  try {
+    const res = await fetch(REGISTRY_URL, { signal: controller.signal })
+    if (!res.ok) {
+      console.warn('[ModelRegistry] 远程拉取失败:', res.status)
+      return
+    }
+    const data = (await res.json()) as {
+      models?: Array<{
+        id: string
+        specs?: { contextWindow?: number }
+        apiSupport?: { tools?: boolean }
+      }>
+    }
+    if (!data.models || !Array.isArray(data.models)) {
+      console.warn('[ModelRegistry] 远程数据格式异常')
+      return
+    }
+
+    const newCache = new Map<string, RegistryModelEntry>()
+    for (const model of data.models) {
+      if (!model.id) continue
+      const lowerId = model.id.toLowerCase()
+      newCache.set(lowerId, {
+        contextWindow: model.specs?.contextWindow ?? 4096,
+        supportsFunctionCalling: model.apiSupport?.tools ?? false,
+      })
+    }
+
+    registryCache = newCache
+    registryLastUpdated = Date.now()
+    saveCacheSync()
+    console.info(`[ModelRegistry] 远程拉取成功，模型数: ${registryCache.size}`)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn('[ModelRegistry] 远程拉取异常:', msg)
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+/**
+ * 初始化模型注册表（应用启动时调用）
+ * 1. 加载本地缓存
+ * 2. 异步拉取远程注册表（静默失败，使用缓存）
+ * 3. 启动定时刷新
+ */
+export async function initModelRegistry(): Promise<void> {
+  loadCacheSync()
+  // 异步拉取，不阻塞启动
+  fetchRegistry().catch(() => { /* 静默 */ })
+  // 定时刷新
+  setInterval(() => fetchRegistry().catch(() => { /* 静默 */ }), REFRESH_INTERVAL)
+  console.info('[ModelRegistry] 初始化完成')
+}
+
+// ════════════════════════════════════════════════════════════════
+// 三层查询函数
+// ════════════════════════════════════════════════════════════════
+
+/** 自动上下文窗口：注册表 → Provider 默认值 → 4096 */
+function getAutoContextWindow(modelName: string, providerId?: string): number {
+  const lower = modelName.toLowerCase()
+
+  // Layer 1: 注册表精确匹配
+  if (registryCache?.has(lower)) {
+    return registryCache.get(lower)!.contextWindow
+  }
+
+  // Layer 2: Provider 默认值
+  if (providerId) {
+    const def = PROVIDER_DEFAULTS[providerId]
+    if (def) return def.contextWindow
+  }
+
+  // Layer 3: 最终兜底
   return 4096
 }
 
-function getAutoFC(modelName: string): boolean {
+/** 自动 Function Calling 支持：注册表 → Provider 默认值 → true */
+function getAutoFC(modelName: string, providerId?: string): boolean {
   const lower = modelName.toLowerCase()
-  for (const [key, value] of Object.entries(MODEL_FC_SUPPORT)) {
-    if (lower.includes(key) || lower === key) return value
+
+  // Layer 1: 注册表精确匹配
+  if (registryCache?.has(lower)) {
+    return registryCache.get(lower)!.supportsFunctionCalling
   }
+
+  // Layer 2: Provider 默认值
+  if (providerId) {
+    const def = PROVIDER_DEFAULTS[providerId]
+    if (def) return def.supportsFC
+  }
+
+  // Layer 3: 最终兜底
   return true
 }
 
@@ -189,15 +262,16 @@ export function registerModelHandlers(): void {
   ipcMain.handle('model:add', async (_event, config: ModelConfigItem) => {
     const db = getDatabaseManager().getDb()
     const id = `${config.providerId}:${config.modelName}`
-    // 自动设置上下文窗口
-    const contextWindow = getAutoContextWindow(config.modelName)
-    // 自动设置 Function Calling 支持
-    const supportsFunctionCalling = getAutoFC(config.modelName)
+    // 三层查询，传入 providerId
+    const contextWindow = config.contextWindow || getAutoContextWindow(config.modelName, config.providerId)
+    const supportsFunctionCalling = config.supportsFunctionCalling !== undefined
+      ? config.supportsFunctionCalling
+      : getAutoFC(config.modelName, config.providerId)
     const entry: ModelConfigItem = {
       ...config,
       id,
-      contextWindow: config.contextWindow || contextWindow,
-      supportsFunctionCalling: config.supportsFunctionCalling !== undefined ? config.supportsFunctionCalling : supportsFunctionCalling,
+      contextWindow,
+      supportsFunctionCalling,
       createdAt: Date.now()
     }
     const row = modelToRow(entry)
@@ -220,7 +294,7 @@ export function registerModelHandlers(): void {
     const db = getDatabaseManager().getDb()
     // 如果更新了 modelName 则重新计算上下文
     if (config.modelName) {
-      config.contextWindow = config.contextWindow || getAutoContextWindow(config.modelName)
+      config.contextWindow = config.contextWindow || getAutoContextWindow(config.modelName, config.providerId)
     }
     // 构建动态 SET 子句
     const sets: string[] = []
@@ -239,7 +313,7 @@ export function registerModelHandlers(): void {
     return { success: result.changes > 0 }
   })
 
-  // 获取可用 Provider 列表（含国产）
+  // 获取可用 Provider 列表（含国产 + HuggingFace）
   ipcMain.handle('provider:full-list', async () => {
     return Object.entries(PROVIDER_INFO).map(([id, info]) => ({
       id,
@@ -248,9 +322,12 @@ export function registerModelHandlers(): void {
     }))
   })
 
-  // 获取模型自动上下文
-  ipcMain.handle('model:auto-context', async (_event, { modelName }: { modelName: string }) => {
-    return { contextWindow: getAutoContextWindow(modelName), supportsFunctionCalling: getAutoFC(modelName) }
+  // 获取模型自动上下文（支持传入 providerId）
+  ipcMain.handle('model:auto-context', async (_event, { modelName, providerId }: { modelName: string; providerId?: string }) => {
+    return {
+      contextWindow: getAutoContextWindow(modelName, providerId),
+      supportsFunctionCalling: getAutoFC(modelName, providerId),
+    }
   })
 
   // 测试连接

@@ -4,6 +4,7 @@ import fs, { existsSync, mkdirSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { initLogger, getLogger, getLogDb } from './log'
 import { registerAllIpcHandlers, setMemoryManager, bootstrapAndWireAgents, createResolveTarget, getSharedAgentConfigManager, getMainAgentRegistry } from './ipc'
+import { initModelRegistry } from './ipc/model-handler'
 import { setLogDb } from './ipc/log-handler'
 import { getToolCallCollector, setToolCallCollector } from './ipc/tool-call-handler'
 import { PipelineEventCollector } from './pipeline/event-collector'
@@ -66,11 +67,14 @@ async function initializeServices(): Promise<void> {
   await dbManager.init(dbPath)
   console.info('主进程', '数据库初始化完成')
 
-  // 2. 初始化日志系统（依赖 DatabaseManager 的 SQLite 连接）
+  // 2. 初始化模型注册表（异步拉取，不阻塞）
+  initModelRegistry().catch(() => { /* 静默 */ })
+
+  // 3. 初始化日志系统（依赖 DatabaseManager 的 SQLite 连接）
   const logger = initLogger()
   logger.info('SYSTEM', '日志系统初始化完成')
 
-  // 3. 设置 IPC Handler 的数据库引用
+  // 4. 设置 IPC Handler 的数据库引用
   const logDb = getLogDb()
   if (logDb) {
     setLogDb(logDb)
