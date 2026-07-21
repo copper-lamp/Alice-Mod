@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Tabs, Modal, useOverlayState, Button } from '@heroui/react'
+import { Tabs, Modal, useOverlayState, Button, Switch } from '@heroui/react'
 import { Trash2, AlertTriangle, Wifi, WifiOff, Power } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useAgentStore } from '../../stores/agentStore'
@@ -160,22 +160,16 @@ const AgentInstanceView: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="text-base font-semibold text-gray-800">{currentSummary.name}</span>
               {/* V28: 启用/禁用开关 */}
-              <button
-                type="button"
-                role="switch"
-                aria-checked={enabled}
-                onClick={handleToggleEnabled}
-                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  enabled ? 'bg-green-500' : 'bg-gray-300'
-                }`}
-                title={enabled ? '已启用' : '已禁用'}
+              <Switch
+                isSelected={enabled}
+                onChange={handleToggleEnabled}
               >
-                <span
-                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                    enabled ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </button>
+                <Switch.Content>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                </Switch.Content>
+              </Switch>
             </div>
             <div className="flex items-center gap-2 mt-0.5">
               <span className={`text-xs ${enabled ? 'text-green-600' : 'text-gray-400'}`}>

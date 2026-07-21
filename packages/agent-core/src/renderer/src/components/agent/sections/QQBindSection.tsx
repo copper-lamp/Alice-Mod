@@ -1,5 +1,5 @@
 import React from 'react'
-import { Select, ListBox } from '@heroui/react'
+import { Select, ListBox, Switch } from '@heroui/react'
 import { useQQBotStore } from '../../../stores/qqBotStore'
 
 interface QQBinding {
@@ -62,26 +62,19 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
   return (
     <div className="space-y-4">
       {/* 启用开关 */}
-      <button
-        type="button"
-        role="switch"
-        aria-checked={binding.enabled}
-        onClick={() => handleToggleEnabled(!binding.enabled)}
-        className="inline-flex items-center gap-2 cursor-pointer"
-      >
-        <span
-          className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-            binding.enabled ? 'bg-blue-500' : 'bg-gray-200'
-          }`}
+      <div className="inline-flex items-center gap-2">
+        <Switch
+          isSelected={binding.enabled}
+          onChange={(val) => handleToggleEnabled(val)}
         >
-          <span
-            className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
-              binding.enabled ? 'translate-x-4' : 'translate-x-0'
-            }`}
-          />
-        </span>
+          <Switch.Content>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
+        </Switch>
         <span className="text-sm text-gray-700 select-none">启用 QQ 绑定</span>
-      </button>
+      </div>
 
       {binding.enabled && (
         <>
@@ -176,26 +169,19 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
 
           {/* V27: 仅 @ 触发 */}
           <div className="pt-2 border-t border-gray-100">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={binding.mentionOnly ?? false}
-              onClick={() => onChange({ ...binding, mentionOnly: !(binding.mentionOnly ?? false) })}
-              className="inline-flex items-center gap-2 cursor-pointer"
-            >
-              <span
-                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  binding.mentionOnly ? 'bg-blue-500' : 'bg-gray-200'
-                }`}
+            <div className="inline-flex items-center gap-2">
+              <Switch
+                isSelected={binding.mentionOnly ?? false}
+                onChange={(val) => onChange({ ...binding, mentionOnly: val })}
               >
-                <span
-                  className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
-                    binding.mentionOnly ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </span>
+                <Switch.Content>
+                  <Switch.Control>
+                    <Switch.Thumb />
+                  </Switch.Control>
+                </Switch.Content>
+              </Switch>
               <span className="text-sm text-gray-700 select-none">仅 @ 触发</span>
-            </button>
+            </div>
             <p className="text-xs text-gray-400 mt-1 ml-11">
               开启后仅处理 @ 机器人的群消息，其他消息将被忽略
             </p>

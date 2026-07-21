@@ -116,6 +116,11 @@ public class TaskRunner {
         return _cachedCurrentTaskChain;
     }
 
+    /** 获取所有已注册的 Chain。 */
+    public java.util.ArrayList<TaskChain> getChains() {
+        return _chains;
+    }
+
     /** 是否已启用。 */
     public boolean isActive() {
         return _active;

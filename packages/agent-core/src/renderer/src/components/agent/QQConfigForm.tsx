@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { Button, TextArea, Select, ListBox, Tooltip, Checkbox, RadioGroup, Radio } from '@heroui/react'
+import { Button, TextArea, Select, ListBox, Tooltip, Switch, Checkbox, RadioGroup, Radio } from '@heroui/react'
 import { RefreshCw, ChevronRight, AlertTriangle, Eye, EyeOff, ExternalLink, Settings, Clock, Wrench, BookOpen, Star, FileText, Construction } from 'lucide-react'
 import { useAgentStore } from '../../stores/agentStore'
 import QQBindSection from './sections/QQBindSection'
@@ -460,27 +460,24 @@ const QQConfigForm: React.FC<QQConfigFormProps> = ({ agentId }) => {
 
       {/* 独立开关 */}
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={qqTools.independent}
-          onClick={() => {
-            if (qqTools.independent) {
-              resetToMainTools()
-            } else {
+        <Switch
+          isSelected={qqTools.independent}
+          onChange={(val) => {
+            if (val) {
               // 从主 Agent 复制当前工具配置
               const mainTools = currentAgent?.tools?.enabledTools ?? {}
               setQqTools({ independent: true, enabledTools: { ...mainTools } })
+            } else {
+              resetToMainTools()
             }
           }}
-          className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-            qqTools.independent ? 'bg-blue-500' : 'bg-gray-200'
-          }`}
         >
-          <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
-            qqTools.independent ? 'translate-x-4' : 'translate-x-0'
-          }`} />
-        </button>
+          <Switch.Content>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
+        </Switch>
         <span className="text-sm text-gray-700 select-none">独立配置（不与主 Agent 同步）</span>
       </div>
 
@@ -540,10 +537,16 @@ const QQConfigForm: React.FC<QQConfigFormProps> = ({ agentId }) => {
                     <div className="divide-y divide-gray-100">
                       {categoryTools.map(tool => (
                         <div key={tool.name} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50/50">
-                          <Checkbox
+                          <Switch
                             isSelected={!!qqTools.enabledTools?.[tool.name]}
                             onChange={() => toggleTool(tool.name)}
-                          />
+                          >
+                            <Switch.Content>
+                              <Switch.Control>
+                                <Switch.Thumb />
+                              </Switch.Control>
+                            </Switch.Content>
+                          </Switch>
                           <Tooltip>
                             <Tooltip.Trigger>
                               <span className="text-sm text-gray-700 cursor-help hover:text-blue-600 transition-colors">
@@ -602,14 +605,10 @@ const QQConfigForm: React.FC<QQConfigFormProps> = ({ agentId }) => {
 
       {/* 独立开关 */}
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          role="switch"
-          aria-checked={qqSkills.independent}
-          onClick={() => {
-            if (qqSkills.independent) {
-              resetToMainSkills()
-            } else {
+        <Switch
+          isSelected={qqSkills.independent}
+          onChange={(val) => {
+            if (val) {
               // 从主 Agent 复制当前技能配置
               const mainSkills = currentAgent?.skills
               setQqSkills({
@@ -617,16 +616,17 @@ const QQConfigForm: React.FC<QQConfigFormProps> = ({ agentId }) => {
                 enabledSkills: mainSkills?.enabledSkills ? [...mainSkills.enabledSkills] : [],
                 disabledSkills: mainSkills?.disabledSkills ? [...mainSkills.disabledSkills] : [],
               })
+            } else {
+              resetToMainSkills()
             }
           }}
-          className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-            qqSkills.independent ? 'bg-blue-500' : 'bg-gray-200'
-          }`}
         >
-          <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
-            qqSkills.independent ? 'translate-x-4' : 'translate-x-0'
-          }`} />
-        </button>
+          <Switch.Content>
+            <Switch.Control>
+              <Switch.Thumb />
+            </Switch.Control>
+          </Switch.Content>
+        </Switch>
         <span className="text-sm text-gray-700 select-none">独立配置（不与主 Agent 同步）</span>
       </div>
 
@@ -651,19 +651,16 @@ const QQConfigForm: React.FC<QQConfigFormProps> = ({ agentId }) => {
                   return (
                     <tr key={skill.id} className={`border-b border-gray-100 hover:bg-gray-50 ${idx % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
                       <td className="px-4 py-2.5">
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={isEnabled}
-                          onClick={() => toggleSkill(skill.name)}
-                          className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                            isEnabled ? 'bg-blue-500' : 'bg-gray-200'
-                          }`}
+                        <Switch
+                          isSelected={isEnabled}
+                          onChange={() => toggleSkill(skill.name)}
                         >
-                          <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
-                            isEnabled ? 'translate-x-4' : 'translate-x-0'
-                          }`} />
-                        </button>
+                          <Switch.Content>
+                            <Switch.Control>
+                              <Switch.Thumb />
+                            </Switch.Control>
+                          </Switch.Content>
+                        </Switch>
                       </td>
                       <td className="px-4 py-2.5 font-medium text-gray-800">{skill.name}</td>
                       <td className="px-4 py-2.5 text-gray-500 truncate max-w-xs">{skill.description || '-'}</td>

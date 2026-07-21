@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { Switch } from '@heroui/react'
 import { memoryApi } from '../../lib/ipc'
 
 interface SkillItem {
@@ -221,21 +222,16 @@ const SkillsView: React.FC = () => {
               {skills.map((skill, idx) => (
                 <tr key={skill.id} className={`border-b border-gray-100 hover:bg-gray-50 ${idx % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
                   <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={skill.enabled}
-                      onClick={() => toggleEnabled(skill)}
-                      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                        skill.enabled ? 'bg-blue-500' : 'bg-gray-200'
-                      }`}
+                    <Switch
+                      isSelected={skill.enabled}
+                      onChange={() => toggleEnabled(skill)}
                     >
-                      <span
-                        className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
-                          skill.enabled ? 'translate-x-4' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
+                      <Switch.Content>
+                        <Switch.Control>
+                          <Switch.Thumb />
+                        </Switch.Control>
+                      </Switch.Content>
+                    </Switch>
                   </td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-gray-800">{skill.name}</div>

@@ -42,6 +42,12 @@ import org.slf4j.LoggerFactory;
 
 import io.alice.mod.adapter.agent.AgentConfig;
 import io.alice.mod.adapter.agent.AgentConfigReader;
+import io.alice.mod.adapter.ai.BotAccess;
+import io.alice.mod.adapter.ai.behavior.TaskRunner;
+import io.alice.mod.adapter.ai.behavior.chain.UserTaskChain;
+import io.alice.mod.adapter.api.service.BotHandle;
+import io.alice.mod.adapter.ai.condition.ConditionMonitor;
+import io.alice.mod.adapter.tool.service.PathfindingServiceImpl;
 
 import java.nio.file.Path;
 import java.sql.SQLException;
@@ -92,6 +98,12 @@ public class WorldContext {
 
     /** V21: 当前世界加载的智能体配置列表。 */
     private List<AgentConfig> agentConfigs = List.of();
+
+    /** 行为树任务运行器。 */
+    private TaskRunner taskRunner;
+
+    /** 用户任务链。 */
+    private UserTaskChain userTaskChain;
 
     /** JSON 序列化。 */
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
@@ -152,10 +164,14 @@ public class WorldContext {
         // 5. V21: 加载智能体配置并创建主智能体假人
         loadAndSpawnAgents();
 
-        // 6. 注册服务端 tick 事件（假人重生检查 + 健康度检测）
+        // 5.5. 初始化行为树系统
+        initializeBehaviorTree();
+
+        // 6. 注册服务端 tick 事件（假人重生检查 + 健康度检测 + 行为树驱动）
         ServerTickEvents.END_SERVER_TICK.register(s -> {
             botManager.tick();
             checkBotHealth();
+            tickBehaviorTree();
         });
 
         // 6.5. 注册玩家连接事件（加入/离开）
@@ -918,6 +934,43 @@ public class WorldContext {
             LOG.info("Spawned {} main agent bots", spawned);
         } catch (Exception e) {
             LOG.warn("Failed to load and spawn agents: {}", e.getMessage());
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    //  行为树生命周期
+    // ──────────────────────────────────────────────
+
+    /**
+     * 初始化行为树系统。
+     * <p>
+     * 创建 TaskRunner 和 UserTaskChain，注册到 BotAccess。
+     * 在 {@link #initialize()} 中调用，在 TCP 连接前完成。
+     */
+    private void initializeBehaviorTree() {
+        taskRunner = new TaskRunner();
+        userTaskChain = new UserTaskChain(taskRunner);
+        BotAccess.setTaskRunner(taskRunner);
+        BotAccess.setPathfindingService(new PathfindingServiceImpl());
+        taskRunner.enable();
+        LOG.info("Behavior tree initialized with UserTaskChain");
+    }
+
+    /**
+     * 每 tick 驱动行为树执行。
+     * <p>
+     * 由 {@link ServerTickEvents#END_SERVER_TICK} 事件驱动。
+     * 获取 Bot 实例并创建 BotHandle，传递给 TaskRunner 执行 tick。
+     */
+    private void tickBehaviorTree() {
+        if (taskRunner != null && taskRunner.isActive()) {
+            ServerPlayer bot = BotAccess.getBot();
+            if (bot != null) {
+                BotHandle handle = BotAccess.createBotHandle(bot);
+                if (handle != null) {
+                    taskRunner.tick(handle);
+                }
+            }
         }
     }
 

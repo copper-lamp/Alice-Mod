@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { Checkbox, Tooltip } from '@heroui/react'
+import { Switch } from '@heroui/react'
 import { RefreshCw } from 'lucide-react'
 import { useWizardStore } from '../../../stores/wizardStore'
 
@@ -131,36 +131,30 @@ const StepTools: React.FC = () => {
             <div className="divide-y divide-gray-100">
               {categoryTools.map(tool => (
                 <div key={tool.name} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50/50">
-                  <Checkbox
-                    isSelected={!!formData.enabledTools[tool.name]}
-                    onChange={() => toggleTool(tool.name)}
-                  />
-                  <Tooltip>
-                    <Tooltip.Trigger>
-                      <span className="text-sm text-gray-700 cursor-help hover:text-blue-600 transition-colors">
-                        {tool.displayName}
-                      </span>
-                    </Tooltip.Trigger>
-                    <Tooltip.Content>
-                      <div className="max-w-xs space-y-1">
-                        <p className="font-medium text-sm">{tool.displayName} ({tool.name})</p>
-                        <p className="text-xs text-gray-300">{tool.description}</p>
-                        {tool.parameters.length > 0 && (
-                          <>
-                            <p className="text-xs text-gray-400 mt-1">参数:</p>
-                            {tool.parameters.map(p => (
-                              <p key={p.name} className="text-xs text-gray-300">
-                                {p.name}: {p.type} {p.required ? '(必填)' : '(可选)'}
-                              </p>
-                            ))}
-                          </>
-                        )}
-                        {tool.example && (
-                          <p className="text-xs text-gray-400 mt-1">示例: {tool.example}</p>
-                        )}
-                      </div>
-                    </Tooltip.Content>
-                  </Tooltip>
+                  <div className="flex items-center justify-center shrink-0 overflow-hidden" style={{ width: 40, height: 24 }}>
+                    <Switch
+                      isSelected={!!formData.enabledTools[tool.name]}
+                      onChange={(val) => {
+                        setEnabledTools({
+                          ...formData.enabledTools,
+                          [tool.name]: val,
+                        })
+                      }}
+                      size="sm"
+                    >
+                      <Switch.Content>
+                        <Switch.Control>
+                          <Switch.Thumb />
+                        </Switch.Control>
+                      </Switch.Content>
+                    </Switch>
+                  </div>
+                  <span
+                    className="text-sm text-gray-700 cursor-help hover:text-blue-600 transition-colors"
+                    title={`${tool.displayName} (${tool.name}) - ${tool.description}${tool.parameters.length > 0 ? `\n参数: ${tool.parameters.map(p => `${p.name}: ${p.type}${p.required ? '(必填)' : '(可选)'}`).join(', ')}` : ''}${tool.example ? `\n示例: ${tool.example}` : ''}`}
+                  >
+                    {tool.displayName}
+                  </span>
                   <span className="text-xs text-gray-400 ml-auto">{tool.categoryLabel}</span>
                 </div>
               ))}
