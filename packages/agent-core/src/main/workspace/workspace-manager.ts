@@ -17,6 +17,9 @@ import { ToolRegistry } from './tool-registry';
 import { WorkspaceStore } from './workspace-store';
 import { WIKI_TOOL_SCHEMAS } from '../wiki';
 import { SEARCH_TOOL_SCHEMAS } from '../search';
+import { MEMORY_TOOL_SCHEMAS } from '../memory/tools';
+import { TASK_TOOL_SCHEMAS } from '../task';
+import { UPDATE_PLAN_TOOL } from '../orchestration/tools/update-plan';
 import { getDatabaseManager } from '../database';
 
 /** 工作区管理器事件 */
@@ -214,8 +217,8 @@ export class WorkspaceManager extends EventEmitter {
     const workspace = this.workspaces.get(workspaceId);
     if (!workspace) return false;
 
-    // 自动注入内置工具（Wiki 等）
-    const allTools = [...tools, ...WIKI_TOOL_SCHEMAS, ...SEARCH_TOOL_SCHEMAS];
+    // 自动注入内置工具（Wiki / 搜索 / 记忆 / 任务 / 编排等）
+    const allTools = [...tools, ...WIKI_TOOL_SCHEMAS, ...SEARCH_TOOL_SCHEMAS, ...MEMORY_TOOL_SCHEMAS, ...TASK_TOOL_SCHEMAS, UPDATE_PLAN_TOOL];
 
     // hash 变更检测：无变更则不更新
     const changed = this.toolRegistry.register(workspaceId, allTools);

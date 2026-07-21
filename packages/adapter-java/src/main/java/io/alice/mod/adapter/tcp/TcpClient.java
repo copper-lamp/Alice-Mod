@@ -133,7 +133,7 @@ public final class TcpClient {
      */
     public synchronized void connect(String host, int port) {
         if (connected.get()) {
-            LOG.warn("Already connected, ignoring connect()");
+            LOG.debug("Already connected, ignoring connect()");
             return;
         }
         setState(ConnectionState.CONNECTING);
@@ -154,14 +154,14 @@ public final class TcpClient {
             handshakeManager.handshake((json, id) -> sendRaw(json))
               .thenAccept(this::onHandshakeDone)
               .exceptionally(ex -> {
-                  LOG.warn("Handshake failed: {}", ex.getMessage() != null ? ex.getMessage() : ex.toString());
+                  LOG.debug("Handshake failed: {}", ex.getMessage() != null ? ex.getMessage() : ex.toString());
                   onDisconnected();
                   return null;
               });
 
-            LOG.info("TCP connected to {}:{}", host, port);
+            LOG.debug("TCP connected to {}:{}", host, port);
         } catch (IOException e) {
-            LOG.info("Failed to connect to {}:{} (will retry in background)", host, port);
+            LOG.debug("Failed to connect to {}:{} (will retry in background)", host, port);
             setState(ConnectionState.DISCONNECTED);
             cleanup();
             // 初始连接失败，启动后台重连
@@ -184,7 +184,7 @@ public final class TcpClient {
         heartbeatManager.stop();
         cleanup();
         setState(ConnectionState.DISCONNECTED);
-        LOG.info("TCP disconnected");
+        LOG.debug("TCP disconnected");
     }
 
     /** 是否已连接。 */
@@ -622,14 +622,14 @@ public final class TcpClient {
                 connect(config.host(), config.port());
                 return connected.get();
             } catch (Exception e) {
-                LOG.info("Reconnect attempt {} failed: {}", attemptNumber, e.getMessage());
+                LOG.debug("Reconnect attempt {} failed: {}", attemptNumber, e.getMessage());
                 return false;
             }
         }
 
         @Override
         public void onGiveUp() {
-            LOG.error("All reconnect attempts exhausted, giving up");
+            LOG.debug("All reconnect attempts exhausted, giving up");
             setState(ConnectionState.DISCONNECTED);
             callbacks.onReconnectFailed();
         }

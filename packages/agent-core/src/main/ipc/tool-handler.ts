@@ -3,11 +3,20 @@ import { getWorkspaceManager } from '../workspace'
 import { getDatabaseManager } from '../database'
 import { WIKI_TOOL_SCHEMAS } from '../wiki'
 import { SEARCH_TOOL_SCHEMAS } from '../search'
+import { MEMORY_TOOL_SCHEMAS } from '../memory/tools'
+import { TASK_TOOL_SCHEMAS } from '../task'
+import { UPDATE_PLAN_TOOL } from '../orchestration/tools/update-plan'
 import type { ToolInfo } from '../../renderer/src/lib/types'
 import type { ToolSchema } from '@mcagent/shared'
 
-/** AC 内置工具列表（Wiki + 搜索），用于始终注入到工具列表 */
-const BUILTIN_TOOLS: ToolSchema[] = [...WIKI_TOOL_SCHEMAS, ...SEARCH_TOOL_SCHEMAS]
+/** AC 内置工具列表（Wiki + 搜索 + 记忆 + 任务 + 编排），用于始终注入到工具列表 */
+const BUILTIN_TOOLS: ToolSchema[] = [
+  ...WIKI_TOOL_SCHEMAS,
+  ...SEARCH_TOOL_SCHEMAS,
+  ...MEMORY_TOOL_SCHEMAS,
+  ...TASK_TOOL_SCHEMAS,
+  UPDATE_PLAN_TOOL,
+]
 
 // ════════════════════════════════════════════════════
 // 本地化映射
@@ -65,6 +74,42 @@ const TOOL_LOCALE_MAP: Record<string, { displayName: string; categoryLabel: stri
   // 内置工具（搜索）
   web_search: { displayName: '网页搜索', categoryLabel: '知识' },
   web_fetch: { displayName: '网页抓取', categoryLabel: '知识' },
+  // 内置工具（记忆 v2.0）
+  memory_list: { displayName: '记忆列表', categoryLabel: '记忆' },
+  memory_query: { displayName: '记忆搜索', categoryLabel: '记忆' },
+  memory_edit: { displayName: '记忆编辑', categoryLabel: '记忆' },
+  maps_query: { displayName: '地图路径点搜索', categoryLabel: '记忆' },
+  maps_edit: { displayName: '地图路径点编辑', categoryLabel: '记忆' },
+  aim_list: { displayName: '目标任务列表', categoryLabel: '记忆' },
+  aim_query: { displayName: '目标任务详情', categoryLabel: '记忆' },
+  aim_update: { displayName: '目标任务更新', categoryLabel: '记忆' },
+  knowledge_query: { displayName: '知识库查询', categoryLabel: '记忆' },
+  // 内置工具（记忆 v1.0 向后兼容）
+  memory_store: { displayName: '记忆存储', categoryLabel: '记忆' },
+  memory_batch_store: { displayName: '批量记忆存储', categoryLabel: '记忆' },
+  memory_recall: { displayName: '记忆回忆', categoryLabel: '记忆' },
+  memory_update: { displayName: '记忆更新', categoryLabel: '记忆' },
+  memory_forget: { displayName: '记忆遗忘', categoryLabel: '记忆' },
+  memory_tag: { displayName: '记忆标签', categoryLabel: '记忆' },
+  memory_untag: { displayName: '移除记忆标签', categoryLabel: '记忆' },
+  memory_stats: { displayName: '记忆统计', categoryLabel: '记忆' },
+  memory_cleanup: { displayName: '记忆清理', categoryLabel: '记忆' },
+  memory_export: { displayName: '记忆导出', categoryLabel: '记忆' },
+  memory_import: { displayName: '记忆导入', categoryLabel: '记忆' },
+  map_query_nearby: { displayName: '附近路径点查询', categoryLabel: '记忆' },
+  map_get_overview: { displayName: '地图概览', categoryLabel: '记忆' },
+  // 内置工具（任务）
+  task_create: { displayName: '任务创建', categoryLabel: '任务' },
+  task_query: { displayName: '任务查询', categoryLabel: '任务' },
+  task_update: { displayName: '任务更新', categoryLabel: '任务' },
+  task_control: { displayName: '任务控制', categoryLabel: '任务' },
+  task_decompose: { displayName: '任务分解', categoryLabel: '任务' },
+  task_manage: { displayName: '任务管理', categoryLabel: '任务' },
+  // 内置工具（编排）
+  update_plan: { displayName: '更新计划', categoryLabel: '任务' },
+  // QQ 工具
+  notify_qq: { displayName: 'QQ 通知', categoryLabel: 'QQ' },
+  request_game_action: { displayName: '请求游戏操作', categoryLabel: '任务' },
 }
 
 /** 分类中文映射 */
@@ -143,7 +188,7 @@ function restoreFromDb(): ToolSchema[] {
     }>
 
     // 基础：始终包含内置工具
-    const allSchemas: ToolSchema[] = [...WIKI_TOOL_SCHEMAS, ...SEARCH_TOOL_SCHEMAS]
+    const allSchemas: ToolSchema[] = [...BUILTIN_TOOLS]
 
     if (rows.length === 0) return allSchemas
 
@@ -174,7 +219,7 @@ function restoreFromDb(): ToolSchema[] {
 
     return allSchemas
   } catch {
-    return [...WIKI_TOOL_SCHEMAS, ...SEARCH_TOOL_SCHEMAS]
+    return [...BUILTIN_TOOLS]
   }
 }
 
