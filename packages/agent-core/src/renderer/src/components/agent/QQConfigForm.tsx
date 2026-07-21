@@ -54,7 +54,7 @@ const QQConfigForm: React.FC<QQConfigFormProps> = ({ agentId }) => {
 
   // ── 表单状态 ──
   const [activeSection, setActiveSection] = useState<SectionId>('basic')
-  const [defaultPersona, setDefaultPersona] = useState<AgentPersona | null>(null)
+  const [defaultPersona, setDefaultPersona] = useState<{ prompt: string } | null>(null)
   const [qqPersona, setQqPersona] = useState<AgentPersona>(() => ({
     identity: '',
     expertise: [],
@@ -121,8 +121,8 @@ const QQConfigForm: React.FC<QQConfigFormProps> = ({ agentId }) => {
     loadTools()
     loadSkills()
     // 从后端 JSON 加载默认 QQ 人设
-    window.electronAPI.invoke('prompt:get-default-qq-persona').then((persona) => {
-      setDefaultPersona(persona as AgentPersona)
+    window.electronAPI.invoke('prompt:get-default-qq-persona').then((persona: any) => {
+      setDefaultPersona(persona as { prompt: string })
     }).catch(err => {
       console.error('加载默认 QQ 人设失败:', err)
     })
@@ -131,7 +131,7 @@ const QQConfigForm: React.FC<QQConfigFormProps> = ({ agentId }) => {
   // ── 从 currentAgent 加载配置 ──
   useEffect(() => {
     if (currentAgent && currentAgent.id === agentId) {
-      setQqPersona(currentAgent.qqPersona ?? defaultPersona ?? { identity: '', expertise: [], personality: [], workflowId: '' })
+      setQqPersona(currentAgent.qqPersona ?? { identity: '', expertise: [], personality: [], workflowId: '' })
       setQqBinding({
         ...currentAgent.qqBinding,
         groupIds: [...(currentAgent.qqBinding.groupIds ?? [])],
@@ -741,7 +741,7 @@ const QQConfigForm: React.FC<QQConfigFormProps> = ({ agentId }) => {
             onPress={() => {
               setPromptEditText(currentAgent?.qqPersona
                 ? formatPersonaToPrompt(currentAgent.qqPersona)
-                : formatPersonaToPrompt(defaultPersona ?? { identity: '', expertise: [], personality: [], workflowId: '' })
+                : (defaultPersona?.prompt ?? formatPersonaToPrompt({ identity: '', expertise: [], personality: [], workflowId: '' }))
               )
               setPromptEditConfirmed(false)
               setShowPromptEditor(true)
