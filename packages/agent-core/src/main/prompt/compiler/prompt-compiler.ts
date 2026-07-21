@@ -22,22 +22,27 @@ import type { AgentConfig, AgentPersona } from '../../../renderer/src/lib/types'
 import type { ToolSchema } from '@mcagent/shared';
 import { getWorkspaceManager } from '../../workspace/workspace-manager';
 
+/** JSON 中 QQ 人设的结构（AgentPersona + samples） */
+interface QQPersonaConfig extends AgentPersona {
+  samples?: string;
+}
+
 /**
  * 从 JSON 文件加载默认 QQ 人设
  *
  * 文件位置：src/main/prompt/templates/qq-persona/default.json
  * 如果文件不存在，返回一个安全的空人设。
  */
-let _cachedDefaultQQPersona: AgentPersona | null = null;
+let _cachedDefaultQQPersona: QQPersonaConfig | null = null;
 
-function loadDefaultQQPersona(): AgentPersona {
+function loadDefaultQQPersona(): QQPersonaConfig {
   if (_cachedDefaultQQPersona) return _cachedDefaultQQPersona;
 
   try {
     const filePath = join(__dirname, '..', 'templates', 'qq-persona', 'default.json');
     if (existsSync(filePath)) {
       const content = readFileSync(filePath, 'utf-8');
-      const parsed = JSON.parse(content) as AgentPersona;
+      const parsed = JSON.parse(content) as QQPersonaConfig;
       _cachedDefaultQQPersona = parsed;
       return parsed;
     }
@@ -46,7 +51,7 @@ function loadDefaultQQPersona(): AgentPersona {
   }
 
   // 兜底：极简默认人设
-  const fallback: AgentPersona = {
+  const fallback: QQPersonaConfig = {
     identity: '你是Minecraft专家和社交专家。你是用来处理qq消息的大脑，你的性格随和，温文儒雅，开放大方，可以自然流畅地沟通，完美融入到群聊中。你的任务是和群友建立友好关系。',
     expertise: [],
     personality: ['随和，温文儒雅，开放大方', '可以自然流畅地沟通，完美融入到群聊中'],
@@ -77,40 +82,6 @@ const CATEGORY_LABEL_MAP: Record<string, string> = {
   aim: '瞄准',
   other: '其他',
 }
-
-/** V33: QQ 样本示例（追加在系统提示词末尾） */
-const QQ_SAMPLE_EXAMPLES = `
-## 样本示例
-
-**示例1 - 游戏问题解答：**
-\`\`\`
-A:佬们，冈易基岩版抖车教程做的一样，但会卡几只猪人
-B:@A 猪人不上车是吧
-正常的
-他不上车就不上车 但是我也没有解决办法
-A:卡猪人的方向是东边，我方向有做错了吗
-B:如果你照着教程一步一步来仔细检查过 那肯定是没错的 谁也不会说你什么
-教程和步骤没问题 那就是他自己的原因了
-A:好吧，谢谢啦
-\`\`\`
-
-**示例2 - 日常闲聊：**
-\`\`\`
-A:从来没觉得自己以后不会上清北
-B:所以现在呢
-A:现在
-接受了呗
-😭
-接受我学习不好
-接受我连一本都上不了
-C:因为很多事情就是做过后才知道不容易啊😭
-A:我要是学习有学红石一半认真也不至于摆烂了
-学不了的那就不学了
-不如现在多做点自己感兴趣的东西
-C:所以你现在啊再摆吗
-B:确实算摆烂，如果在家玩电子也算的话
-至少我对自己问心无愧就对了
-\`\`\``
 
 export class PromptCompiler {
   private static systemPromptBuilder = new DefaultSystemPromptBuilder(
@@ -171,10 +142,16 @@ export class PromptCompiler {
     // 构建系统提示词
     const systemPrompt = this.systemPromptBuilder.build(profile);
 
+    // 从 JSON 中提取样本示例（若存在）
+    const samples = (qqPersona as QQPersonaConfig).samples ?? '';
+
     // V30: 从 ToolRegistry 动态生成工具提示词（包含联网、Wiki、QQ 等所有注册工具）
     const toolPrompt = this.generateToolPrompt(config.workspaceId ?? '');
 
-    return systemPrompt + '\n' + QQ_SAMPLE_EXAMPLES + '\n' + toolPrompt;
+    const parts = [systemPrompt];
+    if (samples) parts.push(samples);
+    if (toolPrompt) parts.push(toolPrompt);
+    return parts.join('\n');
   }
 
   /**
@@ -255,7 +232,7 @@ export class PromptCompiler {
    * V30: 从 ToolRegistry 加载工具列表
    * 返回当前 workspace 下所有已注册的工具（含本地工具 + 内置工具）
    */
-  static getDefaultQQPersona(): AgentPersona {
+  static getDefaultQQPersona(): QQPersonaConfig {
     return loadDefaultQQPersona();
   }
 
