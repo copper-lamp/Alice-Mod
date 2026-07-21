@@ -14,20 +14,33 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Sync to Alice-JE sub-repo
+      - uses: actions/checkout@v4
+        with:
+          repository: copper-lamp/Alice-JE
+          path: target-repo
+          token: ${{ secrets.SUBREPO_PAT }}
+
+      - name: Sync files to Alice-JE
+        working-directory: target-repo
         run: |
           git config user.name "Alice Mod Bot"
           git config user.email "bot@alice-mod.dev"
 
-          # 提取 JE 子目录历史
-          git subtree split --prefix=packages/adapter-java \
-            -b je-temp-${{ github.sha }}
+          # 保留子仓库独有的文件（versions.json、release.yml 等）
+          cp .github/workflows/release.yml /tmp/release.yml 2>/dev/null || true
+          cp versions.json /tmp/versions.json 2>/dev/null || true
 
-          # 推送到 Alice-JE 子仓库
-          git push \
-            https://x-access-token:${{ secrets.SUBREPO_PAT }}@github.com/copper-lamp/Alice-JE.git \
-            je-temp-${{ github.sha }}:main \
-            --force
+          rm -rf ./*
+          cp -r ${{ github.workspace }}/packages/adapter-java/* ./
+          cp ${{ github.workspace }}/packages/adapter-java/.* ./ 2>/dev/null || true
+
+          # 恢复子仓库独有的文件
+          cp /tmp/release.yml .github/workflows/release.yml 2>/dev/null || true
+          cp /tmp/versions.json ./versions.json 2>/dev/null || true
+
+          git add -A
+          git diff --quiet --cached || git commit -m "sync: update from Alice-Mod @ ${{ github.sha }}"
+          git push origin ${{ github.ref_name }} --force
 
       - name: Trigger Alice-JE release
         if: startsWith(github.ref, 'refs/tags/je/')

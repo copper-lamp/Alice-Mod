@@ -18,20 +18,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Sync to Alice-App sub-repo
+      - uses: actions/checkout@v4
+        with:
+          repository: copper-lamp/Alice-App
+          path: target-repo
+          token: ${{ secrets.SUBREPO_PAT }}
+
+      - name: Sync files to Alice-App
+        working-directory: target-repo
         run: |
           git config user.name "Alice Mod Bot"
           git config user.email "bot@alice-mod.dev"
 
-          # 提取 AC 子目录历史
-          git subtree split --prefix=packages/agent-core \
-            -b ac-temp-${{ github.sha }}
+          # 删除旧文件，复制新文件
+          rm -rf ./*
+          cp -r ${{ github.workspace }}/packages/agent-core/* ./
+          cp ${{ github.workspace }}/packages/agent-core/.* ./ 2>/dev/null || true
 
-          # 推送到 Alice-App 子仓库
-          git push \
-            https://x-access-token:${{ secrets.SUBREPO_PAT }}@github.com/copper-lamp/Alice-App.git \
-            ac-temp-${{ github.sha }}:${{ github.ref_name }} \
-            --force
+          git add -A
+          git diff --quiet --cached || git commit -m "sync: update from Alice-Mod @ ${{ github.sha }}"
+          git push origin ${{ github.ref_name }} --force
 
       - name: Trigger Alice-App release
         if: startsWith(github.ref, 'refs/tags/ac/')
