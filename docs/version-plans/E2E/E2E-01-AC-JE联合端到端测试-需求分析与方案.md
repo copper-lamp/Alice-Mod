@@ -327,4 +327,388 @@ packages/agent-core/__tests__/
 | 阶段五 | 状态上报与事件通知 | 5 | 状态数据正确性、事件通知到达 |
 | 阶段六 | 错误路径验证 | 10 | 参数缺失、实体不存在、坐标越界、超时 |
 | 阶段七 | 多轮连续调用 | 3 | 连续工具调用、混合工具、状态一致性 |
-| **合计** | | **77** | **全链路
+| **合计** | | **77** | **全链路全工具覆盖** |
+
+### 4.2 阶段一：工具注册验证
+
+| 用例 ID | 描述 | 验证点 | 优先级 |
+|---------|------|--------|:------:|
+| E2E-REG-01 | 验证 JE 工具注册数量 | `workspaceManager.getWorkspaceTools(wsId).length === 32` | P0 |
+| E2E-REG-02 | 验证每个工具 Schema 完整 | 每个工具都有 `name`/`description`/`parameters` | P0 |
+| E2E-REG-03 | 验证关键工具存在性 | `bot_spawn`/`move_to`/`look_around`/`mine_block`/`chat`/`eat` 等 | P0 |
+
+### 4.3 阶段二：AC 工具测试
+
+**AC 工具清单（17 个）**：
+
+| 工具名 | 用途 | 用例 ID |
+|--------|------|---------|
+| task_create | 创建任务 | E2E-AC-01 |
+| task_list | 列出任务 | E2E-AC-02 |
+| task_update | 更新任务 | E2E-AC-03 |
+| task_delete | 删除任务 | E2E-AC-04 |
+| memory_recall | 回忆记忆 | E2E-AC-05 |
+| memory_save | 保存记忆 | E2E-AC-06 |
+| memory_forget | 遗忘记忆 | E2E-AC-07 |
+| map_query | 查询地图 | E2E-AC-08 |
+| map_mark | 标记位置 | E2E-AC-09 |
+| plan_create | 创建计划 | E2E-AC-10 |
+| plan_update | 更新计划 | E2E-AC-11 |
+| plan_execute | 执行计划 | E2E-AC-12 |
+| plan_status | 查询计划状态 | E2E-AC-13 |
+| search_internet | 联网搜索 | E2E-AC-14 |
+| schedule_agent | 调度主 Agent | E2E-AC-15 |
+| qq_send | 发送 QQ 消息 | E2E-AC-16 |
+| qq_recall | 撤回 QQ 消息 | E2E-AC-17 |
+
+### 4.4 阶段三：JE 工具测试
+
+各 JE 工具测试用例详见 [IT-05-JE工具全覆盖集成测试文档.md](../IT/IT-05-JE工具全覆盖集成测试文档.md) 第4章，此处仅列出模块级用例：
+
+| 用例 ID | 模块 | 工具数 | 用例数 | 说明 |
+|---------|------|:------:|:------:|------|
+| E2E-JE-BT | BotTools | 6 | 6 | 假人管理全流程（spawn→info→despawn→respawn→list→dismiss） |
+| E2E-JE-PC | PerceptionTools | 5 | 5 | 感知工具全流程 |
+| E2E-JE-MV | MoveToTools | 3 | 3 | 移动工具全流程 |
+| E2E-JE-IN | InventoryTools | 4 | 4 | 背包工具全流程 |
+| E2E-JE-BK | BlockTools | 4 | 4 | 方块工具全流程 |
+| E2E-JE-EN | EntityInteractionTools | 4 | 4 | 实体交互工具全流程 |
+| E2E-JE-SV | SurvivalTools | 3 | 3 | 生存工具全流程 |
+| E2E-JE-CH | ChatTools | 3 | 3 | 聊天工具全流程 |
+
+### 4.5 阶段四：LLM 真实推理链路
+
+核心测试场景：验证 LLM 能够正确理解用户意图、选择合适的工具、生成正确的工具调用参数。
+
+| 用例 ID | 场景 | 用户输入 | 预期工具调用 | 预期 LLM 响应 |
+|---------|------|---------|-------------|--------------|
+| E2E-LLM-01 | 创建假人并在游戏中打招呼 | "在游戏中创建一个叫 Alice 的机器人，让他向所有人问好" | `bot_spawn` → `chat` | 响应包含创建成功和打招呼的结果 |
+| E2E-LLM-02 | 查询假人状态 | "看看 Alice 现在在哪里，状态怎么样" | `bot_info` | 响应包含假人位置、血量、饥饿度等状态 |
+| E2E-LLM-03 | 移动并探索环境 | "让 Alice 移动到 100 64 50 的位置，看看周围有什么" | `move_to` → `look_around` | 响应包含移动结果和周围环境描述 |
+| E2E-LLM-04 | 挖掘方块 | "让 Alice 挖掉脚下的一块石头" | `look_at_block` → `mine_block` | 响应包含挖掘结果 |
+| E2E-LLM-05 | 多步任务编排 | "让 Alice 创建一个砍树任务，然后查看任务列表" | `task_create` → `task_list` | 响应包含任务创建和列表结果 |
+| E2E-LLM-06 | 记忆与检索 | "让 Alice 记住坐标 100 64 50 有一个钻石矿，然后回忆一下之前记录的重要位置" | `memory_save` → `memory_recall` | 响应包含记忆保存和检索结果 |
+| E2E-LLM-07 | 复杂多步混合 | "让 Alice 在 200 64 200 位置创建一个新假人 Bob，然后让 Bob 在脚下放置一块石头，再查看周围环境" | `bot_spawn` → `move_to` → `place_block` → `look_around` | 响应包含完整的多步操作结果 |
+
+### 4.6 阶段五：状态上报与事件通知
+
+| 用例 ID | 描述 | 验证点 | 前置条件 |
+|---------|------|--------|----------|
+| E2E-ST-01 | 验证状态上报数据正确 | 血量/位置/装备/背包等字段非空且合理 | 假人在线 |
+| E2E-ST-02 | 验证假人创建事件通知 | AC 收到 `event` Notification，event_type = `bot_spawn` | 创建假人 |
+| E2E-ST-03 | 验证假人死亡事件通知 | AC 收到 `event` Notification，event_type = `bot_death` | 假人死亡 |
+| E2E-ST-04 | 验证假人销毁事件通知 | AC 收到 `event` Notification，event_type = `bot_dismiss` | 销毁假人 |
+| E2E-ST-05 | 验证玩家加入事件通知 | AC 收到 `event` Notification，event_type = `player_join` | 有玩家加入 |
+
+### 4.7 阶段六：错误路径验证
+
+| 用例 ID | 场景 | 输入 | 预期结果 |
+|---------|------|------|----------|
+| E2E-ERR-01 | bot_info 参数缺失 | `{}` | 返回错误 `INVALID_PARAMS` |
+| E2E-ERR-02 | bot_info 查询不存在的假人 | `{name: "NonExistent"}` | 返回错误 `NOT_FOUND` |
+| E2E-ERR-03 | move_to 无目标 | `{}` | 返回错误 `INVALID_PARAMS` |
+| E2E-ERR-04 | move_to 无效坐标 | `{x: "abc", y: 64, z: 0}` | 参数解析错误 |
+| E2E-ERR-05 | mine_block 不存在的坐标 | `{x: 0, y: -100, z: 0}` | 返回错误 `MINE_FAILED` |
+| E2E-ERR-06 | equip_item 不存在的物品 | `{item_name: "nonexistent"}` | 返回错误 `EQUIP_FAILED` |
+| E2E-ERR-07 | set_combat_mode 无效模式 | `{mode: "invalid"}` | 返回错误 `COMBAT_MODE_FAILED` |
+| E2E-ERR-08 | eat 不存在的食物 | `{food_name: "nonexistent"}` | 返回错误 `EAT_FAILED` |
+| E2E-ERR-09 | chat 消息过长 | `{message: "<超过256字符>"}` | 返回错误 `MESSAGE_TOO_LONG` |
+| E2E-ERR-10 | 工具超时 | 模拟长时间执行 | 30s 后返回超时错误 |
+
+### 4.8 阶段七：多轮连续调用
+
+| 用例 ID | 场景 | 调用序列 | 验证点 |
+|---------|------|---------|--------|
+| E2E-MUL-01 | 连续 5 次工具调用 | 假人 spawn → move_to → look_around → mine_block → chat | 全部成功，状态一致 |
+| E2E-MUL-02 | 混合 AC 工具 + JE 工具 | task_create → bot_spawn → move_to → memory_save → task_list | 跨模块调用正确 |
+| E2E-MUL-03 | 工具调用后状态验证 | bot_spawn → bot_info → move_to → bot_info | 确认位置已变化 |
+
+---
+
+## 第5章 执行计划
+
+### 5.1 前置条件
+
+#### 5.1.1 环境要求
+
+| 项 | 要求 | 验证方式 |
+|----|------|----------|
+| Node.js | 20.x | `node --version` |
+| JDK | 21 | `java --version` |
+| pnpm | 9.x | `pnpm --version` |
+| MC 服务端 | `serverjava/fabric-server-launch.jar` 存在 | 检查文件 |
+| Alice Mod | `serverjava/mods/alice-mod-*.jar` 存在 | 检查文件 |
+| Carpet Mod | `serverjava/mods/carpet-fabric-*.jar` 存在 | 检查文件 |
+| 内存 | 8GB+ | 系统信息 |
+| 磁盘 | 10GB+ | 磁盘信息 |
+
+#### 5.1.2 编译要求
+
+```bash
+# 1. 编译 AC
+cd packages/agent-core
+pnpm build
+
+# 2. 编译 JE
+cd ../adapter-java
+./gradlew build
+cp build/libs/alice-mod-*.jar ../../serverjava/mods/
+```
+
+#### 5.1.3 LLM Provider 配置
+
+需要配置可用的 LLM Provider（环境变量或配置文件）：
+
+```bash
+# 以 OpenAI 为例
+export ALICE_LLM_PROVIDER=openai
+export ALICE_LLM_API_KEY=sk-xxx
+export ALICE_LLM_MODEL=gpt-4o
+
+# 或以 DeepSeek 为例
+export ALICE_LLM_PROVIDER=deepseek
+export ALICE_LLM_API_KEY=sk-xxx
+export ALICE_LLM_MODEL=deepseek-chat
+```
+
+### 5.2 执行步骤
+
+#### 5.2.1 快速执行（仅工具注册+工具调用，跳过 LLM 推理）
+
+```bash
+cd packages/agent-core
+
+# 运行全部联合 E2E 测试（含 LLM 推理）
+pnpm vitest run __tests__/it/level2/je-ac-joint-e2e.test.ts --reporter=verbose
+
+# 运行指定阶段
+pnpm vitest run __tests__/it/level2/je-ac-joint-e2e.test.ts -t "阶段一"
+pnpm vitest run __tests__/it/level2/je-ac-joint-e2e.test.ts -t "阶段四"
+```
+
+#### 5.2.2 分步执行（调试用）
+
+```bash
+# 1. 先启动 AC（独立终端）
+cd packages/agent-core
+pnpm tsx __tests__/it/fixtures/ac-full-server.ts
+
+# 2. 再启动 JE MC 服务端（独立终端）
+cd serverjava
+java -Xmx2G -jar fabric-server-launch.jar nogui
+
+# 3. 最后运行测试（第三个终端）
+pnpm vitest run __tests__/it/level2/je-ac-joint-e2e.test.ts -t "E2E-LLM-01"
+```
+
+### 5.3 时间预算
+
+| 阶段 | 预计耗时 | 说明 |
+|:----:|:--------:|------|
+| beforeAll（启动 AC + JE） | 120-180s | MC 服务端启动占主要耗时 |
+| 阶段一：工具注册验证 | < 5s | 纯内存操作 |
+| 阶段二：AC 工具测试 | 30-60s | 17 个工具，每个 2-3s |
+| 阶段三：JE 工具测试 | 60-120s | 32 个工具，每个 2-4s |
+| 阶段四：LLM 真实推理 | 60-120s | 7 个场景，每个 10-15s（含 LLM 推理时间） |
+| 阶段五：状态上报与事件 | 10-20s | 等待状态上报周期 |
+| 阶段六：错误路径验证 | 20-30s | 10 个错误路径 |
+| 阶段七：多轮连续调用 | 20-30s | 3 个多轮场景 |
+| afterAll（清理） | 5-10s | 销毁假人，停止服务端 |
+| **总计** | **5-9 分钟** | |
+
+### 5.4 验收标准
+
+| 编号 | 验收条件 | 验证方式 |
+|:----:|---------|----------|
+| AC-01 | 全部 77 个测试用例通过 | `pnpm vitest run` 输出全部 ✅ |
+| AC-02 | JE 32 个工具全部注册到 AC | `getWorkspaceTools(wsId).length === 32` |
+| AC-03 | AC 17 个工具可用 | 每个工具至少一个正向用例通过 |
+| AC-04 | LLM 真实推理链路跑通 | 7 个 LLM 场景全部通过 |
+| AC-05 | 状态上报数据正确 | 血量/位置/装备等字段非空且合理 |
+| AC-06 | 事件通知正确推送 | 假人创建/销毁事件到达 AC |
+| AC-07 | 错误路径返回正确错误码 | 10 个错误路径全部返回预期错误 |
+| AC-08 | 多轮连续调用状态一致 | 调用前后状态一致 |
+| AC-09 | 测试后清理所有假人 | 无残留假人 |
+| AC-10 | 测试可重复运行 | 幂等，不依赖外部状态 |
+
+---
+
+## 第6章 风险与缓解
+
+| 风险 | 影响 | 缓解措施 |
+|------|------|----------|
+| MC 服务端启动慢 | 测试总时长增加 | 使用 WorldPreset + JVM 优化参数 |
+| LLM Provider API 不稳定 | 阶段四测试失败 | 增加重试机制，超时时间 30s |
+| LLM 生成的工具调用参数不精确 | 工具调用失败 | 预期 `success === true`，而非精确参数匹配 |
+| 假人在方块操作中卡住 | 工具超时 | 使用 30s 超时 + 耐心等待（`waitFor` 轮询） |
+| 测试环境资源不足 | 服务端崩溃 | 确保 8GB+ 内存 |
+| 连续测试导致世界污染 | 后续测试失败 | 在独立测试区域操作，`afterAll` 清理 |
+
+---
+
+## 第7章 测试文件骨架
+
+```typescript
+// packages/agent-core/__tests__/it/level2/je-ac-joint-e2e.test.ts
+
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { spawn } from 'node:child_process'
+import path from 'node:path'
+import { startAcFullServer, type AcFullContext } from '../fixtures/ac-full-server'
+import { waitFor, ensureBotOnline, cleanupBot, callToolSafe } from '../fixtures/je-tools-env'
+
+const BOT_NAME = 'E2E_Bot'
+const BOT_X = 0, BOT_Y = 64, BOT_Z = 0
+
+describe('AC 与 JE 联合端到端测试', () => {
+  let ac: AcFullContext
+  let workspaceId: string
+  let mcProcess: ReturnType<typeof spawn> | null = null
+
+  beforeAll(async () => {
+    // 1. 启动完整 AC（含 LLM Provider）
+    ac = await startAcFullServer(27541, 'mct_64cf4ca6c0c64a75aaf9a5b0')
+
+    // 2. 启动 MC 服务端
+    // ...（同 je-e2e-test.test.ts）
+
+    // 3. 等待 JE 连接
+    workspaceId = await waitFor(() => {
+      const online = ac.workspaceManager.getOnlineWorkspaces()
+      if (online.length > 0) {
+        const tools = ac.workspaceManager.getWorkspaceTools(online[0].id)
+        if (tools.length >= 30) return online[0].id
+      }
+      return null
+    }, { timeoutMs: 60_000, intervalMs: 1000 })
+  }, 300_000)
+
+  afterAll(async () => {
+    // 清理
+    await cleanupBot(ac.toolDispatcher, workspaceId, BOT_NAME)
+    if (mcProcess?.pid) process.kill(mcProcess.pid, 'SIGTERM')
+    await ac.stop()
+  }, 30_000)
+
+  // ===== 阶段一：工具注册验证 =====
+  describe('阶段一：工具注册验证', () => {
+    it('E2E-REG-01: 验证 JE 工具注册数量 = 32', () => {
+      const tools = ac.workspaceManager.getWorkspaceTools(workspaceId)
+      expect(tools.length).toBe(32)
+    })
+
+    it('E2E-REG-02: 验证每个工具 Schema 完整', () => {
+      const tools = ac.workspaceManager.getWorkspaceTools(workspaceId)
+      for (const tool of tools) {
+        expect(tool.name).toBeTruthy()
+        expect(tool.description).toBeTruthy()
+        expect(tool.parameters).toBeDefined()
+      }
+    })
+
+    it('E2E-REG-03: 验证关键工具存在', () => {
+      const toolNames = ac.workspaceManager.getWorkspaceTools(workspaceId).map(t => t.name)
+      const required = ['bot_spawn', 'bot_info', 'move_to', 'look_around',
+                        'mine_block', 'place_block', 'chat', 'eat', 'set_combat_mode',
+                        'drop_item', 'equip_item', 'look_in_container']
+      for (const name of required) {
+        expect(toolNames).toContain(name)
+      }
+    })
+  })
+
+  // ===== 阶段二：AC 工具测试 =====
+  describe('阶段二：AC 工具测试', () => {
+    // 每个 AC 工具一个测试用例
+    it('E2E-AC-01: task_create 创建任务', async () => { /* ... */ })
+    it('E2E-AC-02: task_list 列出任务', async () => { /* ... */ })
+    // ... 17 个 AC 工具
+  })
+
+  // ===== 阶段三：JE 工具测试 =====
+  describe('阶段三：JE 工具测试', () => {
+    describe('BotTools', () => {
+      it('E2E-JE-BT-01: bot_spawn 创建假人', async () => { /* ... */ })
+      // ... 6 个 BotTools 用例
+    })
+    // ... 8 个模块
+  })
+
+  // ===== 阶段四：LLM 真实推理链路 =====
+  describe('阶段四：LLM 真实推理链路', () => {
+    it('E2E-LLM-01: 创建假人并打招呼', async () => {
+      const result = await ac.mainAgent.processUserInput('在游戏中创建一个叫 Alice 的机器人，让他向所有人问好')
+      expect(result).toBeDefined()
+      expect(result.toolCalls.length).toBeGreaterThanOrEqual(2)
+      // 验证 bot_spawn 和 chat 被调用
+      const toolNames = result.toolCalls.map(tc => tc.toolName)
+      expect(toolNames).toContain('bot_spawn')
+      expect(toolNames).toContain('chat')
+    })
+
+    // ... 7 个 LLM 用例
+  })
+
+  // ===== 阶段五：状态上报与事件通知 =====
+  describe('阶段五：状态上报与事件通知', () => {
+    it('E2E-ST-01: 验证状态上报数据正确', async () => { /* ... */ })
+    // ... 5 个用例
+  })
+
+  // ===== 阶段六：错误路径验证 =====
+  describe('阶段六：错误路径验证', () => {
+    it('E2E-ERR-01: bot_info 参数缺失', async () => { /* ... */ })
+    // ... 10 个用例
+  })
+
+  // ===== 阶段七：多轮连续调用 =====
+  describe('阶段七：多轮连续调用', () => {
+    it('E2E-MUL-01: 连续 5 次工具调用', async () => { /* ... */ })
+    // ... 3 个用例
+  })
+})
+```
+
+---
+
+## 第8章 附录
+
+### 8.1 相关命令速查
+
+```bash
+# 编译 AC
+cd packages/agent-core && pnpm build
+
+# 编译 JE
+cd packages/adapter-java && ./gradlew build
+
+# 运行既有测试
+pnpm test -- __tests__/it/level2/je-tools-full.test.ts
+pnpm test -- __tests__/it/level2/je-e2e-test.test.ts
+
+# 运行新联合 E2E 测试（待实现后）
+pnpm test -- __tests__/it/level2/je-ac-joint-e2e.test.ts
+```
+
+### 8.2 既有测试文件清单
+
+| 文件 | 作用 | 用例数 | 状态 |
+|------|------|:------:|:----:|
+| [je-e2e-test.test.ts](file:///D:/McAgent/packages/agent-core/__tests__/it/level2/je-e2e-test.test.ts) | L2 基础链路 | 5 | ✅ 已通过 |
+| [je-tools-full.test.ts](file:///D:/McAgent/packages/agent-core/__tests__/it/level2/je-tools-full.test.ts) | JE 工具全覆盖 | 75 | ✅ 已通过 |
+| [tool-dispatcher-method-name.test.ts](file:///D:/McAgent/packages/agent-core/__tests__/pipeline/tool-dispatcher-method-name.test.ts) | B1 回归 | 2 | ✅ 已通过 |
+| [register-tools-normalize.test.ts](file:///D:/McAgent/packages/agent-core/__tests__/tcp/register-tools-normalize.test.ts) | B4 回归 | 4 | ✅ 已通过 |
+
+### 8.3 关键文件索引
+
+| 文件 | 作用 |
+|------|------|
+| [WorldContext.java](file:///D:/McAgent/packages/adapter-java/src/main/java/io/alice/mod/adapter/world/WorldContext.java) | JE 主链路核心组件 |
+| [TcpClient.java](file:///D:/McAgent/packages/adapter-java/src/main/java/io/alice/mod/adapter/tcp/TcpClient.java) | JE TCP 通信 |
+| [tool-dispatcher.ts](file:///D:/McAgent/packages/agent-core/src/main/pipeline/tool-dispatcher.ts) | AC 工具调度 |
+| [tcp-server.ts](file:///D:/McAgent/packages/agent-core/src/main/tcp/tcp-server.ts) | AC TCP 服务端 |
+| [workspace-manager.ts](file:///D:/McAgent/packages/agent-core/src/main/workspace/workspace-manager.ts) | AC 工作区管理 |
+| [main-agent.ts](file:///D:/McAgent/packages/agent-core/src/main/agent/main-agent.ts) | AC 主 Agent 编排 |
+| [pipeline.ts](file:///D:/McAgent/packages/agent-core/src/main/pipeline/pipeline.ts) | AC 完整工作流 |
+| [ac-minimal-server.ts](file:///D:/McAgent/packages/agent-core/__tests__/it/fixtures/ac-minimal-server.ts) | 测试用 AC 最小服务器 |
+| [je-tools-env.ts](file:///D:/McAgent/packages/agent-core/__tests__/it/fixtures/je-tools-env.ts) | 测试辅助函数 |

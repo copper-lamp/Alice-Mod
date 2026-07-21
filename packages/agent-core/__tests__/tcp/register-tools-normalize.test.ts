@@ -64,7 +64,7 @@ describe('B4 回归: normalizeToolSchema 兼容 JE input_schema', () => {
     expect(normalizeToolSchema({ name: 'craft_item', description: '' }).category).toBe('survival')
     expect(normalizeToolSchema({ name: 'chat_say', description: '' }).category).toBe('chat')
     expect(normalizeToolSchema({ name: 'task_create', description: '' }).category).toBe('task')
-    expect(normalizeToolSchema({ name: 'memory_recall', description: '' }).category).toBe('memory')
+    expect(normalizeToolSchema({ name: 'memory_query', description: '' }).category).toBe('memory')
     expect(normalizeToolSchema({ name: 'unknown_xyz', description: '' }).category).toBe('task')
   })
 

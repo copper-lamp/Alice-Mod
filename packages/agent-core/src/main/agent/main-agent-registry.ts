@@ -683,11 +683,6 @@ export class MainAgentRegistry {
           'maps_query', 'maps_edit',
           'aim_list', 'aim_query', 'aim_update',
           'knowledge_query',
-          'memory_store', 'memory_batch_store', 'memory_recall',
-          'memory_update', 'memory_forget',
-          'memory_tag', 'memory_untag',
-          'memory_stats', 'memory_cleanup', 'memory_export', 'memory_import',
-          'map_query_nearby', 'map_get_overview',
         ]);
         const memoryCalls = ctx.calls.filter((c) => MEMORY_TOOL_NAMES.has(c.toolName));
         if (memoryCalls.length === 0) return ctx;
@@ -720,39 +715,6 @@ export class MainAgentRegistry {
             let result: { success: boolean; data?: unknown; error?: string };
 
             switch (call.toolName) {
-              case 'memory_store':
-                result = await memoryTools.memoryStore(mm, params);
-                break;
-              case 'memory_batch_store':
-                result = await memoryTools.memoryBatchStore(mm, params);
-                break;
-              case 'memory_recall':
-                result = await memoryTools.memoryRecall(mm, params);
-                break;
-              case 'memory_update':
-                result = await memoryTools.memoryUpdate(mm, params);
-                break;
-              case 'memory_forget':
-                result = await memoryTools.memoryForget(mm, params);
-                break;
-              case 'memory_tag':
-                result = await memoryTools.memoryTag(mm, params);
-                break;
-              case 'memory_untag':
-                result = await memoryTools.memoryUntag(mm, params);
-                break;
-              case 'memory_stats':
-                result = await memoryTools.memoryStats(mm, params);
-                break;
-              case 'memory_cleanup':
-                result = await memoryTools.memoryCleanup(mm, params);
-                break;
-              case 'memory_export':
-                result = await memoryTools.memoryExport(mm, params);
-                break;
-              case 'memory_import':
-                result = await memoryTools.memoryImport(mm, params);
-                break;
               case 'memory_list':
                 result = await memoryTools.memoryList(mm, params);
                 break;
@@ -779,12 +741,6 @@ export class MainAgentRegistry {
                 break;
               case 'knowledge_query':
                 result = await memoryTools.knowledgeQuery(mm, params);
-                break;
-              case 'map_query_nearby':
-                result = await memoryTools.mapQueryNearby((mm as any).mapIndex, params);
-                break;
-              case 'map_get_overview':
-                result = await memoryTools.mapGetOverview((mm as any).mapIndex, params);
                 break;
               default:
                 result = { success: false, error: `未知记忆工具: ${call.toolName}` };

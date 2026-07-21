@@ -264,7 +264,7 @@ describe('DefaultBatchScheduler', () => {
       { level: 0, calls: [
         { type: 'tool_call', toolCallId: '1', toolName: 'chat', arguments: {} },
         { type: 'tool_call', toolCallId: '2', toolName: 'qq_info', arguments: {} },
-        { type: 'tool_call', toolCallId: '3', toolName: 'memory_recall', arguments: {} },
+        { type: 'tool_call', toolCallId: '3', toolName: 'memory_query', arguments: {} },
       ]},
     ];
 
@@ -386,7 +386,7 @@ describe('DefaultFallbackManager', () => {
 
   it('降级策略应 Mock 感知类工具', async () => {
     const strategy = new DegradeStrategy();
-    const call: ToolCallContent = { type: 'tool_call', toolCallId: '1', toolName: 'memory_recall', arguments: {} };
+    const call: ToolCallContent = { type: 'tool_call', toolCallId: '1', toolName: 'memory_query', arguments: {} };
 
     const result = await strategy.execute(call, {
       workspaceId: 'ws1',
@@ -573,7 +573,7 @@ describe('Pipeline Integration', () => {
     const calls: ToolCallContent[] = [
       { type: 'tool_call', toolCallId: '1', toolName: 'chat', arguments: { message: 'a' } },
       { type: 'tool_call', toolCallId: '2', toolName: 'qq_info', arguments: {} },
-      { type: 'tool_call', toolCallId: '3', toolName: 'memory_recall', arguments: {} },
+      { type: 'tool_call', toolCallId: '3', toolName: 'memory_query', arguments: {} },
     ];
 
     const layers = analyzer.analyze(calls);
