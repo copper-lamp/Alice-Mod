@@ -5,7 +5,7 @@ import io.alice.mod.adapter.bot.BotManager;
 import io.alice.mod.adapter.config.AlicePaths;
 import io.alice.mod.adapter.config.ConfigManager;
 import io.alice.mod.adapter.entry.InstanceFileGenerator;
-import io.alice.mod.adapter.mixin.MixinEventBridge;
+import io.alice.mod.adapter.status.MixinEventBridge;
 import io.alice.mod.adapter.persistence.ConfigRepository;
 import io.alice.mod.adapter.persistence.DatabaseManager;
 import io.alice.mod.adapter.persistence.EventLogRepository;

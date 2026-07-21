@@ -89,36 +89,39 @@ export class PromptCompiler {
   );
 
   /**
-   * 编译智能体系统提示词
+   * 编译主智能体系统提示词
    *
-   * 使用主 Agent 通用模板（DEFAULT_MAIN_AGENT_TEMPLATE）作为基础，
+   * 始终使用 DEFAULT_MAIN_AGENT_TEMPLATE 作为基础模板，
    * 替换 [name] 占位符为实际 agent 名称。
-   * 支持通过配置中的 persona.identity 覆盖模板。
+   * 自定义 identity 和 expertise 追加到模板末尾。
+   * 完全放弃旧的 SystemPromptBuilder 组装流程。
    *
-   * @param config AgentConfig（wizard 写入的原始配置）
+   * @param config AgentConfig
    * @returns 编译后的完整系统提示词文本
    */
   static compile(config: AgentConfig): string {
     const agentName = config.name || 'McAgent';
-
-    // 1. 检查是否有自定义 persona override
     const persona = config?.persona;
-    if (persona?.identity && persona.identity !== '') {
-      // 有自定义 identity 时走传统流程（从 profile 组装）
-      const profile = mapAgentConfigToProfile(config);
-      const systemPrompt = this.systemPromptBuilder.build(profile);
-      return systemPrompt;
+
+    // 1. 始终使用主 Agent 通用模板
+    let prompt = renderMainAgentTemplate(DEFAULT_MAIN_AGENT_TEMPLATE, agentName);
+
+    // 2. 自定义 identity 追加到模板末尾
+    if (persona?.identity && persona.identity.trim()) {
+      prompt += `\n\n# 自定义身份\n${persona.identity}`;
     }
 
-    // 2. 使用主 Agent 通用模板
-    const rendered = renderMainAgentTemplate(DEFAULT_MAIN_AGENT_TEMPLATE, agentName);
-
-    // 3. 处理自定义 expertise（追加到模板末尾）
+    // 3. 自定义 expertise 追加
     if (persona?.expertise && persona.expertise.length > 0) {
-      return rendered + `\n\n擅长：${persona.expertise.join('、')}。`;
+      prompt += `\n\n擅长：${persona.expertise.join('、')}。`;
     }
 
-    return rendered;
+    // 4. 自定义 personality 追加
+    if (persona?.personality && persona.personality.length > 0) {
+      prompt += `\n\n## 个性特征\n${persona.personality.map(p => `- ${p}`).join('\n')}`;
+    }
+
+    return prompt;
   }
 
   /**

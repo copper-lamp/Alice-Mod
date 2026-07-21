@@ -1,6 +1,4 @@
-package io.alice.mod.adapter.mixin;
-
-import io.alice.mod.adapter.status.EventDispatcher;
+package io.alice.mod.adapter.status;
 
 /**
  * Mixin 事件桥接器。
@@ -9,6 +7,8 @@ import io.alice.mod.adapter.status.EventDispatcher;
  * 供 ChatEventMixin 和 AttackEventMixin 使用。
  * <p>
  * 在 {@link io.alice.mod.adapter.world.WorldContext#initialize()} 中设置引用。
+ * <p>
+ * 注意：此类必须放在非 mixin 包中，否则会被 Mixin 的安全策略阻止直接引用。
  */
 public final class MixinEventBridge {
 

@@ -1,6 +1,7 @@
 package io.alice.mod.adapter.mixin;
 
 import io.alice.mod.adapter.status.EventDispatcher;
+import io.alice.mod.adapter.status.MixinEventBridge;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
 import net.minecraft.network.protocol.game.ServerboundChatPacket;
