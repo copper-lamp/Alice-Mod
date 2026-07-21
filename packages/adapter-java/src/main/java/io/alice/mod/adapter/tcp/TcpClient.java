@@ -161,7 +161,7 @@ public final class TcpClient {
 
             LOG.info("TCP connected to {}:{}", host, port);
         } catch (IOException e) {
-            LOG.warn("Failed to connect to {}:{} (will retry in background)", host, port, e);
+            LOG.info("Failed to connect to {}:{} (will retry in background)", host, port);
             setState(ConnectionState.DISCONNECTED);
             cleanup();
             // 初始连接失败，启动后台重连
@@ -622,7 +622,7 @@ public final class TcpClient {
                 connect(config.host(), config.port());
                 return connected.get();
             } catch (Exception e) {
-                LOG.warn("Reconnect attempt {} failed", attemptNumber, e);
+                LOG.info("Reconnect attempt {} failed: {}", attemptNumber, e.getMessage());
                 return false;
             }
         }
