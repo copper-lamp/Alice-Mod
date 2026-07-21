@@ -23,17 +23,25 @@ export class DefaultStateInjector implements IStateInjector {
     const lines: string[] = [];
 
     lines.push('## 当前状态');
-    lines.push(`生命: ${state.health}/20`);
-    lines.push(`饥饿: ${state.hunger}/20`);
-    lines.push(`饱和度: ${state.saturation}`);
+    // 坐标、生命值、饥饿值
     const dimensionName = this.dimensionNames[state.position.dimension] || state.position.dimension;
-    lines.push(
-      `位置: (${state.position.x}, ${state.position.y}, ${state.position.z}) ${dimensionName}`,
-    );
+    lines.push(`坐标: (${state.position.x}, ${state.position.y}, ${state.position.z}) ${dimensionName}`);
+    lines.push(`生命: ${state.health}/20 | 饥饿: ${state.hunger}/20 | 饱和度: ${state.saturation}`);
 
     if (state.position.biome) {
       lines.push(`生物群系: ${state.position.biome}`);
     }
+
+    // 特殊状态
+    if (state.specialStatus) {
+      lines.push(`特殊状态: ${state.specialStatus}`);
+    }
+
+    // 状态效果
+    const effects = state.statusEffects.length > 0
+      ? state.statusEffects.join(', ')
+      : '无';
+    lines.push(`状态效果: ${effects}`);
 
     // 装备
     if (state.equipment) {
@@ -43,21 +51,11 @@ export class DefaultStateInjector implements IStateInjector {
       );
     }
 
-    // 背包
+    // 背包物品列表（名称+数量）
     if (state.inventory) {
       const inv = state.inventory;
       const items = inv.items.length > 0 ? inv.items.join(', ') : '空';
       lines.push(`背包: ${inv.usedSlots}/${inv.totalSlots} - ${items}`);
-    }
-
-    // 状态效果
-    const effects = state.statusEffects.length > 0
-      ? state.statusEffects.join(', ')
-      : '无';
-    lines.push(`状态效果: ${effects}`);
-
-    if (state.specialStatus) {
-      lines.push(state.specialStatus);
     }
 
     return lines.join('\n');

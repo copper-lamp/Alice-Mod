@@ -15,6 +15,7 @@ export { BUILTIN_IDENTITY_TEMPLATES, listIdentityTemplates, getIdentityTemplate,
 export { PERSONALITY_LIBRARY, PERSONALITY_BY_CATEGORY, PERSONALITY_BY_ID, getPersonalityByCategory, getPersonalityTrait, validatePersonalityCombination, traitsToDescriptions } from './agent/personality-library';
 export { BEHAVIOR_PRESETS, getBehaviorPreset, getPresetsForIdentity } from './agent/behavior-presets';
 export { WORKFLOW_TEMPLATES, getWorkflowTemplate, getWorkflowsForScenario, formatWorkflowTemplate } from './agent/workflow-templates';
+export { DEFAULT_MAIN_AGENT_TEMPLATE, renderMainAgentTemplate } from './agent/main-agent-templates';
 
 // Builder 组件
 export { PromptBuilder } from './builder/prompt-builder';

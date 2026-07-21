@@ -15,6 +15,7 @@
 import { mapAgentConfigToProfile } from '../../agent/agent-profile-mapper';
 import { DefaultSystemPromptBuilder } from '../builder/system-prompt-builder';
 import { DefaultPromptTemplateEngine } from '../builder/template-engine';
+import { DEFAULT_MAIN_AGENT_TEMPLATE, renderMainAgentTemplate } from '../agent/main-agent-templates';
 import type { AgentConfig, AgentPersona } from '../../../renderer/src/lib/types';
 import type { ToolSchema } from '@mcagent/shared';
 import { getWorkspaceManager } from '../../workspace/workspace-manager';
@@ -134,17 +135,34 @@ export class PromptCompiler {
   /**
    * 编译智能体系统提示词
    *
+   * 使用主 Agent 通用模板（DEFAULT_MAIN_AGENT_TEMPLATE）作为基础，
+   * 替换 [name] 占位符为实际 agent 名称。
+   * 支持通过配置中的 persona.identity 覆盖模板。
+   *
    * @param config AgentConfig（wizard 写入的原始配置）
    * @returns 编译后的完整系统提示词文本
    */
   static compile(config: AgentConfig): string {
-    // 1. AgentConfig → AgentProfile（复用现有映射器）
-    const profile = mapAgentConfigToProfile(config);
+    const agentName = config.name || 'McAgent';
 
-    // 2. 构建系统提示词（复用现有构建器）
-    const systemPrompt = this.systemPromptBuilder.build(profile);
+    // 1. 检查是否有自定义 persona override
+    const persona = config?.persona;
+    if (persona?.identity && persona.identity !== '') {
+      // 有自定义 identity 时走传统流程（从 profile 组装）
+      const profile = mapAgentConfigToProfile(config);
+      const systemPrompt = this.systemPromptBuilder.build(profile);
+      return systemPrompt;
+    }
 
-    return systemPrompt;
+    // 2. 使用主 Agent 通用模板
+    const rendered = renderMainAgentTemplate(DEFAULT_MAIN_AGENT_TEMPLATE, agentName);
+
+    // 3. 处理自定义 expertise（追加到模板末尾）
+    if (persona?.expertise && persona.expertise.length > 0) {
+      return rendered + `\n\n擅长：${persona.expertise.join('、')}。`;
+    }
+
+    return rendered;
   }
 
   /**

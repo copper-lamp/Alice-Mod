@@ -22,7 +22,10 @@ export class DefaultSystemPromptBuilder implements ISystemPromptBuilder {
   }
 
   build(profile: AgentProfile, override?: string): string {
-    if (override) return override;
+    if (override) {
+      // 替换 [name] 占位符为实际 agent 名称
+      return override.replace(/\[name\]/g, profile.name);
+    }
 
     const parts: string[] = [];
 
