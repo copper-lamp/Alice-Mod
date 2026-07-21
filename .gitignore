@@ -5,7 +5,8 @@ node_modules/
 dist/
 build/
 out/
-.github/workflows/
+# GitHub Actions 工作流文件需要提交到仓库
+# 临时工作流文件可以放在 .github/workflows/tmp/
 .codegraph/
 # IDE
 .vscode/

@@ -1,0 +1,48 @@
+name: Sync AC to Alice-App
+
+on:
+  push:
+    branches: [main, preview]
+    paths:
+      - 'packages/agent-core/**'
+      - 'packages/shared/**'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync to Alice-App sub-repo
+        run: |
+          git config user.name "Alice Mod Bot"
+          git config user.email "bot@alice-mod.dev"
+
+          # 提取 AC 子目录历史
+          git subtree split --prefix=packages/agent-core \
+            -b ac-temp-${{ github.sha }}
+
+          # 推送到 Alice-App 子仓库
+          git push \
+            https://x-access-token:${{ secrets.SUBREPO_PAT }}@github.com/copper-lamp/Alice-App.git \
+            ac-temp-${{ github.sha }}:${{ github.ref_name }} \
+            --force
+
+      - name: Trigger Alice-App release
+        if: startsWith(github.ref, 'refs/tags/ac/')
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          CHANNEL="standard"
+          [[ "$TAG" == *-preview* ]] && CHANNEL="preview"
+          [[ "$TAG" == *-advanced* ]] && CHANNEL="advanced"
+
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.SUBREPO_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/copper-lamp/Alice-App/dispatches \
+            -d "{\"event_type\":\"release\",\"client_payload\":{\"tag\":\"$TAG\",\"channel\":\"$CHANNEL\"}}"
