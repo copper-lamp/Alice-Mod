@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { PromptTemplateManager } from '../prompt/prompt-template-manager'
+import { PromptCompiler } from '../prompt/compiler/prompt-compiler'
 
 const templateManager = PromptTemplateManager.getInstance()
 
@@ -91,5 +92,13 @@ export function registerTemplateHandlers(): void {
     } catch (err) {
       return { success: false, error: (err as Error).message }
     }
+  })
+
+  // ════════════════════════════════════════════════════
+  // QQ 默认人设
+  // ════════════════════════════════════════════════════
+
+  ipcMain.handle('prompt:get-default-qq-persona', async () => {
+    return PromptCompiler.getDefaultQQPersona()
   })
 }
