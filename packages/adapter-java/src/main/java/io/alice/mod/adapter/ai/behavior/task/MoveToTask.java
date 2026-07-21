@@ -1,15 +1,20 @@
 package io.alice.mod.adapter.ai.behavior.task;
 
+import io.alice.mod.adapter.ai.BotAccess;
 import io.alice.mod.adapter.ai.behavior.ITaskRequiresGrounded;
 import io.alice.mod.adapter.ai.behavior.Task;
 import io.alice.mod.adapter.api.service.BotHandle;
+import io.alice.mod.adapter.api.service.PathfindingService;
 import io.alice.mod.adapter.api.types.PathConstraints;
+import io.alice.mod.adapter.api.types.PathResult;
 import io.alice.mod.adapter.api.types.Vec3;
 import io.alice.mod.adapter.ai.action.ActionController;
 import io.alice.mod.adapter.ai.state.MovementExecutor;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Optional;
 
 /**
  * 移动到指定位置的任务。
@@ -46,6 +51,7 @@ public class MoveToTask extends Task implements ITaskRequiresGrounded {
     private boolean pathfinding = false;
     private MovementExecutor executor;
     private boolean initialPathFailed = false;
+    private boolean pathApplied = false;
 
     // ──────────────────────────────────────────────
     //  构造
@@ -71,6 +77,7 @@ public class MoveToTask extends Task implements ITaskRequiresGrounded {
         retryCount = 0;
         pathfinding = false;
         initialPathFailed = false;
+        pathApplied = false;
         executor = new MovementExecutor(new ActionController());
         executor.reset();
         LOG.debug("MoveToTask: start -> {}", destination);
@@ -86,9 +93,24 @@ public class MoveToTask extends Task implements ITaskRequiresGrounded {
 
         // 检查是否到达
         if (isFinished(bot)) {
-            executor.stop(bot);
+            if (executor != null) executor.stop(bot);
             setDebugState("Arrived");
             return null;
+        }
+
+        // 如果执行器正在运行，继续执行移动
+        if (executor != null && executor.isRunning()) {
+            executor.continueTick(bot);
+            setDebugState("Moving...");
+            return null;
+        }
+
+        // 如果执行器已完成，但还没到达（路径耗尽），重新规划
+        if (executor != null && executor.isFinished() && !isFinished(bot)) {
+            LOG.debug("MoveToTask: path exhausted, replanning...");
+            pathfinding = false;
+            pathApplied = false;
+            executor.reset();
         }
 
         // 路径规划
@@ -101,14 +123,14 @@ public class MoveToTask extends Task implements ITaskRequiresGrounded {
         }
 
         // 路径规划超时
-        if (pathfinding && System.currentTimeMillis() - pathfindStartTime > PATHFIND_TIMEOUT) {
+        if (pathfinding && !pathApplied
+                && System.currentTimeMillis() - pathfindStartTime > PATHFIND_TIMEOUT) {
             LOG.warn("MoveToTask: pathfind timeout, retry {}/{}", retryCount + 1, MAX_RETRIES);
             pathfinding = false;
             retryCount++;
             if (retryCount >= MAX_RETRIES) {
                 setDebugState("Pathfind failed");
                 if (allowWander) {
-                    // 兜底：使用游荡任务
                     LOG.debug("MoveToTask: fallback to wander");
                     return new TimeoutWanderTask(10);
                 }
@@ -119,15 +141,8 @@ public class MoveToTask extends Task implements ITaskRequiresGrounded {
             return null;
         }
 
-        // 执行移动
-        if (executor.isRunning()) {
-            executor.continueTick(bot);
-            setDebugState("Moving to destination");
-            return null;
-        }
-
-        // 路径规划完成但执行器未启动
-        if (pathfinding) {
+        // 路径规划完成，应用路径
+        if (pathfinding && !pathApplied) {
             applyPathResult(bot);
         }
 
@@ -160,9 +175,36 @@ public class MoveToTask extends Task implements ITaskRequiresGrounded {
     // ──────────────────────────────────────────────
 
     private void startPathfinding(BotHandle bot) {
-        // TODO: 集成 PathfindingService 进行异步路径规划
-        // 当前 PathfindingService 为桩实现（stub），暂时标记为路径规划失败
-        initialPathFailed = true;
+        PathfindingService pathfinding = BotAccess.getPathfindingService();
+        if (pathfinding == null) {
+            LOG.warn("MoveToTask: PathfindingService not available");
+            initialPathFailed = true;
+            return;
+        }
+
+        Vec3 currentPos = bot.position();
+        String dimension = bot.dimension();
+
+        try {
+            Optional<PathResult> result = pathfinding.findPath(currentPos, destination, dimension, constraints);
+            if (result.isPresent()) {
+                PathResult path = result.get();
+                LOG.debug("MoveToTask: path found with {} waypoints", path.points().size());
+
+                // 将路径应用到执行器
+                if (executor != null) {
+                    executor.start(bot, path, destination);
+                    pathApplied = true;
+                    initialPathFailed = false;
+                }
+            } else {
+                LOG.warn("MoveToTask: no path found from {} to {}", currentPos, destination);
+                initialPathFailed = true;
+            }
+        } catch (Exception e) {
+            LOG.error("MoveToTask: pathfinding error", e);
+            initialPathFailed = true;
+        }
     }
 
     private void applyPathResult(BotHandle bot) {
@@ -188,5 +230,13 @@ public class MoveToTask extends Task implements ITaskRequiresGrounded {
     @Override
     protected String toDebugString() {
         return "MoveTo(" + destination.x() + "," + destination.y() + "," + destination.z() + ")";
+    }
+
+    // ──────────────────────────────────────────────
+    //  查询
+    // ──────────────────────────────────────────────
+
+    public MovementExecutor getExecutor() {
+        return executor;
     }
 }

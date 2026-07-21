@@ -1,7 +1,9 @@
 package io.alice.mod.adapter.ai.action;
 
+import io.alice.mod.adapter.ai.BotAccess;
 import io.alice.mod.adapter.api.service.BotHandle;
 import io.alice.mod.adapter.api.types.Vec3;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -220,9 +222,7 @@ public class ActionController {
         }
     }
 
-    private net.minecraft.server.MinecraftServer getServer() {
-        // 通过 Fabric API 或模组入口获取服务器实例
-        // 实际实现需根据 AliceModServer 的入口类调整
-        return null; // TODO: 注入服务器实例
+    private MinecraftServer getServer() {
+        return BotAccess.getServer();
     }
 }

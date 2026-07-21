@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Button, Select, ListBox, TextArea, Checkbox } from '@heroui/react'
+import { Button, Select, ListBox, TextArea, Switch, Checkbox } from '@heroui/react'
 import { useAgentStore } from '../../stores/agentStore'
 import { useModelStore } from '../../stores/modelStore'
 import { useUIStore } from '../../stores/uiStore'
@@ -445,21 +445,16 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId }) => {
                       return (
                         <tr key={skill.id} className={`border-b border-gray-100 hover:bg-gray-50 ${idx % 2 === 1 ? 'bg-gray-50/50' : ''}`}>
                           <td className="px-4 py-2.5">
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={isEnabled}
-                              onClick={handleToggle}
-                              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                isEnabled ? 'bg-blue-500' : 'bg-gray-200'
-                              }`}
+                            <Switch
+                              isSelected={isEnabled}
+                              onChange={handleToggle}
                             >
-                              <span
-                                className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 ease-in-out ${
-                                  isEnabled ? 'translate-x-4' : 'translate-x-0'
-                                }`}
-                              />
-                            </button>
+                              <Switch.Content>
+                                <Switch.Control>
+                                  <Switch.Thumb />
+                                </Switch.Control>
+                              </Switch.Content>
+                            </Switch>
                           </td>
                           <td className="px-4 py-2.5 font-medium text-gray-800">{skill.name}</td>
                           <td className="px-4 py-2.5 text-gray-500 truncate max-w-xs">{skill.description || '-'}</td>

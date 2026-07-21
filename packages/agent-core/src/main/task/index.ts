@@ -5,7 +5,8 @@
  */
 
 export * from './types'
-export { TaskManager } from './task-manager'
+import { TaskManager } from './task-manager'
+export { TaskManager }
 export { TaskScheduler } from './task-scheduler'
 export type { TaskSchedulerEvents } from './task-scheduler'
 export { TimeoutManager } from './timeout-manager'
@@ -15,3 +16,17 @@ export { CompositeTaskExecutor } from './executors/composite-executor'
 export { LoopTaskExecutor } from './executors/loop-executor'
 export { ConditionalTaskExecutor } from './executors/conditional-executor'
 export { TASK_TOOL_SCHEMAS } from './tools'
+
+// ════════════════════════════════════════════════════════════════
+// 全局 TaskManager 访问器（供 pipeline middleware 使用）
+// ════════════════════════════════════════════════════════════════
+
+let taskManagerInstance: TaskManager | null = null
+
+export function setTaskManager(manager: TaskManager): void {
+  taskManagerInstance = manager
+}
+
+export function getTaskManager(): TaskManager | null {
+  return taskManagerInstance
+}

@@ -15,7 +15,7 @@ import { DefaultLLMObserver, SqliteObserverStore, setLLMObserver } from './llm'
 import { TcpServer, ServerEvent } from './tcp'
 import { MemoryManager, DEFAULT_MEMORY_CONFIG } from './memory'
 import type { MemoryBranch } from './memory/types'
-import { TaskManager } from './task'
+import { TaskManager, setTaskManager } from './task'
 import { SQLiteStore } from './memory/sqlite-store'
 import { TriggerModule, setTriggerModule } from './trigger'
 import { initQQBotIntegration } from './qq-bot/integration'
@@ -84,6 +84,7 @@ async function initializeServices(): Promise<void> {
   const taskSqlite = new SQLiteStore(dbPath)
   const taskManager = new TaskManager({}, { sqlite: taskSqlite })
   taskManager.init()
+  setTaskManager(taskManager)
   logger.info('SYSTEM', '任务系统初始化完成')
 
   // 5. 初始化记忆系统（内存管理 + 持久化）

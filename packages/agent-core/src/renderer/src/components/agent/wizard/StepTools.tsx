@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { Checkbox, Tooltip } from '@heroui/react'
 import { RefreshCw } from 'lucide-react'
 import { useWizardStore } from '../../../stores/wizardStore'
 
@@ -13,6 +12,42 @@ interface ToolItem {
   example?: string
 }
 
+/**
+ * 自定义开关组件 - 替代 HeroUI Switch
+ * 使用原生 button，避免 HeroUI 内部 focus 行为导致页面滚动偏移
+ */
+interface ToggleProps {
+  checked: boolean
+  onChange: (val: boolean) => void
+  label?: string
+}
+
+const Toggle: React.FC<ToggleProps> = ({ checked, onChange, label }) => {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className="relative inline-flex items-center w-9 h-5 rounded-full transition-colors duration-200 shrink-0 outline-none focus:outline-none"
+      style={{
+        backgroundColor: checked ? '#3b82f6' : '#d1d5db',
+      }}
+    >
+      <span
+        className="inline-block w-4 h-4 bg-white rounded-full shadow transition-transform duration-200"
+        style={{
+          transform: checked ? 'translateX(18px)' : 'translateX(2px)',
+        }}
+      />
+    </button>
+  )
+}
+
+const ROW_HEIGHT = 44
+const HEADER_HEIGHT = 40
+
 const StepTools: React.FC = () => {
   const { formData, setEnabledTools } = useWizardStore()
   const [tools, setTools] = useState<ToolItem[]>([])
@@ -22,7 +57,6 @@ const StepTools: React.FC = () => {
 
   useEffect(() => {
     loadTools()
-    // 监听工具列表更新事件，自动刷新
     if (window.electronAPI) {
       const unsubscribe = window.electronAPI.on('workspace:tools-updated', () => {
         loadTools(true)
@@ -35,7 +69,6 @@ const StepTools: React.FC = () => {
     if (isRefresh) setRefreshing(true)
     try {
       const result = await window.electronAPI.invoke('tool:list-all') as ToolItem[]
-      // 只在非刷新模式下保留已有的 enabledTools 选择状态
       if (!isRefresh && Object.keys(formData.enabledTools).length === 0) {
         const enabled: Record<string, boolean> = {}
         result.forEach(t => { enabled[t.name] = true })
@@ -50,19 +83,23 @@ const StepTools: React.FC = () => {
     }
   }, [formData.enabledTools, setEnabledTools])
 
-  const grouped = tools.reduce<Record<string, ToolItem[]>>((acc, tool) => {
-    if (!acc[tool.category]) acc[tool.category] = []
-    acc[tool.category].push(tool)
+  // 按分类分组并固定顺序，避免重新渲染时顺序变化
+  const grouped = React.useMemo(() => {
+    const acc: Record<string, ToolItem[]> = {}
+    tools.forEach(tool => {
+      if (!acc[tool.category]) acc[tool.category] = []
+      acc[tool.category].push(tool)
+    })
     return acc
-  }, {})
+  }, [tools])
 
   const enabledCount = Object.values(formData.enabledTools).filter(Boolean).length
   const totalCount = tools.length
 
-  const toggleTool = (toolName: string) => {
+  const toggleTool = (toolName: string, val: boolean) => {
     setEnabledTools({
       ...formData.enabledTools,
-      [toolName]: !formData.enabledTools[toolName],
+      [toolName]: val,
     })
   }
 
@@ -87,36 +124,50 @@ const StepTools: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      {/* 顶部统计栏 - 固定高度防止偏移 */}
+      <div
+        className="flex items-center justify-between px-1"
+        style={{ height: HEADER_HEIGHT }}
+      >
         <span className="text-sm text-gray-500">
           已启用: <strong className="text-gray-700">{enabledCount}</strong>/{totalCount}
         </span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <button
+            type="button"
             onClick={() => loadTools(true)}
             disabled={refreshing}
             className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 disabled:opacity-50 transition-colors"
-            title="重新加载工具列表"
           >
             <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
             {refreshing ? '刷新中...' : '刷新'}
           </button>
-          <button onClick={toggleAll} className="text-xs text-blue-600 hover:text-blue-700">
+          <button
+            type="button"
+            onClick={toggleAll}
+            className="text-xs text-blue-600 hover:text-blue-700"
+          >
             {enabledCount === totalCount ? '取消全选' : '全选'}
           </button>
         </div>
       </div>
 
+      {/* 工具分类列表 */}
       {Object.entries(grouped).map(([category, categoryTools]) => (
         <div key={category} className="border border-gray-200 rounded-lg overflow-hidden">
+          {/* 分类标题 - 固定高度 */}
           <button
+            type="button"
             onClick={() => {
-              const next = new Set(collapsedCategories)
-              if (next.has(category)) next.delete(category)
-              else next.add(category)
-              setCollapsedCategories(next)
+              setCollapsedCategories(prev => {
+                const next = new Set(prev)
+                if (next.has(category)) next.delete(category)
+                else next.add(category)
+                return next
+              })
             }}
-            className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors"
+            className="w-full flex items-center justify-between px-4 bg-gray-50 hover:bg-gray-100 transition-colors"
+            style={{ height: HEADER_HEIGHT }}
           >
             <span className="text-sm font-medium text-gray-700">
               {categoryTools[0]?.categoryLabel || category}
@@ -130,38 +181,30 @@ const StepTools: React.FC = () => {
           {!collapsedCategories.has(category) && (
             <div className="divide-y divide-gray-100">
               {categoryTools.map(tool => (
-                <div key={tool.name} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50/50">
-                  <Checkbox
-                    isSelected={!!formData.enabledTools[tool.name]}
-                    onChange={() => toggleTool(tool.name)}
+                <div
+                  key={tool.name}
+                  className="flex items-center gap-3 px-4 hover:bg-gray-50/50"
+                  style={{ height: ROW_HEIGHT }}
+                >
+                  {/* 自定义开关 - 固定宽高，无 focus 滚动副作用 */}
+                  <Toggle
+                    checked={!!formData.enabledTools[tool.name]}
+                    onChange={(val) => toggleTool(tool.name, val)}
+                    label={tool.displayName}
                   />
-                  <Tooltip>
-                    <Tooltip.Trigger>
-                      <span className="text-sm text-gray-700 cursor-help hover:text-blue-600 transition-colors">
-                        {tool.displayName}
-                      </span>
-                    </Tooltip.Trigger>
-                    <Tooltip.Content>
-                      <div className="max-w-xs space-y-1">
-                        <p className="font-medium text-sm">{tool.displayName} ({tool.name})</p>
-                        <p className="text-xs text-gray-300">{tool.description}</p>
-                        {tool.parameters.length > 0 && (
-                          <>
-                            <p className="text-xs text-gray-400 mt-1">参数:</p>
-                            {tool.parameters.map(p => (
-                              <p key={p.name} className="text-xs text-gray-300">
-                                {p.name}: {p.type} {p.required ? '(必填)' : '(可选)'}
-                              </p>
-                            ))}
-                          </>
-                        )}
-                        {tool.example && (
-                          <p className="text-xs text-gray-400 mt-1">示例: {tool.example}</p>
-                        )}
-                      </div>
-                    </Tooltip.Content>
-                  </Tooltip>
-                  <span className="text-xs text-gray-400 ml-auto">{tool.categoryLabel}</span>
+
+                  {/* 工具名称 - 原生 title 显示详情 */}
+                  <span
+                    className="text-sm text-gray-700 cursor-help hover:text-blue-600 transition-colors truncate"
+                    title={`${tool.displayName} (${tool.name})\n${tool.description}${tool.parameters.length > 0 ? `\n参数: ${tool.parameters.map(p => `${p.name}: ${p.type}${p.required ? '(必填)' : '(可选)'}`).join(', ')}` : ''}${tool.example ? `\n示例: ${tool.example}` : ''}`}
+                  >
+                    {tool.displayName}
+                  </span>
+
+                  {/* 分类标签 - 右对齐 */}
+                  <span className="text-xs text-gray-400 ml-auto shrink-0">
+                    {tool.categoryLabel}
+                  </span>
                 </div>
               ))}
             </div>

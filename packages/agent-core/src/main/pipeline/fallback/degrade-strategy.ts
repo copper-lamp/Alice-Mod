@@ -19,9 +19,8 @@ const PerceptionTools = new Set([
   'get_status',
   'get_position',
   'get_surroundings',
-  'memory_recall',
-  'map_query_nearby',
-  'map_get_overview',
+  'memory_query',
+  'maps_query',
   'qq_info',
 ]);
 

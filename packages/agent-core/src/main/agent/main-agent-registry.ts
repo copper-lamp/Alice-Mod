@@ -42,6 +42,10 @@ import { BatchResultCollector } from '../pipeline/batch-result-collector';
 import { NOTIFY_QQ_TOOL_SCHEMA } from '../qq-bot/tools/notify_qq';
 import { WIKI_TOOL_SCHEMAS, wikiSearch, wikiGetPage, wikiGetSection, getWikiClient } from '../wiki';
 import { SEARCH_TOOL_SCHEMAS, webSearch, webFetch, getSearchClient } from '../search';
+import { MEMORY_TOOL_SCHEMAS } from '../memory/tools';
+import { TASK_TOOL_SCHEMAS, getTaskManager } from '../task';
+import { UPDATE_PLAN_TOOL } from '../orchestration/tools/update-plan';
+import { getMemoryManager } from '../ipc/memory-handler';
 import { ToolCategory, type ToolSchema, type ParamDefinition } from '@mcagent/shared';
 import { StickerGroupRegistry } from '../qq-bot/sticker-group-registry';
 
@@ -275,7 +279,7 @@ export class MainAgentRegistry {
   ): MainAgent {
     // V27: 注册 notify_qq 本地工具（供 LLM 可见）
     // V30: 同时注册 qq_send / qq_info / request_game_action 工具
-    //       以及内置工具（Wiki / 搜索），使其不依赖 workspace 连接即可用
+    //       以及内置工具（Wiki / 搜索 / 记忆 / 任务 / 编排），使其不依赖 workspace 连接即可用
     this.deps.toolRegistry.registerLocal(workspaceId, [
       NOTIFY_QQ_TOOL_SCHEMA,
       QQ_SEND_TOOL_SCHEMA_LOCAL,
@@ -283,6 +287,9 @@ export class MainAgentRegistry {
       REQUEST_GAME_ACTION_TOOL_SCHEMA_LOCAL,
       ...WIKI_TOOL_SCHEMAS,
       ...SEARCH_TOOL_SCHEMAS,
+      ...MEMORY_TOOL_SCHEMAS,
+      ...TASK_TOOL_SCHEMAS,
+      UPDATE_PLAN_TOOL,
     ]);
 
     // 独立 pipeline + 注入 dispatcher/collector
@@ -490,30 +497,60 @@ export class MainAgentRegistry {
           const description = (params.description as string) ?? '';
           const priority = (params.priority as 'normal' | 'high') ?? 'normal';
 
-          // 查找当前 workspace 下的 QQ Agent
+          // 优先查找 QQ Agent，通过 QQ Agent 转发（携带 QQ 用户上下文）
           const qqAgent = this.findQQAgent(workspaceId);
-          if (!qqAgent || typeof (qqAgent as any).requestGameAction !== 'function') {
-            ctx.results = ctx.results ?? [];
-            ctx.results.push({
-              type: 'tool_result',
-              toolCallId: call.toolCallId,
-              toolName: 'request_game_action',
-              success: false,
-              error: '未找到 QQ Agent 或 requestGameAction 不可用',
-              durationMs: Date.now() - startTime,
-            } as any);
-            continue;
+          if (qqAgent && typeof (qqAgent as any).requestGameAction === 'function') {
+            try {
+              const result = await (qqAgent as any).requestGameAction(description, priority);
+              ctx.results = ctx.results ?? [];
+              ctx.results.push({
+                type: 'tool_result',
+                toolCallId: call.toolCallId,
+                toolName: 'request_game_action',
+                success: result.success,
+                data: { summary: result.summary, details: result.details, duration_ms: result.durationMs },
+                error: result.error,
+                durationMs: Date.now() - startTime,
+              } as any);
+              continue;
+            } catch (err) {
+              // QQ Agent 转发失败，降级到直接执行
+            }
           }
 
+          // 无 QQ Agent 时，直接通过当前 Agent 执行游戏操作
           try {
-            const result = await (qqAgent as any).requestGameAction(description, priority);
+            const currentAgent = this.getSync(workspaceId, agentId);
+            if (!currentAgent) {
+              ctx.results = ctx.results ?? [];
+              ctx.results.push({
+                type: 'tool_result',
+                toolCallId: call.toolCallId,
+                toolName: 'request_game_action',
+                success: false,
+                error: '当前 Agent 未就绪，无法执行游戏操作',
+                durationMs: Date.now() - startTime,
+              } as any);
+              continue;
+            }
+
+            const result = await currentAgent.handle({
+              source: 'trigger',
+              prompt: `[请求] ${description}`,
+              metadata: {
+                origin: 'main_agent',
+                priority,
+                requestId: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              },
+            });
+
             ctx.results = ctx.results ?? [];
             ctx.results.push({
               type: 'tool_result',
               toolCallId: call.toolCallId,
               toolName: 'request_game_action',
-              success: result.success,
-              data: { summary: result.summary, details: result.details, duration_ms: result.durationMs },
+              success: !result.error,
+              data: result.error ? undefined : { summary: result.finalResponse, duration_ms: result.durationMs },
               error: result.error,
               durationMs: Date.now() - startTime,
             } as any);
@@ -633,6 +670,223 @@ export class MainAgentRegistry {
 
         // 从 pipeline 调度中移除所有已本地处理的知识工具调用
         ctx.calls = ctx.calls.filter((c) => !KNOWLEDGE_TOOLS.has(c.toolName));
+        return ctx;
+      },
+    });
+
+    // 记忆工具本地处理器中间件
+    pipeline.use({
+      name: 'memory_tools_handler',
+      before: async (ctx: MiddlewareContext): Promise<MiddlewareContext> => {
+        const MEMORY_TOOL_NAMES = new Set([
+          'memory_list', 'memory_query', 'memory_edit',
+          'maps_query', 'maps_edit',
+          'aim_list', 'aim_query', 'aim_update',
+          'knowledge_query',
+        ]);
+        const memoryCalls = ctx.calls.filter((c) => MEMORY_TOOL_NAMES.has(c.toolName));
+        if (memoryCalls.length === 0) return ctx;
+
+        const mm = getMemoryManager();
+        if (!mm) {
+          for (const call of memoryCalls) {
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: call.toolName,
+              success: false,
+              error: '记忆系统未初始化',
+              durationMs: 0,
+            } as any);
+          }
+          ctx.calls = ctx.calls.filter((c) => !MEMORY_TOOL_NAMES.has(c.toolName));
+          return ctx;
+        }
+
+        // 动态导入记忆工具处理函数（避免顶层 import 导致的循环依赖）
+        const memoryTools = await import('../memory/tools');
+
+        for (const call of memoryCalls) {
+          const startTime = Date.now();
+          const params = call.arguments as any;
+
+          try {
+            let result: { success: boolean; data?: unknown; error?: string };
+
+            switch (call.toolName) {
+              case 'memory_list':
+                result = await memoryTools.memoryList(mm, params);
+                break;
+              case 'memory_query':
+                result = await memoryTools.memoryQuery(mm, params);
+                break;
+              case 'memory_edit':
+                result = await memoryTools.memoryEdit(mm, params);
+                break;
+              case 'maps_query':
+                result = await memoryTools.mapsQuery(mm, params);
+                break;
+              case 'maps_edit':
+                result = await memoryTools.mapsEdit(mm, params);
+                break;
+              case 'aim_list':
+                result = await memoryTools.aimList(mm, params);
+                break;
+              case 'aim_query':
+                result = await memoryTools.aimQuery(mm, params);
+                break;
+              case 'aim_update':
+                result = await memoryTools.aimUpdate(mm, params);
+                break;
+              case 'knowledge_query':
+                result = await memoryTools.knowledgeQuery(mm, params);
+                break;
+              default:
+                result = { success: false, error: `未知记忆工具: ${call.toolName}` };
+            }
+
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: call.toolName,
+              success: result.success,
+              data: result.success ? result.data : undefined,
+              error: result.success ? undefined : result.error,
+              durationMs: Date.now() - startTime,
+            } as any);
+          } catch (err) {
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: call.toolName,
+              success: false,
+              error: err instanceof Error ? err.message : `${call.toolName} 执行异常`,
+              durationMs: Date.now() - startTime,
+            } as any);
+          }
+        }
+
+        ctx.calls = ctx.calls.filter((c) => !MEMORY_TOOL_NAMES.has(c.toolName));
+        return ctx;
+      },
+    });
+
+    // 任务工具本地处理器中间件
+    pipeline.use({
+      name: 'task_tools_handler',
+      before: async (ctx: MiddlewareContext): Promise<MiddlewareContext> => {
+        const TASK_TOOL_NAMES = new Set([
+          'task_create', 'task_query', 'task_update',
+          'task_control', 'task_decompose', 'task_manage',
+        ]);
+        const taskCalls = ctx.calls.filter((c) => TASK_TOOL_NAMES.has(c.toolName));
+        if (taskCalls.length === 0) return ctx;
+
+        const tm = getTaskManager();
+        if (!tm) {
+          for (const call of taskCalls) {
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: call.toolName,
+              success: false,
+              error: '任务系统未初始化',
+              durationMs: 0,
+            } as any);
+          }
+          ctx.calls = ctx.calls.filter((c) => TASK_TOOL_NAMES.has(c.toolName));
+          return ctx;
+        }
+
+        // 动态导入任务工具处理函数
+        const taskTools = await import('../task/tools');
+
+        for (const call of taskCalls) {
+          const startTime = Date.now();
+          const params = call.arguments as any;
+
+          try {
+            let result: { success: boolean; data?: unknown; error?: string };
+
+            switch (call.toolName) {
+              case 'task_create':
+                result = await taskTools.taskCreate(tm, params);
+                break;
+              case 'task_query':
+                result = await taskTools.taskQuery(tm, params);
+                break;
+              case 'task_update':
+                result = await taskTools.taskUpdate(tm, params);
+                break;
+              case 'task_control':
+                result = await taskTools.taskControl(tm, params);
+                break;
+              case 'task_decompose':
+                result = await taskTools.taskDecompose(tm, params);
+                break;
+              case 'task_manage':
+                result = await taskTools.taskManage(tm, params);
+                break;
+              default:
+                result = { success: false, error: `未知任务工具: ${call.toolName}` };
+            }
+
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: call.toolName,
+              success: result.success,
+              data: result.success ? result.data : undefined,
+              error: result.success ? undefined : result.error,
+              durationMs: Date.now() - startTime,
+            } as any);
+          } catch (err) {
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: call.toolName,
+              success: false,
+              error: err instanceof Error ? err.message : `${call.toolName} 执行异常`,
+              durationMs: Date.now() - startTime,
+            } as any);
+          }
+        }
+
+        ctx.calls = ctx.calls.filter((c) => !TASK_TOOL_NAMES.has(c.toolName));
+        return ctx;
+      },
+    });
+
+    // update_plan 工具本地处理器中间件
+    pipeline.use({
+      name: 'update_plan_handler',
+      before: async (ctx: MiddlewareContext): Promise<MiddlewareContext> => {
+        const planCalls = ctx.calls.filter((c) => c.toolName === 'update_plan');
+        if (planCalls.length === 0) return ctx;
+
+        // update_plan 由 Orchestrator 在 dispatch 后处理，
+        // 这里不做具体执行，仅从 pipeline 调度中移除（避免发送到 adapter），
+        // 让 Orchestrator 在 handle 返回后解析 update_plan tool_calls。
+        // 回注空结果以便 LLM 继续后续轮次。
+        for (const call of planCalls) {
+          ctx.results = ctx.results ?? [];
+          ctx.results.push({
+            type: 'tool_result',
+            toolCallId: call.toolCallId,
+            toolName: 'update_plan',
+            success: true,
+            data: { message: 'update_plan 由 Orchestrator 处理' },
+            durationMs: 0,
+          } as any);
+        }
+
+        ctx.calls = ctx.calls.filter((c) => c.toolName !== 'update_plan');
         return ctx;
       },
     });
