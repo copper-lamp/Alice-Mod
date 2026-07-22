@@ -8,14 +8,17 @@ import { RobotPage } from './components/qq-bot'
 import AgentInstanceView from './components/agent/AgentInstanceView'
 import AgentCreatePage from './components/agent/AgentCreatePage'
 import ConfigPanel from './components/settings/ConfigPanel'
+import UpdateCard from './components/layout/UpdateCard'
 import { useUIStore } from './stores/uiStore'
 import { useWorkspaceStore } from './stores/workspaceStore'
 import { useWorldStore } from './stores/worldStore'
+import { useUpdaterStore } from './stores/updaterStore'
 
 const App: React.FC = () => {
   const { layoutMode, activeNav } = useUIStore()
   const refreshWorkspaces = useWorkspaceStore(s => s.refreshWorkspaces)
   const handleStateChange = useWorkspaceStore(s => s.handleStateChange)
+  const initUpdater = useUpdaterStore(s => s.init)
 
   const handleWorldOnline = useWorldStore(s => s.handleWorldOnline)
   const handleWorldOffline = useWorldStore(s => s.handleWorldOffline)
@@ -25,6 +28,9 @@ const App: React.FC = () => {
   useEffect(() => {
     // 启动时加载工作区列表
     refreshWorkspaces()
+
+    // 初始化自动更新监听
+    initUpdater()
 
     // 仅在 Electron 环境下注册 IPC 事件监听
     if (!window.electronAPI) return
@@ -65,7 +71,7 @@ const App: React.FC = () => {
       unsubscribeWorldState()
       unsubscribeWorldActive()
     }
-  }, [refreshWorkspaces, handleStateChange, handleWorldOnline, handleWorldOffline, handleWorldStateChange, handleWorldActiveChanged])
+  }, [refreshWorkspaces, initUpdater, handleStateChange, handleWorldOnline, handleWorldOffline, handleWorldStateChange, handleWorldActiveChanged])
 
   const renderContent = () => {
     switch (layoutMode) {
@@ -102,6 +108,7 @@ const App: React.FC = () => {
         {renderContent()}
       </AppLayout>
       <ConfigPanel />
+      <UpdateCard />
     </>
   )
 }

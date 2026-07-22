@@ -20,6 +20,7 @@
     "@heroui/styles": "3.0.0-rc.1",
     "@mcagent/shared": "workspace:*",
     "@types/node-cron": "^3.0.11",
+    "archiver": "^8.0.0",
     "better-sqlite3": "^12.11.1",
     "chromadb": "^3.5.0",
     "dockerode": "^5.0.1",
@@ -38,6 +39,7 @@
     "@tailwindcss/vite": "^4.3.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/archiver": "^8.0.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/dockerode": "^4.0.1",
     "@types/node": "^22.0.0",
@@ -70,7 +72,10 @@
       "icon": "build/icon.ico"
     },
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "build/icon.icns"
     },
     "linux": {

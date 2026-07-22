@@ -22,6 +22,7 @@ import { initQQBotIntegration } from './qq-bot/integration'
 import { autoStartQQBotAccounts } from './ipc/qq-bot-handler'
 import { updater } from './updater'
 import { DefaultToolDispatcher, setToolDispatcher } from './pipeline/tool-dispatcher'
+import { initDiagnoseScheduler, stopDiagnoseScheduler } from './diagnose'
 import type { JsonRpcRequest, JsonRpcResponse, ToolSchema, JsonRpcNotification } from '@mcagent/shared'
 
 // ════════════════════════════════════════════════════════════════
@@ -520,6 +521,15 @@ app.whenReady().then(async () => {
   // 所有用户从 copper-lamp/Alice-App 的 GitHub Releases 拉取更新
   updater.init()
 
+  // 初始化诊断信息自动打包（后台自动生成，无需用户操作）
+  // 输出位置：%APPDATA%/alice-mod/diagnose/diagnose_*.zip
+  // 生成时机：启动时 / 崩溃后 / 每 24 小时（保留最近 3 份）
+  try {
+    initDiagnoseScheduler()
+  } catch (err) {
+    console.warn('[Boot] 诊断信息调度器初始化失败:', (err as Error).message)
+  }
+
   createWindow()
 
   app.on('activate', () => {
@@ -537,6 +547,8 @@ app.on('before-quit', async () => {
       // 忽略关闭时的错误
     }
   }
+  // 正常退出时清理崩溃标记
+  stopDiagnoseScheduler()
 })
 
 app.on('window-all-closed', () => {

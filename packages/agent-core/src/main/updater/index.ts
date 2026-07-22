@@ -9,5 +9,5 @@
  * 未来完整实现参见 docs/version-plans/AC/AC-V33-自动更新模块-需求文档.md
  */
 
-export { Updater } from './updater'
+export { Updater, updater } from './updater'
 export type { UpdateInfo } from './types'
