@@ -67,7 +67,13 @@ jobs:
           # 保留 .git 和 .github（子仓库的 release.yml）
           ls -A1 | grep -vE '^\.git$|^\.github$' | xargs -I{} rm -rf {} 2>/dev/null || true
 
+          # 复制 AC 代码
           cp -r ${{ github.workspace }}/packages/agent-core/* ./
+
+          # 复制 monorepo 根级文件（pnpm 构建必须）
+          cp ${{ github.workspace }}/pnpm-lock.yaml ./ 2>/dev/null || true
+          cp ${{ github.workspace }}/pnpm-workspace.yaml ./ 2>/dev/null || true
+          cp ${{ github.workspace }}/.npmrc ./ 2>/dev/null || true
 
           git add -A
           git diff --quiet --cached || git commit -m "sync: update from Alice-Mod @ ${{ github.sha }}"
