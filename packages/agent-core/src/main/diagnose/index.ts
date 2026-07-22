@@ -15,4 +15,9 @@
 export { initDiagnoseScheduler, stopDiagnoseScheduler, getDiagnoseScheduler, DiagnoseScheduler } from './scheduler'
 export { generateDiagnoseZip } from './packer'
 export { collectDiagnoseInfo } from './collector'
-export type { DiagnoseInfo, EnvironmentInfo, GameStateInfo, WorkspaceInfo, DiagnoseConfig } from './types'
+export type {
+  DiagnoseInfo, EnvironmentInfo, GameStateInfo, WorkspaceInfo, DiagnoseConfig,
+  PerformanceMetrics, LlmStatsInfo, ErrorSummaryInfo, QQBotStatsInfo,
+  AgentStatsInfo, MemoryStatsInfo, NetworkStatsInfo, TimelineEntry,
+  DatabaseSchemaInfo, SystemDetailInfo,
+} from './types'
