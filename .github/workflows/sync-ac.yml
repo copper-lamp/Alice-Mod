@@ -78,6 +78,13 @@ jobs:
           # 修复子仓库 release.yml：子仓库没有 workspace，不能用 --frozen-lockfile
           if [ -f .github/workflows/release.yml ]; then
             sed -i 's/pnpm install --frozen-lockfile/pnpm install/g' .github/workflows/release.yml
+            # 只有 Windows 构建
+            sed -i '/macos-latest/d' .github/workflows/release.yml
+            sed -i '/ubuntu-latest/d' .github/workflows/release.yml
+            sed -i '/mac:/d' .github/workflows/release.yml
+            sed -i '/linux:/d' .github/workflows/release.yml
+            # 修复 matrix 语法（去掉多余逗号）
+            sed -i 's/\[windows-latest, macos-latest, ubuntu-latest\]/[windows-latest]/' .github/workflows/release.yml
           fi
 
           git add -A
