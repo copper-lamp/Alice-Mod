@@ -164,16 +164,20 @@ public final class TcpClient {
             LOG.debug("Failed to connect to {}:{} (will retry in background)", host, port);
             setState(ConnectionState.DISCONNECTED);
             cleanup();
-            // 初始连接失败，启动后台重连
-            if (config.autoReconnect()) {
-                reconnectManager.startFresh();
-            }
+            // 初始连接失败时由调用方决定是否启动重连
         }
     }
 
     /** 使用默认地址连接。 */
     public void connect() {
         connect(DEFAULT_HOST, DEFAULT_PORT);
+    }
+
+    /** 连接失败后启动后台重连（供初始连接失败后调用）。 */
+    public void startReconnect() {
+        if (!connected.get() && config.autoReconnect()) {
+            reconnectManager.startFresh();
+        }
     }
 
     /**

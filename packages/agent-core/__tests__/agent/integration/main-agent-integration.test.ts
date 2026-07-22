@@ -57,10 +57,18 @@ class MemoryChatHistoryStore implements ChatHistoryStore {
     return filtered.reverse();
   }
 
-  async clear(workspaceId: string, agentId: string): Promise<void> {
+  async clear(workspaceId: string, agentId: string): Promise<number> {
+    const before = this.entries.length;
     this.entries = this.entries.filter(
       e => e.workspaceId !== workspaceId || e.agentId !== agentId,
     );
+    return before - this.entries.length;
+  }
+
+  async deleteByIds(ids: number[]): Promise<number> {
+    const before = this.entries.length;
+    this.entries = this.entries.filter(e => e.id === undefined || !ids.includes(e.id));
+    return before - this.entries.length;
   }
 
   async getStats(_workspaceId: string, _agentId: string): Promise<{ totalMessages: number; lastActiveAt: number }> {

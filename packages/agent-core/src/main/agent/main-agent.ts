@@ -311,20 +311,38 @@ function toBuildSource(source: MainAgentEvent['source']): BuildSource {
  *   "Messages with role 'tool' must be a response to a preceding message with 'tool_calls'"
  *
  * 修复策略：顺序扫描，维护期望的 tool_call_id 集合，清理不匹配的条目。
+ * 同时返回需要从数据库中删除的条目 ID，避免每次加载历史时重复清理。
+ *
+ * @param messages 待清理的消息数组
+ * @param entryIds 可选，消息数组对应的数据库条目 ID（用于删除数据库中的损坏记录）
+ * @returns { messages: 清理后的消息数组, removedIds: 需要从数据库删除的条目 ID }
  */
-function sanitizeHistory(messages: ConversationMessage[]): ConversationMessage[] {
+function sanitizeHistory(
+  messages: ConversationMessage[],
+  entryIds?: number[],
+): { messages: ConversationMessage[]; removedIds: number[] } {
   const result: ConversationMessage[] = [];
+  const removedIds: number[] = [];
+  // 记录 result 中每个元素对应的原始 messages 索引
+  const resultToOriginalIdx: number[] = [];
   let expectedToolCallIds = new Set<string>();
   // 记录最近一条有 tool_calls 的 assistant 消息在 result 中的索引
-  let lastAssistantIdx = -1;
+  let lastAssistantResultIdx = -1;
 
-  for (const msg of messages) {
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+
     if (msg.role === 'tool' && msg.tool_call_id) {
       if (expectedToolCallIds.has(msg.tool_call_id)) {
         result.push(msg);
+        resultToOriginalIdx.push(i);
         expectedToolCallIds.delete(msg.tool_call_id);
       } else {
         console.warn(`[MainAgent] 清理孤立的 tool 消息: tool_call_id=${msg.tool_call_id}`);
+        // 孤立 tool 消息需要从数据库删除
+        if (entryIds && entryIds[i] !== undefined) {
+          removedIds.push(entryIds[i]);
+        }
       }
       continue;
     }
@@ -333,33 +351,56 @@ function sanitizeHistory(messages: ConversationMessage[]): ConversationMessage[]
       // 前一轮未完成的 tool_calls 被新 assistant 覆盖
       if (expectedToolCallIds.size > 0) {
         console.warn(`[MainAgent] 清理未完成的 tool_calls (被新 assistant 覆盖): ${Array.from(expectedToolCallIds).join(', ')}`);
+        // 记录被清理的 assistant 条目（需要从数据库删除其 tool_calls 记录）
+        if (entryIds && lastAssistantResultIdx >= 0) {
+          const origIdx = resultToOriginalIdx[lastAssistantResultIdx];
+          if (entryIds[origIdx] !== undefined) {
+            removedIds.push(entryIds[origIdx]);
+          }
+        }
         // 移除前一条 assistant 的 tool_calls
-        result[lastAssistantIdx] = { role: 'assistant', content: result[lastAssistantIdx]?.content ?? '' };
+        result[lastAssistantResultIdx] = { role: 'assistant', content: result[lastAssistantResultIdx]?.content ?? '' };
       }
       expectedToolCallIds = new Set(msg.tool_calls.map(tc => tc.id));
-      lastAssistantIdx = result.length;
+      lastAssistantResultIdx = result.length;
       result.push(msg);
+      resultToOriginalIdx.push(i);
       continue;
     }
 
     // 非 tool、非 assistant-with-tool_calls 的消息
     if (expectedToolCallIds.size > 0) {
       console.warn(`[MainAgent] 清理未完成的 tool_calls (遇到非 tool 消息): ${Array.from(expectedToolCallIds).join(', ')}`);
+      // 记录被清理的 assistant 条目（需要从数据库删除其 tool_calls 记录）
+      if (entryIds && lastAssistantResultIdx >= 0) {
+        const origIdx = resultToOriginalIdx[lastAssistantResultIdx];
+        if (entryIds[origIdx] !== undefined) {
+          removedIds.push(entryIds[origIdx]);
+        }
+      }
       // 移除前一条 assistant 的 tool_calls
-      result[lastAssistantIdx] = { role: 'assistant', content: result[lastAssistantIdx]?.content ?? '' };
+      result[lastAssistantResultIdx] = { role: 'assistant', content: result[lastAssistantResultIdx]?.content ?? '' };
       expectedToolCallIds.clear();
-      lastAssistantIdx = -1;
+      lastAssistantResultIdx = -1;
     }
     result.push(msg);
+    resultToOriginalIdx.push(i);
   }
 
   // 处理消息数组末尾未完成的 tool_calls
-  if (expectedToolCallIds.size > 0 && lastAssistantIdx >= 0) {
+  if (expectedToolCallIds.size > 0 && lastAssistantResultIdx >= 0) {
     console.warn(`[MainAgent] 清理末尾未完成的 tool_calls: ${Array.from(expectedToolCallIds).join(', ')}`);
-    result[lastAssistantIdx] = { role: 'assistant', content: result[lastAssistantIdx]?.content ?? '' };
+    // 记录末尾未完成的 assistant 条目（需要从数据库清理）
+    if (entryIds && lastAssistantResultIdx >= 0) {
+      const origIdx = resultToOriginalIdx[lastAssistantResultIdx];
+      if (entryIds[origIdx] !== undefined) {
+        removedIds.push(entryIds[origIdx]);
+      }
+    }
+    result[lastAssistantResultIdx] = { role: 'assistant', content: result[lastAssistantResultIdx]?.content ?? '' };
   }
 
-  return result;
+  return { messages: result, removedIds };
 }
 
 /**
@@ -372,7 +413,8 @@ function sanitizeHistory(messages: ConversationMessage[]): ConversationMessage[]
 function validateMessagesForLLM(messages: ConversationMessage[]): ConversationMessage[] {
   // 使用相同的 sanitizeHistory 逻辑，但针对当前 session 的 messages
   // 这可以捕获 pipeline 处理后的残留问题
-  return sanitizeHistory(messages);
+  // 当前 session 的消息没有数据库 ID，不需要持久化清理
+  return sanitizeHistory(messages).messages;
 }
 
 /** 根据 event.source 决定调度优先级 */
@@ -447,9 +489,17 @@ export class MainAgent {
         tool_calls: e.toolCalls,
         tool_call_id: e.toolCallId,
       }));
+      // 提取数据库条目 ID（用于后续清理数据库中损坏的记录）
+      const historyEntryIds = historyEntries.map((e) => e.id!);
 
       // V31 FIX: 清理历史中损坏的 tool_calls（防止之前 session 遗留的损坏数据导致 API 报错）
-      const sanitizedHistory = sanitizeHistory(history);
+      // V32 FIX: 同时从数据库中删除损坏的记录，避免每次加载时重复清理
+      const { messages: sanitizedHistory, removedIds } = sanitizeHistory(history, historyEntryIds);
+      if (removedIds.length > 0) {
+        this.deps.historyStore.deleteByIds(removedIds).catch((err) =>
+          console.warn(`[MainAgent] 清理数据库中损坏的条目失败:`, err),
+        );
+      }
 
       // ── 3. 构建 prompt ──
       const excludeTools = getExcludeTools(this.deps.agentConfig);

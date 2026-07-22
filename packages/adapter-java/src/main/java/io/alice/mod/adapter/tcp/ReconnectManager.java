@@ -19,17 +19,11 @@ public final class ReconnectManager {
 
     private static final Logger LOG = LoggerFactory.getLogger(ReconnectManager.class);
 
-    /** 指数退避的初始间隔（秒） */
-    private static final long BASE_DELAY_SECONDS = 1;
+    /** 固定重连间隔（秒） */
+    private static final long DELAY_SECONDS = 2;
 
     /** 最大重连次数 */
     public static final int MAX_ATTEMPTS = 5;
-
-    /** 退避倍数 */
-    private static final long BACKOFF_MULTIPLIER = 2;
-
-    /** 最大退避间隔（秒） */
-    private static final long MAX_DELAY_SECONDS = 16;
 
     private final ScheduledExecutorService scheduler;
     private final ReconnectHandler handler;
@@ -67,7 +61,7 @@ public final class ReconnectManager {
             currentTask.cancel(false);
             currentTask = null;
         }
-        LOG.info("Reconnect stopped after {} attempt(s)", attemptCount.get());
+        LOG.debug("Reconnect stopped after {} attempt(s)", attemptCount.get());
     }
 
     /** 重置尝试计数（重连成功后调用）。 */
@@ -97,14 +91,13 @@ public final class ReconnectManager {
 
         int attempt = attemptCount.incrementAndGet();
         if (attempt > MAX_ATTEMPTS) {
-            LOG.warn("Reconnect failed after {} attempts, giving up", MAX_ATTEMPTS);
+            LOG.debug("Reconnect failed after {} attempts, giving up", MAX_ATTEMPTS);
             active.set(false);
             handler.onGiveUp();
             return;
         }
 
-        long delay = calculateDelay(attempt);
-        LOG.info("Reconnect attempt {}/{} in {}s", attempt, MAX_ATTEMPTS, delay);
+        long delay = DELAY_SECONDS;
 
         currentTask = scheduler.schedule(() -> {
             if (!active.get()) {
@@ -113,24 +106,20 @@ public final class ReconnectManager {
             try {
                 boolean success = handler.onReconnect(attempt);
                 if (success) {
-                    LOG.info("Reconnect attempt {} successful", attempt);
+                    LOG.debug("Reconnect attempt {} successful", attempt);
                     resetAttempts();
                     active.set(false);
                 } else {
                     scheduleNext();
                 }
             } catch (Exception e) {
-                LOG.error("Reconnect attempt {} failed with exception", attempt, e);
+                LOG.debug("Reconnect attempt {} failed with exception", attempt);
                 scheduleNext();
             }
         }, delay, TimeUnit.SECONDS);
     }
 
-    /** 计算第 n 次尝试的退避间隔。 */
-    static long calculateDelay(int attempt) {
-        long delay = BASE_DELAY_SECONDS * (long) Math.pow(BACKOFF_MULTIPLIER, attempt - 1);
-        return Math.min(delay, MAX_DELAY_SECONDS);
-    }
+    
 
     /**
      * 重连处理器回调。
@@ -151,7 +140,7 @@ public final class ReconnectManager {
          * 默认实现为空。
          */
         default void onGiveUp() {
-            LOG.warn("All {} reconnect attempts exhausted", MAX_ATTEMPTS);
+            LOG.debug("All {} reconnect attempts exhausted", MAX_ATTEMPTS);
         }
     }
 }

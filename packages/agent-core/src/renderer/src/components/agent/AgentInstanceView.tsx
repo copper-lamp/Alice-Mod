@@ -195,20 +195,18 @@ const AgentInstanceView: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* V28: 上线/下线按钮 */}
-          <button
-            onClick={() => handleBotControl(botOnline ? 'offline' : 'online')}
-            disabled={botLoading}
-            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-              botOnline
-                ? 'bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200'
-                : 'bg-green-50 text-green-600 hover:bg-green-100 border border-green-200'
-            } ${botLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            title={botOnline ? '下线假人' : '上线假人'}
+          {/* V28: 上线/下线按钮 - 使用 HeroUI Button 的 onPress 避免与 react-aria-components 的事件冲突 */}
+          <Button
+            onPress={() => handleBotControl(botOnline ? 'offline' : 'online')}
+            isDisabled={botLoading}
+            isPending={botLoading}
+            variant="ghost"
+            size="sm"
+            className={`${botOnline ? 'bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200' : 'bg-green-50 text-green-600 hover:bg-green-100 border border-green-200'} ${botLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {botOnline ? <WifiOff size={12} /> : <Wifi size={12} />}
             {botLoading ? '处理中...' : botOnline ? '下线' : '上线'}
-          </button>
+          </Button>
           <Tabs
             selectedKey={agentViewTab}
             onSelectionChange={(key) => setAgentViewTab(key as 'info' | 'config' | 'qq')}

@@ -35,6 +35,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import carpet.patches.EntityPlayerMPFake;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
@@ -183,8 +184,9 @@ public class WorldContext {
         // 8. 生成入口 JSON 文件，供 AC 发现实例和校验 auth_token
         generateInstanceFile(false);
 
-        // 9. 启动 TCP 客户端（连接 Agent Core）
+        // 9. 启动 TCP 客户端（连接 Agent Core），连接失败时启动后台重连
         tcpClient.connect(DEFAULT_HOST, DEFAULT_PORT);
+        tcpClient.startReconnect();
 
         LOG.info("WorldContext initialized: world='{}', uptime={}ms",
                 identity.worldName(), getUptimeMs());

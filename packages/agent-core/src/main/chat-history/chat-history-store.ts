@@ -83,6 +83,8 @@ export interface ChatHistoryStore {
     agentId: string,
     opts?: { beforeId?: number },
   ): Promise<number>;
+  /** 按 ID 批量删除条目（用于清理数据库中损坏的 tool_calls 记录） */
+  deleteByIds(ids: number[]): Promise<number>;
   getStats(workspaceId: string, agentId: string): Promise<ChatHistoryStats>;
 }
 
@@ -220,6 +222,15 @@ export class SqliteChatHistoryStore implements ChatHistoryStore {
       : this.db.prepare(
           `DELETE FROM chat_history WHERE workspace_id = ? AND agent_id = ?`,
         ).run(workspaceId, agentId);
+    return Number(result.changes);
+  }
+
+  async deleteByIds(ids: number[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const placeholders = ids.map(() => '?').join(',');
+    const result = this.db.prepare(
+      `DELETE FROM chat_history WHERE id IN (${placeholders})`,
+    ).run(...ids);
     return Number(result.changes);
   }
 
