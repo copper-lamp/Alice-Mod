@@ -57,6 +57,8 @@ export class OpenAIProvider extends BaseProvider {
         content: choice.message?.content || '',
         tool_calls: this.parseToolCalls(choice.message?.tool_calls),
       },
+      // V35: 捕获 DeepSeek 等模型的 reasoning_content（思考过程）
+      thinking: choice.message?.reasoning_content || undefined,
       usage: {
         promptTokens: data.usage?.prompt_tokens || 0,
         completionTokens: data.usage?.completion_tokens || 0,
@@ -91,6 +93,7 @@ export class OpenAIProvider extends BaseProvider {
       if (finishReason) {
         yield {
           content: delta?.content || '',
+          thinking: delta?.reasoning_content || undefined,
           toolCallDelta: delta?.tool_calls?.[0]?.function?.arguments,
           isLast: true,
           finishReason: this.mapFinishReason(finishReason),
@@ -98,6 +101,7 @@ export class OpenAIProvider extends BaseProvider {
       } else {
         yield {
           content: delta?.content || '',
+          thinking: delta?.reasoning_content || undefined,
           toolCallDelta: delta?.tool_calls?.[0]?.function?.arguments,
           isLast: false,
         };

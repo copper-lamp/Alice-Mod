@@ -667,7 +667,9 @@ export class MainAgent {
         // V33: 发射流式事件（前端实时显示）
         if (this.deps.streamEmitter) {
           const rawContent = extractContent(response.message.content) ?? '';
-          const thinking = extractThinking(rawContent);
+          // V35: 优先使用 API 返回的 thinking（如 DeepSeek 的 reasoning_content），
+          // 其次尝试从文本内容中解析 <thinking> 标签
+          const thinking = response.thinking || extractThinking(rawContent) || undefined;
           const cleanContent = filterThinkingContent(rawContent);
           if (thinking) {
             this.deps.streamEmitter({ type: 'thinking', data: thinking, agentId: this.deps.agentId });

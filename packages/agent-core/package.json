@@ -48,7 +48,6 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^37.0.0",
-    "electron-builder": "^25.1.0",
     "electron-vite": "^5.0.0",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.2",
@@ -84,9 +83,11 @@
       "allowToChangeInstallationDirectory": true
     },
     "publish": {
-      "provider": "generic",
-      "url": "https://ALICE_UPDATE_BASE_URL",
-      "channel": "stable"
+      "provider": "github",
+      "owner": "copper-lamp",
+      "repo": "Alice-App",
+      "private": false,
+      "releaseType": "release"
     }
   }
 }

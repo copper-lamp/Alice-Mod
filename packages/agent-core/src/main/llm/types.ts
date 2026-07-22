@@ -128,6 +128,8 @@ export interface TokenUsage {
 export interface LLMResponse {
   /** 响应消息 */
   message: AssistantMessage;
+  /** V35: 模型思考过程（如 DeepSeek 的 reasoning_content） */
+  thinking?: string;
   /** Token 消耗统计 */
   usage: TokenUsage;
   /** 模型名称 */
@@ -146,6 +148,8 @@ export interface LLMResponse {
 export interface LLMChunk {
   /** chunk 内容（文本片段） */
   content: string;
+  /** V35: 模型思考过程片段（如 DeepSeek 流式 reasoning_content） */
+  thinking?: string;
   /** 工具调用增量（部分 JSON） */
   toolCallDelta?: string;
   /** 当前已累积的 tokens */
