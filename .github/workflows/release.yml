@@ -7,6 +7,9 @@ on:
       - 'je/v*'
       - 'be/v*'
 
+permissions:
+  contents: write
+
 jobs:
   detect-component:
     runs-on: ubuntu-latest
