@@ -115,10 +115,10 @@ export function registerChatHandlers(): void {
         ? await historyStore.load(workspaceId, agentId, { limit })
         : await historyStore.load(workspaceId, '', { limit })
 
-      // 按 source 过滤
+      // V34: 未指定 source 时默认排除 'qq' 来源（QQ 对话有独立面板）
       const filtered = source
         ? entries.filter(e => e.source === source)
-        : entries
+        : entries.filter(e => e.source !== 'qq')
 
       // 构建工具结果映射表，将 tool call 与对应的结果关联
       const resultMap = buildToolResultMap(filtered)
@@ -129,7 +129,8 @@ export function registerChatHandlers(): void {
     }
   })
 
-  // 获取 QQ 专属的历史记录（按 source='qq' 过滤）
+  // 获取 QQ 专属的历史记录
+  // V34: QQ 来源存储已迁移到 qq:${agentId} 复合键，向下兼容旧存储
   ipcMain.handle('chat:qq-history', async (_event, {
     workspaceId,
     agentId,
@@ -142,11 +143,26 @@ export function registerChatHandlers(): void {
     if (!historyStore || !agentId) return []
 
     try {
-      const entries = await historyStore.load(workspaceId ?? '', agentId, { limit })
-      const qqEntries = entries.filter(e => e.source === 'qq')
+      // 从新存储（qq:前缀）和旧存储（原 agentId）同时加载，合并去重
+      const [newEntries, oldEntries] = await Promise.all([
+        historyStore.load(workspaceId ?? '', `qq:${agentId}`, { limit }),
+        historyStore.load(workspaceId ?? '', agentId, { limit }),
+      ]);
+      // 合并并按时间排序，只保留 source='qq' 的条目
+      const allQqEntries = [...newEntries, ...oldEntries]
+        .filter(e => e.source === 'qq')
+        .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+        .slice(0, limit);
+      // 去重（基于 id 或关键字段）
+      const seen = new Set<number>();
+      const uniqueEntries = allQqEntries.filter(e => {
+        if (seen.has(e.id!)) return false;
+        seen.add(e.id!);
+        return true;
+      });
       // 构建工具结果映射表，将 tool call 与对应的结果关联
-      const resultMap = buildToolResultMap(qqEntries)
-      return qqEntries.map(e => toChatMessage(e, resultMap))
+      const resultMap = buildToolResultMap(uniqueEntries)
+      return uniqueEntries.map(e => toChatMessage(e, resultMap))
     } catch (err) {
       console.error('[chat:qq-history] 查询失败:', err)
       return []
@@ -164,9 +180,14 @@ export function registerChatHandlers(): void {
     if (!historyStore || !agentId) return { success: false }
 
     try {
-      const deleted = await historyStore.clear(workspaceId ?? '', agentId)
-      console.log(`[chat:clear-qq-history] 已清除 ${deleted} 条记录 (agent=${agentId})`)
-      return { success: true, deleted }
+      // V34: 同时清除新存储（qq:前缀）和旧存储（原 agentId）
+      const [deleted1, deleted2] = await Promise.all([
+        historyStore.clear(workspaceId ?? '', `qq:${agentId}`),
+        historyStore.clear(workspaceId ?? '', agentId),
+      ]);
+      const totalDeleted = deleted1 + deleted2;
+      console.log(`[chat:clear-qq-history] 已清除 ${totalDeleted} 条记录 (agent=${agentId})`)
+      return { success: true, deleted: totalDeleted }
     } catch (err) {
       console.error('[chat:clear-qq-history] 清除失败:', err)
       return { success: false, error: String(err) }

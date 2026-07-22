@@ -446,6 +446,14 @@ function getPriority(source: MainAgentEvent['source']): SchedulePriority {
   }
 }
 
+/**
+ * V34: 获取用于存储/加载历史的 agentId
+ * QQ 来源使用 qq:${agentId} 作为复合键，与主 Agent 存储完全分离
+ */
+function getStorageAgentId(agentId: string, source: MainAgentEvent['source']): string {
+  return source === 'qq' ? `qq:${agentId}` : agentId;
+}
+
 // ════════════════════════════════════════════════════════════════
 // MainAgent 主体
 // ════════════════════════════════════════════════════════════════
@@ -500,9 +508,11 @@ export class MainAgent {
       // ── 2. 加载历史 ──
       // V28 FIX: QQ 来源时加载更多历史记录（支持更长的对话上下文）
       const historyLimit = event.source === 'qq' ? maxRounds * 8 : maxRounds * 2;
+      // V34 FIX: QQ 来源使用 qq:${agentId} 复合键存储，与主 Agent 完全分离
+      const storageAgentId = getStorageAgentId(this.deps.agentId, event.source);
       const historyEntries = await this.deps.historyStore.load(
         this.deps.workspaceId,
-        this.deps.agentId,
+        storageAgentId,
         { limit: historyLimit },
       );
       const history: ConversationMessage[] = historyEntries.map((e) => ({
@@ -676,9 +686,11 @@ export class MainAgent {
 
         // d. 持久化 assistant 消息（V30: 增强的 thinking 过滤，覆盖所有常见格式）
         const assistantContent = filterThinkingContent(extractContent(response.message.content));
+        // V34: 使用复合键分离 QQ 来源存储
+        const storageAgentIdForSave = getStorageAgentId(this.deps.agentId, event.source);
         await this.deps.historyStore.append({
           workspaceId: this.deps.workspaceId,
-          agentId: this.deps.agentId,
+          agentId: storageAgentIdForSave,
           source: event.source,
           eventId: event.metadata?.eventId as string | undefined,
           role: 'assistant',
@@ -738,9 +750,11 @@ export class MainAgent {
             if (toolResult.error) payload.error = toolResult.error;
             if (toolResult.durationMs >= 0) payload.duration_ms = toolResult.durationMs;
 
+            // V34: 使用复合键分离 QQ 来源存储
+            const toolStorageAgentId = getStorageAgentId(this.deps.agentId, event.source);
             await this.deps.historyStore.append({
               workspaceId: this.deps.workspaceId,
-              agentId: this.deps.agentId,
+              agentId: toolStorageAgentId,
               source: event.source,
               eventId: event.metadata?.eventId as string | undefined,
               role: 'tool',
