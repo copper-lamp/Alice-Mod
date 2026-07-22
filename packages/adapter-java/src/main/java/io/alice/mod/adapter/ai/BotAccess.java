@@ -75,12 +75,12 @@ public final class BotAccess {
         io.alice.mod.adapter.bot.BotManager mgr = WorldContextManager.isActive()
                 ? WorldContextManager.getActive().getBotManager() : null;
         if (mgr == null) {
-            LOG.warn("BotAccess: no active BotManager");
+            LOG.debug("BotAccess: no active BotManager");
             return null;
         }
         java.util.List<EntityPlayerMPFake> bots = mgr.findAll();
         if (bots.isEmpty()) {
-            LOG.warn("BotAccess: no online bots available");
+            LOG.debug("BotAccess: no online bots available");
             return null;
         }
         return bots.get(0);

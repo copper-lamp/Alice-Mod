@@ -104,10 +104,10 @@ export default class EquipItemTool implements IToolModule {
       if (!result.success) {
         return {
           success: false,
-          error: { code: 'ITEM_NOT_FOUND', message: result.reason || `${action} 失败` },
+          error: { code: 'ITEM_NOT_FOUND', message: result.error || `${action} 失败` },
           data: {
-            equippedItem: result.equippedItem ?? undefined,
-            unequippedItem: result.unequippedItem ?? undefined,
+            equippedItem: result.item ?? undefined,
+            unequippedItem: result.previousItem ?? undefined,
           },
           meta: { duration: ctx.getElapsedMs() },
         };
@@ -116,8 +116,8 @@ export default class EquipItemTool implements IToolModule {
       return {
         success: true,
         data: {
-          equippedItem: result.equippedItem ?? undefined,
-          unequippedItem: result.unequippedItem ?? undefined,
+          equippedItem: result.item ?? undefined,
+          unequippedItem: result.previousItem ?? undefined,
         },
         meta: { duration: ctx.getElapsedMs() },
       };

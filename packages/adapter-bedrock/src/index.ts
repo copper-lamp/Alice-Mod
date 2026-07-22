@@ -623,7 +623,7 @@ async function runAutoSmokeTest(BotManager: any, toolMgr: ToolManager): Promise<
       const ctx = new ToolContextImpl({ activeBotName: AUTO_TEST_BOT });
       try {
         const result = await toolMgr.executeTool(toolName, params, ctx);
-        logger.info(`[AutoSmokeTest] ${toolName}: success=${result.success}, duration=${result.duration_ms}ms, error=${result.error || 'none'}`);
+        logger.info(`[AutoSmokeTest] ${toolName}: success=${result.success}, duration=${result.meta?.duration ?? 0}ms, error=${(result.error?.message) || 'none'}`);
       } catch (err) {
         logger.error(`[AutoSmokeTest] ${toolName} 异常: ${err instanceof Error ? err.message : String(err)}`);
       }

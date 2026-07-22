@@ -82,14 +82,12 @@ export default class MineBlockTool implements IToolModule {
         return {
           success: false,
           error: {
-            code: result.reason?.includes('不存在') ? 'BLOCK_NOT_FOUND' : 'NOT_BREAKABLE',
-            message: result.reason || '挖掘失败',
+            code: result.error?.includes('不存在') ? 'BLOCK_NOT_FOUND' : 'NOT_BREAKABLE',
+            message: result.error || '挖掘失败',
           },
           data: {
-            blockName: result.blockName ?? '',
+            blockName: result.block ?? '',
             drops: result.drops ?? [],
-            toolUsed: result.toolUsed ?? undefined,
-            toolDurability: result.toolDurability ?? undefined,
           },
           meta: { duration: ctx.getElapsedMs() },
         };
@@ -98,10 +96,8 @@ export default class MineBlockTool implements IToolModule {
       return {
         success: true,
         data: {
-          blockName: result.blockName ?? '',
+          blockName: result.block ?? '',
           drops: result.drops ?? [],
-          toolUsed: result.toolUsed ?? undefined,
-          toolDurability: result.toolDurability ?? undefined,
         },
         meta: { duration: ctx.getElapsedMs() },
       };

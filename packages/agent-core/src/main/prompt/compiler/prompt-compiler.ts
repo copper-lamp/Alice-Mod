@@ -14,11 +14,8 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { mapAgentConfigToProfile } from '../../agent/agent-profile-mapper';
-import { DefaultSystemPromptBuilder } from '../builder/system-prompt-builder';
-import { DefaultPromptTemplateEngine } from '../builder/template-engine';
 import { DEFAULT_MAIN_AGENT_TEMPLATE, renderMainAgentTemplate } from '../agent/main-agent-templates';
-import type { AgentConfig, AgentPersona } from '../../../renderer/src/lib/types';
+import type { AgentConfig } from '../../../renderer/src/lib/types';
 import type { ToolSchema } from '@mcagent/shared';
 import { getWorkspaceManager } from '../../workspace/workspace-manager';
 
@@ -78,11 +75,10 @@ const CATEGORY_LABEL_MAP: Record<string, string> = {
   other: '其他',
 }
 
-export class PromptCompiler {
-  private static systemPromptBuilder = new DefaultSystemPromptBuilder(
-    new DefaultPromptTemplateEngine(),
-  );
+/** QQ Agent 不需要的工具类别（内部管理工具，不应暴露给聊天 Agent） */
+const QQ_EXCLUDED_CATEGORIES = new Set(['task', 'aim', 'maps']);
 
+export class PromptCompiler {
   /**
    * 编译主智能体系统提示词
    *
@@ -122,26 +118,21 @@ export class PromptCompiler {
   /**
    * 编译 QQ 智能体系统提示词
    *
-   * 使用 AgentConfig.qqPersona（若存在，向后兼容旧格式）或
-   * 从 JSON 文件加载的纯文本 markdown 模板编译。
-   * markdown 模板中的 [name] 会被替换为实际 agent 名称。
-   * 工具描述从 ToolRegistry 动态获取。
+   * 始终以 src/main/prompt/templates/qq-persona/default.json 为模板，
+   * 替换 [name] 占位符，再追加用户自定义身份和工具描述。
+   * 不再使用旧的结构化 AgentPersona 构建路径，确保 default.json 始终生效。
    */
   static compileQQ(config: AgentConfig): string {
     const agentName = config.name || 'McAgent';
 
-    // 兼容旧格式：如果 config.qqPersona 是 AgentPersona 对象，走传统组装
-    if (config.qqPersona) {
-      const qqConfig = { ...config, persona: config.qqPersona as AgentConfig['persona'] };
-      const profile = mapAgentConfigToProfile(qqConfig);
-      const systemPrompt = this.systemPromptBuilder.build(profile);
-      const toolPrompt = this.generateToolPrompt(config.workspaceId ?? '');
-      return systemPrompt + '\n' + toolPrompt;
-    }
-
-    // 默认：从 JSON 加载纯文本 markdown，替换 [name]
+    // 始终从 default.json 模板开始
     const qqPersona = loadDefaultQQPersona();
     let prompt = qqPersona.prompt.replace(/\[name\]/g, agentName);
+
+    // 如果用户有自定义身份描述，追加到模板末尾
+    if (config.qqPersona?.identity && config.qqPersona.identity.trim()) {
+      prompt += `\n\n## 自定义身份\n${config.qqPersona.identity}`;
+    }
 
     // 追加工具提示词
     const toolPrompt = this.generateToolPrompt(config.workspaceId ?? '');
@@ -160,7 +151,9 @@ export class PromptCompiler {
    * 包含联网搜索、Wiki、QQ 消息、游戏操作等所有注册工具。
    */
   private static generateToolPrompt(workspaceId: string): string {
-    const tools = this.loadToolsFromRegistry(workspaceId);
+    const tools = this.loadToolsFromRegistry(workspaceId)
+      // 过滤掉 QQ Agent 不需要的内部管理工具（task、aim、maps）
+      .filter(t => !QQ_EXCLUDED_CATEGORIES.has(t.category ?? ''));
 
     if (tools.length === 0) {
       return this.getFallbackToolPrompt();

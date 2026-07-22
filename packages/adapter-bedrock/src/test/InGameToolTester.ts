@@ -7,6 +7,7 @@
 import type { ToolManager } from '../registry/tool-manager.js';
 import { ToolContextImpl } from '../registry/tool-context.js';
 import type { ToolResult } from '../registry/tool-module.types.js';
+import { toToolResult } from '../registry/tool-module.types.js';
 import { BotManager } from '../bot/BotManager.js';
 import { ToolMenuGui } from './ToolMenuGui.js';
 import { ToolParamFormBuilder } from './ToolParamFormBuilder.js';
@@ -267,7 +268,8 @@ export class InGameToolTester {
     logger.info(`[InGameToolTester] doExecute: tool=${toolName}, bot=${session.activeBot}, params=${JSON.stringify(params)}`);
 
     try {
-      const result = await this.toolManager.executeTool(toolName, params, ctx);
+      const envelope = await this.toolManager.executeTool(toolName, params, ctx);
+      const result = toToolResult(envelope);
       logger.info(`[InGameToolTester] doExecute 完成: tool=${toolName}, success=${result.success}, error=${result.error || 'none'}`);
       ToolResultRenderer.render(player, toolName, result, (pl) => this.showMainMenu(pl));
       this.report.append({
@@ -332,7 +334,8 @@ export class InGameToolTester {
 
       try {
         const ctx = new ToolContextImpl({ activeBotName: session.activeBot });
-        const result = await this.toolManager.executeTool(tool, params, ctx);
+        const envelope = await this.toolManager.executeTool(tool, params, ctx);
+        const result = toToolResult(envelope);
         results.push({ tool, result });
         this.report.append({
           id: `${Date.now()}_${tool}_${player.realName}`,
@@ -348,7 +351,7 @@ export class InGameToolTester {
         const message = err instanceof Error ? err.message : String(err);
         results.push({
           tool,
-          result: { success: false, error: message, duration_ms: 0 },
+          result: { success: false, error: message, duration_ms: 0 } as ToolResult,
         });
       }
     }

@@ -565,7 +565,12 @@ export class MainAgent {
 
       const promptResult = await this.deps.promptBuilder.build(buildParams);
       let messages: ConversationMessage[] = [...promptResult.messages];
-      const tools = toToolDefinitions(promptResult.tools);
+      // V32: QQ 来源时过滤掉 task/aim/maps 类别的工具（聊天 Agent 不需要管理工具）
+      const qqExcludedCategories = new Set(['task', 'aim', 'maps']);
+      const filteredTools = event.source === 'qq'
+        ? promptResult.tools.filter(t => !qqExcludedCategories.has(t.category))
+        : promptResult.tools;
+      const tools = toToolDefinitions(filteredTools);
 
       // ── 4. 多轮循环 ──
       let totalTokens = 0;

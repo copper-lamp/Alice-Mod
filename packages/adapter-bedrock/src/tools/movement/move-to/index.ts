@@ -51,7 +51,7 @@ export default class MoveToTool implements IToolModule {
       output_schema: {
         type: 'object',
         properties: {
-          finalPosition: {
+          finalPos: {
             type: 'object',
             properties: {
               x: { type: 'number' },
@@ -59,8 +59,7 @@ export default class MoveToTool implements IToolModule {
               z: { type: 'number' },
             },
           },
-          finalDistance: { type: 'number' },
-          distance: { type: 'number' },
+          distanceMoved: { type: 'number' },
           hungerCost: { type: 'number' },
         },
       },
@@ -105,9 +104,6 @@ export default class MoveToTool implements IToolModule {
 
       const { aiEngine } = await import('../../../ai/index.js');
       const result = await aiEngine.moveTo(botName, target, {
-        targetType: target_type,
-        distance,
-        sprint,
         timeout: 60000,
       });
 
@@ -119,9 +115,8 @@ export default class MoveToTool implements IToolModule {
             message: result.reason || '移动失败',
           },
           data: {
-            finalPosition: result.finalPosition,
-            finalDistance: result.finalDistance,
-            distance: result.distance,
+            finalPos: result.finalPos,
+            distanceMoved: result.distanceMoved,
           },
           meta: { duration: ctx.getElapsedMs(), cost: { hunger: result.hungerCost ?? 0 } },
         };
@@ -130,9 +125,8 @@ export default class MoveToTool implements IToolModule {
       return {
         success: true,
         data: {
-          finalPosition: result.finalPosition,
-          finalDistance: result.finalDistance,
-          distance: result.distance,
+          finalPos: result.finalPos,
+          distanceMoved: result.distanceMoved,
           hungerCost: result.hungerCost,
         },
         meta: { duration: ctx.getElapsedMs(), cost: { hunger: result.hungerCost ?? 0 } },

@@ -97,8 +97,8 @@ export default class PlaceBlockTool implements IToolModule {
         return {
           success: false,
           error: {
-            code: result.reason?.includes('占用') ? 'POSITION_OCCUPIED' : 'CANNOT_PLACE',
-            message: result.reason || '放置失败',
+            code: result.error?.includes('占用') ? 'POSITION_OCCUPIED' : 'CANNOT_PLACE',
+            message: result.error || '放置失败',
           },
           data: {
             blockName: block_name,

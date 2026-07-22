@@ -94,8 +94,8 @@ export default class DropItemTool implements IToolModule {
 
         // 丢弃物品
         try {
-          if (typeof player.simulateDropItem === 'function') {
-            player.simulateDropItem(i, toDrop);
+          if (typeof (player as any).simulateDropItem === 'function') {
+            (player as any).simulateDropItem(i, toDrop);
           }
         } catch (e) {
           continue;

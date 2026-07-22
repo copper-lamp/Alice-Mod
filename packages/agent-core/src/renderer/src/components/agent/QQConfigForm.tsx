@@ -736,9 +736,10 @@ const QQConfigForm: React.FC<QQConfigFormProps> = ({ agentId }) => {
             size="sm"
             variant="ghost"
             onPress={() => {
-              setPromptEditText(currentAgent?.qqPersona
-                ? formatPersonaToPrompt(currentAgent.qqPersona)
-                : (defaultPersona?.prompt ?? formatPersonaToPrompt({ identity: '', expertise: [], personality: [], workflowId: '' }))
+              // 始终以 default.json 内容为编辑起点，与后端 compileQQ 保持一致
+              setPromptEditText(
+                defaultPersona?.prompt ??
+                formatPersonaToPrompt(currentAgent?.qqPersona ?? { identity: '', expertise: [], personality: [], workflowId: '' })
               )
               setPromptEditConfirmed(false)
               setShowPromptEditor(true)

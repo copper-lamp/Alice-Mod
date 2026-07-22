@@ -60,11 +60,7 @@ export default class DismountTool implements IToolModule {
 
       // 执行下马
       try {
-        if (typeof player.simulateStopRiding === 'function') {
-          player.simulateStopRiding();
-        } else if (typeof player.simulateSneak === 'function') {
-          player.simulateSneak();
-        }
+        player.dismount();
       } catch (e) {
         // ignore
       }

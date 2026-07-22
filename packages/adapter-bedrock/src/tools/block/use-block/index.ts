@@ -82,11 +82,10 @@ export default class UseBlockTool implements IToolModule {
           success: false,
           error: {
             code: 'BLOCK_NOT_FOUND',
-            message: result.reason || '交互失败',
+            message: result.error || '交互失败',
           },
           data: {
-            blockName: result.blockName ?? '',
-            interactionType: result.interactionType ?? 'unknown',
+            blockName: result.block ?? '',
           },
           meta: { duration: ctx.getElapsedMs() },
         };
@@ -95,8 +94,7 @@ export default class UseBlockTool implements IToolModule {
       return {
         success: true,
         data: {
-          blockName: result.blockName ?? '',
-          interactionType: result.interactionType ?? 'interacted',
+          blockName: result.block ?? '',
         },
         meta: { duration: ctx.getElapsedMs() },
       };

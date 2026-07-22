@@ -83,7 +83,7 @@ export default class TakeFromContainerTool implements IToolModule {
       const dist = Math.sqrt((px - blockPos.x) ** 2 + (py - blockPos.y) ** 2 + (pz - blockPos.z) ** 2);
       if (dist > 5) {
         const { aiEngine } = await import('../../../ai/index.js');
-        const moveResult = await aiEngine.moveTo(botName, blockPos, { distance: 2.5, timeout: 15000 });
+        const moveResult = await aiEngine.moveTo(botName, blockPos, { timeout: 15000 });
         if (!moveResult.success) {
           return {
             success: false,
@@ -93,8 +93,16 @@ export default class TakeFromContainerTool implements IToolModule {
         }
       }
 
-      containerAPI = new ContainerAPI(player, botName);
-      const opened = containerAPI.open(blockPos);
+      containerAPI = new ContainerAPI(player);
+      const block = ctx.world.getBlock(blockPos.x, blockPos.y, blockPos.z);
+      if (!block) {
+        return {
+          success: false,
+          error: { code: 'CONTAINER_NOT_FOUND', message: `无法找到容器方块: ${blockPos.x}, ${blockPos.y}, ${blockPos.z}` },
+          meta: { duration: ctx.getElapsedMs() },
+        };
+      }
+      const opened = containerAPI.open(block);
       if (!opened) {
         return {
           success: false,
@@ -106,7 +114,7 @@ export default class TakeFromContainerTool implements IToolModule {
       const result = containerAPI.take(item_name, count);
       containerAPI.close();
 
-      if (result.count <= 0) {
+      if ((result.transferred ?? 0) <= 0) {
         return {
           success: false,
           error: {
@@ -119,7 +127,7 @@ export default class TakeFromContainerTool implements IToolModule {
 
       return {
         success: true,
-        data: { takenCount: result.count },
+        data: { takenCount: result.transferred },
         meta: { duration: ctx.getElapsedMs() },
       };
     } catch (err) {

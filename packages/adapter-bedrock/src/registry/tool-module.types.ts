@@ -279,6 +279,36 @@ export interface ToolRegistryConfig {
   scanIntervalMs?: number;
 }
 
+// ── ToolResult（测试/渲染层使用的扁平格式）──
+
+/**
+ * 工具执行结果（扁平格式，用于测试/渲染层）。
+ * 区别于 ResultEnvelope（协议标准），ToolResult 将 error 简化为字符串，
+ * 并将 duration 提升为顶层字段，方便 UI 渲染和日志输出。
+ */
+export interface ToolResult {
+  success: boolean;
+  duration_ms: number;
+  error?: string;
+  data?: Record<string, unknown>;
+}
+
+/**
+ * 将 ResultEnvelope 转换为 ToolResult
+ */
+export function toToolResult(envelope: ResultEnvelope): ToolResult {
+  return {
+    success: envelope.success,
+    duration_ms: envelope.meta?.duration ?? 0,
+    error: envelope.error
+      ? typeof envelope.error === 'string'
+        ? envelope.error
+        : envelope.error.message
+      : undefined,
+    data: envelope.data,
+  };
+}
+
 // ── ToolSchema（LLM 可见格式）──
 
 /**

@@ -18,3 +18,4 @@ export type {
   RegisteredTool,
   ToolRegistryConfig,
 } from './tool-module.types.js';
+export { toToolResult } from './tool-module.types.js';
