@@ -3,13 +3,6 @@ name: Sync AC to Alice-App
 on:
   push:
     branches: [main, preview]
-    paths:
-      - 'packages/agent-core/**'
-      - 'packages/shared/**'
-      - 'pnpm-workspace.yaml'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-  push:
     tags:
       - 'ac/v*'
 
@@ -21,29 +14,47 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check if AC files changed
+        id: check
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            # 标签推送：总是同步
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "reason=tag" >> $GITHUB_OUTPUT
+          else
+            # 分支推送：检查 files changed
+            CHANGED=$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" 2>/dev/null || git diff --name-only HEAD~1 HEAD)
+            for PATTERN in "packages/agent-core/" "packages/shared/" "pnpm-workspace.yaml" "package.json" "pnpm-lock.yaml"; do
+              if echo "$CHANGED" | grep -qE "^$PATTERN"; then
+                echo "changed=true" >> $GITHUB_OUTPUT
+                echo "reason=paths matched" >> $GITHUB_OUTPUT
+                exit 0
+              fi
+            done
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "reason=no matching files changed" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.check.outputs.changed == 'true'
         with:
           repository: copper-lamp/Alice-App
           path: target-repo
           token: ${{ secrets.SUBREPO_PAT }}
 
       - name: Determine target branch
+        if: steps.check.outputs.changed == 'true'
         id: branch
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
-            # ac/v1.3.36 → main
-            # ac/v1.4.0-preview → preview
-            if [[ "$TAG" == *-preview* ]]; then
-              echo "branch=preview" >> $GITHUB_OUTPUT
-            else
-              echo "branch=main" >> $GITHUB_OUTPUT
-            fi
+            [[ "$TAG" == *-preview* ]] && echo "branch=preview" >> $GITHUB_OUTPUT || echo "branch=main" >> $GITHUB_OUTPUT
           else
             echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Sync files to Alice-App
+        if: steps.check.outputs.changed == 'true'
         working-directory: target-repo
         env:
           SYNC_BRANCH: ${{ steps.branch.outputs.branch }}
@@ -51,25 +62,23 @@ jobs:
           git config user.name "Alice Mod Bot"
           git config user.email "bot@alice-mod.dev"
 
-          # 切换到目标分支
           git checkout "$SYNC_BRANCH" 2>/dev/null || git checkout -b "$SYNC_BRANCH"
 
-          # 删除旧文件，复制新文件
-          find . -maxdepth 1 -not -name '.git' -not -name '.github' -exec rm -rf {} +
+          # 保留 .git 和 .github（子仓库的 release.yml）
+          ls -A1 | grep -vE '^\.git$|^\.github$' | xargs -I{} rm -rf {} 2>/dev/null || true
+
           cp -r ${{ github.workspace }}/packages/agent-core/* ./
-          cp ${{ github.workspace }}/packages/agent-core/.* ./ 2>/dev/null || true
 
           git add -A
           git diff --quiet --cached || git commit -m "sync: update from Alice-Mod @ ${{ github.sha }}"
           git push origin "$SYNC_BRANCH" --force
 
       - name: Trigger Alice-App release
-        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'ac/')
+        if: steps.check.outputs.changed == 'true' && github.ref_type == 'tag' && startsWith(github.ref_name, 'ac/')
         run: |
           TAG=${{ github.ref_name }}
           CHANNEL="stable"
           [[ "$TAG" == *-preview* ]] && CHANNEL="beta"
-          # advanced 通道在 AC-V33 中归为 stable
 
           curl -X POST \
             -H "Authorization: Bearer ${{ secrets.SUBREPO_PAT }}" \
