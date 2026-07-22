@@ -7,6 +7,7 @@
 
 import type { IToolModule, ToolMetadata, ToolContext, ResultEnvelope } from '../../../registry/tool-module.types.js';
 import { SurvivalEngine } from '../../../ai/survival/SurvivalEngine.js';
+import { InventoryEngine } from '../../../ai/inventory/InventoryEngine.js';
 
 export default class EatTool implements IToolModule {
   metadata(): ToolMetadata {
@@ -66,18 +67,19 @@ export default class EatTool implements IToolModule {
         };
       }
 
-      const engine = new SurvivalEngine(player, botName);
-      const result = engine.eat(food_name);
+      const inventoryEngine = new InventoryEngine(player as any, botName);
+      const engine = new SurvivalEngine({ player, botName, inventoryEngine, world: ctx.world });
+      const result = await engine.eat(food_name);
 
       if (!result.success) {
         return {
           success: false,
           error: {
-            code: result.reason?.includes('不饿') ? 'NOT_HUNGRY' : 'NO_FOOD',
-            message: result.reason || '进食失败',
+            code: result.error?.includes('不饿') ? 'NOT_HUNGRY' : 'NO_FOOD',
+            message: result.error || '进食失败',
           },
           data: {
-            foodUsed: result.foodUsed ?? undefined,
+            foodUsed: result.item ?? undefined,
             hungerRestored: result.hungerRestored ?? 0,
             saturationRestored: result.saturationRestored ?? 0,
           },
@@ -88,7 +90,7 @@ export default class EatTool implements IToolModule {
       return {
         success: true,
         data: {
-          foodUsed: result.foodUsed ?? '',
+          foodUsed: result.item ?? '',
           hungerRestored: result.hungerRestored ?? 0,
           saturationRestored: result.saturationRestored ?? 0,
         },

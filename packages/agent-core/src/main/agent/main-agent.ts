@@ -461,6 +461,9 @@ export class MainAgent {
     const maxRounds = this.deps.maxRounds ?? 5;
 
     try {
+      // ── 0. 日志 ──
+      console.log(`[MainAgent] handle() 开始 (agent=${this.deps.agentId}, source=${event.source}, prompt=${event.prompt?.slice(0, 80)}${event.prompt?.length > 80 ? '...' : ''})`);
+
       // ── 1. 选模型 ──
       const modelKey: keyof AgentLLMConfig = (event.source === 'qq' || event.source === 'debug')
         ? 'qqBotModel'
@@ -474,6 +477,7 @@ export class MainAgent {
       if (!modelSel?.providerId && modelKey === 'qqBotModel') {
         modelSel = this.deps.agentConfig.llmConfig.mainModel;
       }
+      console.log(`[MainAgent] 模型选择: key=${modelKey}, provider=${modelSel?.providerId}, model=${modelSel?.modelName}`);
 
       // ── 2. 加载历史 ──
       // V28 FIX: QQ 来源时加载更多历史记录（支持更长的对话上下文）
@@ -629,6 +633,7 @@ export class MainAgent {
         );
         totalTokens += response.usage.totalTokens;
         lastResponse = response;
+        console.log(`[MainAgent] LLM 响应 (round=${rounds + 1}/${maxRounds}): provider=${resolved.providerId}, model=${resolved.model}, tokens=${response.usage.totalTokens}, finish=${response.finishReason}, content=${extractContent(response.message.content)?.slice(0, 60) ?? ''}`);
 
         // d. 持久化 assistant 消息（V30: 增强的 thinking 过滤，覆盖所有常见格式）
         const assistantContent = filterThinkingContent(extractContent(response.message.content));
@@ -667,6 +672,8 @@ export class MainAgent {
 
         // f. 通过 pipeline 执行 tool_calls
         if (signal.aborted) return this.fail(startTime, rounds, totalTokens, 'ABORTED');
+        const toolNames = response.message.tool_calls?.map(tc => tc.toolName).join(', ') ?? '';
+        console.log(`[MainAgent] 工具调用 (round=${rounds + 1}): ${toolNames}`);
 
         const pipelineResponse = toPipelineLLMResponse(response);
         const conversation = new SimpleConversation(messages);
@@ -730,12 +737,14 @@ export class MainAgent {
       const rawContent = lastResponse ? extractContent(lastResponse.message.content) : '';
       const finalResponse = filterThinkingContent(rawContent);
       const truncated = rounds >= maxRounds && lastResponse?.finishReason === 'tool_calls';
+      const durationMs = Date.now() - startTime;
+      console.log(`[MainAgent] handle() 完成 (agent=${this.deps.agentId}, source=${event.source}): rounds=${rounds}, totalTokens=${totalTokens}, durationMs=${durationMs}, truncated=${truncated}, error=${truncated ? 'MAX_ROUNDS_EXCEEDED' : pipelineError ?? 'none'}, finalResponse=${finalResponse.slice(0, 60)}${finalResponse.length > 60 ? '...' : ''}`);
 
       return {
         finalResponse,
         rounds,
         totalTokens,
-        durationMs: Date.now() - startTime,
+        durationMs,
         truncated,
         error: truncated ? 'MAX_ROUNDS_EXCEEDED' : pipelineError,
         // V23：透传 event.metadata（不含 peerContext 避免膨胀）

@@ -7,6 +7,7 @@
 
 import type { IToolModule, ToolMetadata, ToolContext, ResultEnvelope } from '../../../registry/tool-module.types.js';
 import { SurvivalEngine } from '../../../ai/survival/SurvivalEngine.js';
+import { InventoryEngine } from '../../../ai/inventory/InventoryEngine.js';
 
 export default class SleepTool implements IToolModule {
   metadata(): ToolMetadata {
@@ -104,10 +105,11 @@ export default class SleepTool implements IToolModule {
         };
       }
 
-      const engine = new SurvivalEngine(player, botName);
+      const inventoryEngine = new InventoryEngine(player as any, botName);
+      const engine = new SurvivalEngine({ player, botName, inventoryEngine, world: ctx.world });
 
       if (action === 'wake') {
-        const result = engine.wake();
+        const result = await engine.sleep('wake');
         return {
           success: true,
           data: {},
@@ -117,17 +119,17 @@ export default class SleepTool implements IToolModule {
 
       // sleep 模式
       const bedPosition = { x: Number(bed_pos.x), y: Number(bed_pos.y), z: Number(bed_pos.z) };
-      const result = engine.sleep(bedPosition, wait_seconds);
+      const result = await engine.sleep('sleep', bedPosition, wait_seconds * 1000);
 
       if (!result.success) {
         let errorCode: string = 'NOT_NIGHT';
-        if (result.reason?.includes('怪物')) errorCode = 'MONSTERS_NEARBY';
-        else if (result.reason?.includes('占用')) errorCode = 'BED_OCCUPIED';
-        else if (result.reason?.includes('不')) errorCode = 'NOT_NIGHT';
+        if (result.error?.includes('怪物')) errorCode = 'MONSTERS_NEARBY';
+        else if (result.error?.includes('占用')) errorCode = 'BED_OCCUPIED';
+        else if (result.error?.includes('不')) errorCode = 'NOT_NIGHT';
 
         return {
           success: false,
-          error: { code: errorCode as any, message: result.reason || '无法入睡' },
+          error: { code: errorCode as any, message: result.error || '无法入睡' },
           data: { bedPosition, timeSkipped: false },
           meta: { duration: ctx.getElapsedMs() },
         };

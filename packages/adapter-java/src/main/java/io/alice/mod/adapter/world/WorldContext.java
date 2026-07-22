@@ -241,7 +241,8 @@ public class WorldContext {
                 identity.authToken(),
                 "1.0.0",
                 "alice-mod",
-                true
+                true,
+                identity.worldName()
         );
 
         return new TcpClient(config, new Callbacks() {
@@ -272,7 +273,7 @@ public class WorldContext {
 
             @Override
             public void onDisconnected() {
-                LOG.warn("TCP connection lost for world '{}'", identity.worldName());
+                LOG.debug("TCP connection lost for world '{}'", identity.worldName());
                 statusCollector.stop();
 
                 // 更新入口文件为离线状态
@@ -281,7 +282,7 @@ public class WorldContext {
 
             @Override
             public void onReconnectFailed() {
-                LOG.error("All reconnect attempts failed for world '{}'", identity.worldName());
+                LOG.debug("All reconnect attempts failed for world '{}'", identity.worldName());
             }
         });
     }

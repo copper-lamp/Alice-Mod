@@ -27,8 +27,8 @@ export const chatApi = {
   stream: (workspaceId: string, message: string) =>
     window.electronAPI.invoke('chat:stream', { workspaceId, message }) as Promise<void>,
 
-  history: (workspaceId: string, limit?: number) =>
-    window.electronAPI.invoke('chat:history', { workspaceId, limit }) as Promise<ChatMessage[]>,
+  history: (workspaceId: string, limit?: number, agentId?: string) =>
+    window.electronAPI.invoke('chat:history', { workspaceId, limit, agentId }) as Promise<ChatMessage[]>,
 
   /** V28：获取 QQ 专属 LLM 对话历史 */
   qqHistory: (workspaceId: string, agentId: string, limit?: number) =>

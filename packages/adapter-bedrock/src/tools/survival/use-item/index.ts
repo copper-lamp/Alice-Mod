@@ -145,8 +145,8 @@ export default class UseItemTool implements IToolModule {
           break;
 
         case 'throw':
-          if (typeof player.simulateThrowItem === 'function') {
-            player.simulateThrowItem();
+          if (typeof (player as any).simulateThrowItem === 'function') {
+            (player as any).simulateThrowItem();
           }
           effect = 'thrown';
           break;
