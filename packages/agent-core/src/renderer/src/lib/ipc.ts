@@ -16,7 +16,8 @@ import type {
   ActivityData,
   AgentSummary,
   AgentConfig,
-  ModelConfigItem
+  ModelConfigItem,
+  UpdateInfo
 } from './types'
 
 /** IPC 调用封装 - 对话 */
@@ -271,4 +272,17 @@ export const presetApi = {
 
 export const toolApi = {
   listAll: () => window.electronAPI.invoke('tool:list-all') as Promise<ToolInfo[]>,
+}
+
+/** IPC 调用封装 — 自动更新 */
+export const updaterApi = {
+  getState: () => window.electronAPI.updater.getState(),
+  checkNow: () => window.electronAPI.updater.checkNow(),
+  download: () => window.electronAPI.updater.download(),
+  install: () => window.electronAPI.updater.install(),
+  onStateChange: (cb: (state: UpdateInfo) => void) => window.electronAPI.updater.onStateChange(cb),
+  onUpdateAvailable: (cb: (version: string) => void) => window.electronAPI.updater.onUpdateAvailable(cb),
+  onDownloadProgress: (cb: (percent: number) => void) => window.electronAPI.updater.onDownloadProgress(cb),
+  onUpdateDownloaded: (cb: () => void) => window.electronAPI.updater.onUpdateDownloaded(cb),
+  onUpdateError: (cb: (error: string) => void) => window.electronAPI.updater.onUpdateError(cb),
 }

@@ -3,7 +3,7 @@ import path from 'path'
 import fs, { existsSync, mkdirSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { initLogger, getLogger, getLogDb } from './log'
-import { registerAllIpcHandlers, setMemoryManager, bootstrapAndWireAgents, createResolveTarget, getSharedAgentConfigManager, getMainAgentRegistry, setMainWindowRef } from './ipc'
+import { registerAllIpcHandlers, setMemoryManager, bootstrapAndWireAgents, createResolveTarget, getSharedAgentConfigManager, getMainAgentRegistry, setMainWindowRef, forwardUpdaterEvents } from './ipc'
 import { initModelRegistry } from './ipc/model-handler'
 import { setLogDb } from './ipc/log-handler'
 import { getToolCallCollector, setToolCallCollector } from './ipc/tool-call-handler'
@@ -20,6 +20,7 @@ import { SQLiteStore } from './memory/sqlite-store'
 import { TriggerModule, setTriggerModule } from './trigger'
 import { initQQBotIntegration } from './qq-bot/integration'
 import { autoStartQQBotAccounts } from './ipc/qq-bot-handler'
+import { updater } from './updater'
 import { DefaultToolDispatcher, setToolDispatcher } from './pipeline/tool-dispatcher'
 import type { JsonRpcRequest, JsonRpcResponse, ToolSchema, JsonRpcNotification } from '@mcagent/shared'
 
@@ -504,6 +505,9 @@ function createWindow(): void {
   // V33: 设置主窗口引用，用于流式事件实时推送到前端
   setMainWindowRef(mainWindow)
 
+  // 将更新事件推送到渲染进程
+  forwardUpdaterEvents(mainWindow)
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -511,6 +515,11 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   await initializeServices()
+
+  // 初始化自动更新模块（异步，不阻塞启动）
+  // 所有用户从 copper-lamp/Alice-App 的 GitHub Releases 拉取更新
+  updater.init()
+
   createWindow()
 
   app.on('activate', () => {

@@ -19,6 +19,7 @@ import { registerTemplateHandlers } from './template-handler'
 import { registerPresetHandlers } from './preset-handler'
 import { registerToolHandlers } from './tool-handler'
 import { registerDebugHandlers } from './debug-handler'
+import { registerUpdaterHandlers, forwardUpdaterEvents } from './updater-handler'
 
 // V20 主链路组装相关
 import { bootstrapLlmSystem } from '../llm/bootstrap'
@@ -55,7 +56,7 @@ import {
 } from '../orchestration'
 import { getMemoryManager } from './memory-handler'
 
-export { setMemoryManager, getSharedAgentConfigManager }
+export { setMemoryManager, getSharedAgentConfigManager, forwardUpdaterEvents }
 
 /** V33: 主窗口引用（用于发送流式事件到渲染进程） */
 let _mainWindow: BrowserWindow | null = null
@@ -101,6 +102,7 @@ export function registerAllIpcHandlers(mainWindow: BrowserWindow): void {
   registerToolHandlers()
   registerTemplateHandlers()
   registerDebugHandlers()
+  registerUpdaterHandlers()
 }
 
 // ════════════════════════════════════════════════════════════════

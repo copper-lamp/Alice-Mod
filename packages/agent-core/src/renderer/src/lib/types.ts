@@ -332,6 +332,29 @@ export interface WindowControls {
   isMaximized: () => Promise<boolean>
 }
 
+/** 更新状态信息 */
+export interface UpdateInfo {
+  available: boolean
+  version?: string
+  currentVersion: string
+  downloadProgress: number
+  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'error'
+  error?: string
+}
+
+/** 更新 API */
+export interface UpdaterAPI {
+  getState: () => Promise<UpdateInfo>
+  checkNow: () => Promise<UpdateInfo>
+  download: () => Promise<UpdateInfo>
+  install: () => void
+  onStateChange: (callback: (state: UpdateInfo) => void) => () => void
+  onUpdateAvailable: (callback: (version: string) => void) => () => void
+  onDownloadProgress: (callback: (percent: number) => void) => () => void
+  onUpdateDownloaded: (callback: () => void) => () => void
+  onUpdateError: (callback: (error: string) => void) => () => void
+}
+
 /** Electron API 暴露给渲染进程的接口 */
 export interface ElectronAPI {
   platform: string
@@ -339,6 +362,7 @@ export interface ElectronAPI {
   on: (channel: string, callback: (...args: unknown[]) => void) => () => void
   invoke: (channel: string, ...args: unknown[]) => Promise<unknown>
   window: WindowControls
+  updater: UpdaterAPI
 }
 
 declare global {
