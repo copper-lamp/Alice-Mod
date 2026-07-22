@@ -3,7 +3,7 @@ import type { ChatMessage } from '../../lib/types'
 import type { StreamEvent } from '../../stores/chatStore'
 import MessageBubble from './MessageBubble'
 import ThinkingBlock from './ThinkingBlock'
-import ToolCallList from './ToolCallList'
+import ToolCallBlock from './ToolCallBlock'
 
 interface Props {
   messages: ChatMessage[]
@@ -54,7 +54,15 @@ const MessageList: React.FC<Props> = ({
                 return <ThinkingBlock key={i} content={evt.data as string} />
               }
               if (evt.type === 'tool_calls') {
-                return <ToolCallList key={i} calls={evt.data as any} />
+                const calls = evt.data as any
+                if (!calls || calls.length === 0) return null
+                return (
+                  <div key={i} className="mb-2">
+                    {calls.map((call: any, idx: number) => (
+                      <ToolCallBlock key={`${call.id || idx}`} call={call} />
+                    ))}
+                  </div>
+                )
               }
               if (evt.type === 'text') {
                 const text = evt.data as string

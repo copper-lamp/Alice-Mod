@@ -84,7 +84,7 @@ const QQ_INFO_TOOL_SCHEMA_LOCAL: ToolSchema = {
 const REQUEST_GAME_ACTION_TOOL_SCHEMA_LOCAL: ToolSchema = {
   name: 'request_game_action',
   description: '请求主 Agent 执行游戏内的操作。当 QQ 用户需要查询游戏状态、执行游戏指令或进行任何游戏内操作时使用此工具。',
-  category: ToolCategory.Task,
+  category: ToolCategory.QQ,
   parameters: {
     description: { type: 'string', description: '对用户请求的自然语言描述，包含所有必要信息，主 Agent 将据此理解并执行', required: true } as ParamDefinition,
     priority: { type: 'string', description: '优先级：normal=普通, high=紧急（如玩家遇险）', required: false } as ParamDefinition,

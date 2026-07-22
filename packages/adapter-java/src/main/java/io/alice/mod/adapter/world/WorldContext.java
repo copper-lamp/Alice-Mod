@@ -485,44 +485,16 @@ public class WorldContext {
         String action = params.has("action") ? params.get("action").getAsString() : "";
         String botName = params.has("bot_name") ? params.get("bot_name").getAsString() : "";
 
-        JsonObject result = new JsonObject();
+        // online/offline 需要切换到服务端线程执行
+        if ("online".equals(action) || "offline".equals(action)) {
+            handleBotControlOnServerThread(request, respond, action, botName);
+            return;
+        }
 
+        // status 和其他操作可在 TCP 线程直接执行
+        JsonObject result = new JsonObject();
         try {
             switch (action) {
-                case "online" -> {
-                    if (botName.isEmpty()) {
-                        result.addProperty("success", false);
-                        result.addProperty("message", "bot_name is required");
-                        break;
-                    }
-                    ServerLevel overworld = server.overworld();
-                    Vec3 spawnPos = new Vec3(
-                            overworld.getSharedSpawnPos().getX() + 0.5,
-                            overworld.getSharedSpawnPos().getY(),
-                            overworld.getSharedSpawnPos().getZ() + 0.5
-                    );
-                    botManager.spawn(botName, overworld, spawnPos);
-                    result.addProperty("success", true);
-                    result.addProperty("message", "Bot '" + botName + "' spawned");
-                    result.addProperty("bot_name", botName);
-                }
-                case "offline" -> {
-                    if (botName.isEmpty()) {
-                        result.addProperty("success", false);
-                        result.addProperty("message", "bot_name is required");
-                        break;
-                    }
-                    EntityPlayerMPFake bot = botManager.findByName(botName);
-                    if (bot != null) {
-                        botManager.despawn(bot);
-                        result.addProperty("success", true);
-                        result.addProperty("message", "Bot '" + botName + "' despawned");
-                    } else {
-                        result.addProperty("success", false);
-                        result.addProperty("message", "Bot '" + botName + "' not found or not online");
-                    }
-                    result.addProperty("bot_name", botName);
-                }
                 case "status" -> {
                     String target = botName.isEmpty() ? null : botName;
                     result.addProperty("success", true);
@@ -568,8 +540,59 @@ public class WorldContext {
             result.addProperty("success", false);
             result.addProperty("message", "Error: " + e.getMessage());
         }
-
         respond.accept(request.id(), result);
+    }
+
+    /** 在服务端线程执行 online/offline 操作。 */
+    private void handleBotControlOnServerThread(JsonRpcMessage.Request request,
+                                                 TcpClient.BiConsumer<JsonRpcId, JsonElement> respond,
+                                                 String action, String botName) {
+        server.execute(() -> {
+            JsonObject result = new JsonObject();
+            try {
+                switch (action) {
+                    case "online" -> {
+                        if (botName.isEmpty()) {
+                            result.addProperty("success", false);
+                            result.addProperty("message", "bot_name is required");
+                            break;
+                        }
+                        ServerLevel overworld = server.overworld();
+                        Vec3 spawnPos = new Vec3(
+                                overworld.getSharedSpawnPos().getX() + 0.5,
+                                overworld.getSharedSpawnPos().getY(),
+                                overworld.getSharedSpawnPos().getZ() + 0.5
+                        );
+                        botManager.spawn(botName, overworld, spawnPos);
+                        result.addProperty("success", true);
+                        result.addProperty("message", "Bot '" + botName + "' spawned");
+                        result.addProperty("bot_name", botName);
+                    }
+                    case "offline" -> {
+                        if (botName.isEmpty()) {
+                            result.addProperty("success", false);
+                            result.addProperty("message", "bot_name is required");
+                            break;
+                        }
+                        EntityPlayerMPFake bot = botManager.findByName(botName);
+                        if (bot != null) {
+                            botManager.despawn(bot);
+                            result.addProperty("success", true);
+                            result.addProperty("message", "Bot '" + botName + "' despawned");
+                        } else {
+                            result.addProperty("success", false);
+                            result.addProperty("message", "Bot '" + botName + "' not found or not online");
+                        }
+                        result.addProperty("bot_name", botName);
+                    }
+                }
+            } catch (Exception e) {
+                LOG.warn("Bot control failed: action={}, bot={}", action, botName, e);
+                result.addProperty("success", false);
+                result.addProperty("message", "Error: " + e.getMessage());
+            }
+            respond.accept(request.id(), result);
+        });
     }
 
     // ---- 世界下线通知 ---- //
