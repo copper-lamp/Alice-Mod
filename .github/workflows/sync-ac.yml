@@ -70,10 +70,15 @@ jobs:
           # 复制 AC 代码
           cp -r ${{ github.workspace }}/packages/agent-core/* ./
 
-          # 复制 monorepo 根级文件（pnpm 构建必须）
+          # 复制 monorepo 根级文件
           cp ${{ github.workspace }}/pnpm-lock.yaml ./ 2>/dev/null || true
-          cp ${{ github.workspace }}/pnpm-workspace.yaml ./ 2>/dev/null || true
           cp ${{ github.workspace }}/.npmrc ./ 2>/dev/null || true
+          # 不同步 pnpm-workspace.yaml — 子仓库是单包项目，不是 workspace
+
+          # 修复子仓库 release.yml：子仓库没有 workspace，不能用 --frozen-lockfile
+          if [ -f .github/workflows/release.yml ]; then
+            sed -i 's/pnpm install --frozen-lockfile/pnpm install/g' .github/workflows/release.yml
+          fi
 
           git add -A
           git diff --quiet --cached || git commit -m "sync: update from Alice-Mod @ ${{ github.sha }}"
