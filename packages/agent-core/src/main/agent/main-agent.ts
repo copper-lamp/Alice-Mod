@@ -588,10 +588,11 @@ export class MainAgent {
       const promptResult = await this.deps.promptBuilder.build(buildParams);
       let messages: ConversationMessage[] = [...promptResult.messages];
       // V32: QQ 来源时过滤掉 task/aim/maps 类别的工具（聊天 Agent 不需要管理工具）
-      const qqExcludedCategories = new Set(['task', 'aim', 'maps']);
+      // V34: 非 QQ 来源时过滤掉 qq 类别工具（主 Agent 不需要 request_game_action 等 QQ 专属工具）
+      const excludedCategories = new Set(['task', 'aim', 'maps']);
       const filteredTools = event.source === 'qq'
-        ? promptResult.tools.filter(t => !qqExcludedCategories.has(t.category))
-        : promptResult.tools;
+        ? promptResult.tools.filter(t => !excludedCategories.has(t.category))
+        : promptResult.tools.filter(t => t.category !== 'qq');
       const tools = toToolDefinitions(filteredTools);
 
       // ── 4. 多轮循环 ──
