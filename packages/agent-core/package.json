@@ -1,6 +1,6 @@
 {
   "name": "@mcagent/agent-core",
-  "version": "1.0.0",
+  "version": "0.0.10",
   "private": true,
   "description": "McAgent Agent Core - Electron + React 桌面客户端",
   "main": "./dist/main/index.js",
