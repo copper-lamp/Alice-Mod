@@ -16,6 +16,7 @@
 import { MainAgent } from '../agent/main-agent';
 import type { MainAgentDeps, MainAgentEvent, MainAgentResult } from '../agent/main-agent';
 import type { MainAgentRegistry } from '../agent/main-agent-registry';
+import { getWorkspaceManager } from '../workspace';
 import type { AgentReportBus } from '../agent/agent-report-bus';
 import type { PlayerIdentityStore } from '../agent/player-identity';
 import type { ChatHistoryStore } from '../chat-history/chat-history-store';
@@ -244,6 +245,19 @@ export class QQAgent extends MainAgent {
     description: string,
     priority: 'normal' | 'high' = 'normal',
   ): Promise<GameActionResult> {
+    // V34: 检查当前 Agent 所属工作区是否在线
+    const wm = getWorkspaceManager();
+    const ws = wm.getWorkspace(this.deps.workspaceId);
+    if (!ws || !ws.isOnline) {
+      return {
+        requestId: '',
+        success: false,
+        summary: '无法连接到游戏',
+        error: 'WORLD_OFFLINE',
+        durationMs: 0,
+      };
+    }
+
     const identity = this.currentMsg?.userId
       ? this.playerIdentity.resolveByQQ(this.currentMsg.userId)
       : null;

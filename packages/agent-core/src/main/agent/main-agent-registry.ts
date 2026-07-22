@@ -48,6 +48,7 @@ import { UPDATE_PLAN_TOOL } from '../orchestration/tools/update-plan';
 import { getMemoryManager } from '../ipc/memory-handler';
 import { ToolCategory, type ToolSchema, type ParamDefinition } from '@mcagent/shared';
 import { StickerGroupRegistry } from '../qq-bot/sticker-group-registry';
+import { getWorkspaceManager } from '../workspace';
 
 // ════════════════════════════════════════════════════════════════
 // V30: qq_send / qq_info 工具定义（ToolSchema 格式）
@@ -524,6 +525,22 @@ export class MainAgentRegistry {
           }
 
           // 无 QQ Agent 时，直接通过当前 Agent 执行游戏操作
+          // V34: 检查当前 Agent 所属工作区是否在线
+          const wm = getWorkspaceManager();
+          const ws = wm.getWorkspace(workspaceId);
+          if (!ws || !ws.isOnline) {
+            ctx.results = ctx.results ?? [];
+            ctx.results.push({
+              type: 'tool_result',
+              toolCallId: call.toolCallId,
+              toolName: 'request_game_action',
+              success: false,
+              error: '无法连接到游戏',
+              durationMs: Date.now() - startTime,
+            } as any);
+            continue;
+          }
+
           try {
             const currentAgent = this.getSync(workspaceId, agentId);
             if (!currentAgent) {

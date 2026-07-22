@@ -31,7 +31,25 @@ export function registerAgentHandlers(): void {
 
   ipcMain.handle('agent:create', async (_event, config: AgentConfig) => {
     try {
+      // 如果没有指定 workspaceId，自动分配第一个在线工作区
+      if (!config.workspaceId) {
+        const { getWorkspaceManager } = await import('../workspace')
+        const onlineWorkspaces = getWorkspaceManager().getOnlineWorkspaces()
+        if (onlineWorkspaces.length > 0) {
+          config.workspaceId = onlineWorkspaces[0].id
+          console.log(`[AgentHandler] 自动分配 workspaceId=${config.workspaceId} 给新智能体`)
+        }
+      }
+
       const id = await agentConfigManager.create(config)
+
+      // 导出配置到模组目录 Alice/agents/<id>.json
+      if (id) {
+        const configWithId = { ...config, id }
+        AgentFileExporter.export(configWithId).catch(err =>
+          console.warn(`[AgentHandler] 导出智能体 ${id} 配置文件失败:`, err),
+        )
+      }
 
       // V24: 若启用了 QQ 绑定，异步预热 MainAgent 实例
       if (config.qqBinding?.enabled && id) {

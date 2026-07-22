@@ -485,6 +485,15 @@ public class WorldContext {
         String action = params.has("action") ? params.get("action").getAsString() : "";
         String botName = params.has("bot_name") ? params.get("bot_name").getAsString() : "";
 
+        // 记录 bot_control 请求到达（debug 级别，但先改为 info 以便排查上线问题）
+        LOG.info("Received bot_control: action='{}', bot_name='{}'", action, botName);
+
+        // 对 bot_name 做 sanitize，与 AgentConfig.botName() 保持一致
+        if (botName != null && !botName.isEmpty()) {
+            String sanitized = botName.replaceAll("[^a-zA-Z0-9_]", "_");
+            botName = sanitized.length() > 16 ? sanitized.substring(0, 16) : sanitized;
+        }
+
         // online/offline 需要切换到服务端线程执行
         if ("online".equals(action) || "offline".equals(action)) {
             handleBotControlOnServerThread(request, respond, action, botName);
