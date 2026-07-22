@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useAgentStore } from '../../stores/agentStore'
 import { chatApi } from '../../lib/ipc'
 import type { ChatMessage } from '../../lib/types'
+import type { StreamEvent } from '../../stores/chatStore'
 import MessageList from '../chat/MessageList'
 
 interface QQChatPanelProps {
@@ -9,11 +10,11 @@ interface QQChatPanelProps {
 }
 
 /**
- * QQ 对话日志面板
+ * V33: QQ 对话日志面板（支持流式输出）
  *
  * 从后端加载 source === 'qq' 的对话历史，支持开启新对话（清空历史）。
- * 支持实时轮询更新（每 5 秒检查新消息）。
- * 消息列表自带滚动框，支持无限滚动加载更多。
+ * 同时监听 chat:stream-event 实时流式事件，通过 MessageList 实时显示。
+ * 流式结束后自动刷新历史记录。
  */
 const QQChatPanel: React.FC<QQChatPanelProps> = ({ agentId }) => {
   const currentAgent = useAgentStore(s => s.currentAgent)
@@ -21,7 +22,10 @@ const QQChatPanel: React.FC<QQChatPanelProps> = ({ agentId }) => {
   const [loading, setLoading] = useState(true)
   const [clearing, setClearing] = useState(false)
   const [limit, setLimit] = useState(10)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [streamingEvents, setStreamingEvents] = useState<StreamEvent[]>([])
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const unsubStreamRef = useRef<(() => void) | null>(null)
   const lastMessageIdRef = useRef<string>('')
 
   const workspaceId = currentAgent?.workspaceId ?? ''
@@ -47,9 +51,46 @@ const QQChatPanel: React.FC<QQChatPanelProps> = ({ agentId }) => {
     }
   }, [workspaceId, agentId, limit])
 
-  // 轮询增量更新
-  const pollNewMessages = useCallback(async () => {
+  // 监听流式事件
+  useEffect(() => {
+    // 清理之前的订阅
+    if (unsubStreamRef.current) {
+      unsubStreamRef.current()
+      unsubStreamRef.current = null
+    }
+
     if (!agentId) return
+
+    unsubStreamRef.current = chatApi.onStreamEvent((event) => {
+      // 只处理当前 agent 的事件
+      if (event.agentId !== agentId) return
+
+      if (event.type === 'done') {
+        // 流式结束：重置流式状态，刷新历史
+        setIsStreaming(false)
+        setStreamingEvents([])
+        loadHistory(false)
+      } else {
+        // thinking / text / tool_calls：追加到流式事件列表
+        setIsStreaming(true)
+        setStreamingEvents(prev => [...prev, {
+          type: event.type as StreamEvent['type'],
+          data: event.data as StreamEvent['data'],
+        }])
+      }
+    })
+
+    return () => {
+      if (unsubStreamRef.current) {
+        unsubStreamRef.current()
+        unsubStreamRef.current = null
+      }
+    }
+  }, [agentId, loadHistory])
+
+  // 轮询增量更新（用于流式结束后刷新历史）
+  const pollNewMessages = useCallback(async () => {
+    if (!agentId || isStreaming) return
     try {
       const data = await chatApi.qqHistory(workspaceId, agentId, 10)
       if (data.length > 0) {
@@ -62,7 +103,7 @@ const QQChatPanel: React.FC<QQChatPanelProps> = ({ agentId }) => {
     } catch {
       // 静默处理轮询错误
     }
-  }, [workspaceId, agentId, loadHistory])
+  }, [workspaceId, agentId, loadHistory, isStreaming])
 
   // 初始加载 + 定时轮询
   useEffect(() => {
@@ -132,14 +173,17 @@ const QQChatPanel: React.FC<QQChatPanelProps> = ({ agentId }) => {
           </svg>
           {clearing ? '清除中...' : '开启新对话'}
         </button>
+        {isStreaming && (
+          <span className="text-xs text-blue-500 animate-pulse">LLM 响应中...</span>
+        )}
       </div>
 
       {/* 消息列表 — 带滚动框 */}
-      {loading && messages.length === 0 ? (
+      {loading && messages.length === 0 && !isStreaming ? (
         <div className="flex-1 min-h-0 flex items-center justify-center py-12 text-sm text-gray-400">
           加载中...
         </div>
-      ) : messages.length === 0 ? (
+      ) : messages.length === 0 && !isStreaming ? (
         <div className="flex-1 min-h-0 flex items-center justify-center text-gray-400 px-5 py-16">
           <div className="text-center">
             <p className="text-base font-medium text-gray-500">QQ 对话日志</p>
@@ -149,13 +193,13 @@ const QQChatPanel: React.FC<QQChatPanelProps> = ({ agentId }) => {
       ) : (
         <MessageList
           messages={messages}
-          isStreaming={false}
-          streamingEvents={[]}
+          isStreaming={isStreaming}
+          streamingEvents={streamingEvents}
         />
       )}
 
       {/* 加载更多 */}
-      {messages.length > 0 && (
+      {messages.length > 0 && !isStreaming && (
         <div className="shrink-0 py-2 text-center">
           <button
             className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer"

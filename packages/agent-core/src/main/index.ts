@@ -3,7 +3,7 @@ import path from 'path'
 import fs, { existsSync, mkdirSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { initLogger, getLogger, getLogDb } from './log'
-import { registerAllIpcHandlers, setMemoryManager, bootstrapAndWireAgents, createResolveTarget, getSharedAgentConfigManager, getMainAgentRegistry } from './ipc'
+import { registerAllIpcHandlers, setMemoryManager, bootstrapAndWireAgents, createResolveTarget, getSharedAgentConfigManager, getMainAgentRegistry, setMainWindowRef } from './ipc'
 import { initModelRegistry } from './ipc/model-handler'
 import { setLogDb } from './ipc/log-handler'
 import { getToolCallCollector, setToolCallCollector } from './ipc/tool-call-handler'
@@ -500,6 +500,9 @@ function createWindow(): void {
 
   // 注册 IPC Handler
   registerAllIpcHandlers(mainWindow)
+
+  // V33: 设置主窗口引用，用于流式事件实时推送到前端
+  setMainWindowRef(mainWindow)
 
   mainWindow.on('closed', () => {
     mainWindow = null

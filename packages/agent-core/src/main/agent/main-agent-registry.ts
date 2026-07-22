@@ -127,6 +127,11 @@ export interface MainAgentRegistryDeps {
   orchestratorFactory?: (mainAgent: MainAgent) => Orchestrator;
   /** 多轮迭代上限，默认 5 */
   maxRounds?: number;
+  /**
+   * V33: 流式事件发射器（可选）
+   * 每 agent 构造时注入，emit 事件供前端实时显示 LLM 输出。
+   */
+  streamEmitter?: (event: { type: 'thinking' | 'text' | 'tool_calls' | 'done'; data?: unknown }) => void;
 }
 
 /** list() 返回项 */
@@ -908,6 +913,7 @@ export class MainAgentRegistry {
       scheduler: this.deps.scheduler,
       observer: this.deps.observer,
       maxRounds: this.deps.maxRounds ?? DEFAULT_MAX_ROUNDS,
+      streamEmitter: this.deps.streamEmitter,
     });
   }
 

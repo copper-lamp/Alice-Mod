@@ -80,6 +80,12 @@ export interface MainAgentDeps {
   maxRounds?: number;
   /** 外部 abort 信号（可选） */
   abortSignal?: AbortSignal;
+  /**
+   * 流式事件发射器（可选）
+   * 每轮 LLM 响应后发射 thinking/text/tool_calls/done 事件，供前端实时显示。
+   * agentId 用于标识事件来源，供前端按 agent 过滤。
+   */
+  streamEmitter?: (event: { type: 'thinking' | 'text' | 'tool_calls' | 'done'; data?: unknown; agentId?: string }) => void;
 }
 
 export interface MainAgentEvent {
@@ -287,6 +293,18 @@ function filterThinkingContent(content: string): string {
     .trim();
 
   return result;
+}
+
+/**
+ * V33: 从原始 LLM 响应中提取 thinking 内容
+ * 使用与 filterThinkingContent 相同的正则模式反向提取
+ */
+function extractThinking(content: string): string | null {
+  const match = content.match(/<thinking>([\s\S]*?)<\/thinking>/i)
+    ?? content.match(/\[thinking\]([\s\S]*?)\[\/thinking\]/i)
+    ?? content.match(/\{thinking\}([\s\S]*?)\{\/thinking\}/i)
+    ?? content.match(/<!--\s*thinking\s*([\s\S]*?)-->/i);
+  return match?.[1]?.trim() ?? null;
 }
 
 /** 把 BuildSource 映射到 MainAgentEvent.source */
@@ -635,6 +653,26 @@ export class MainAgent {
         lastResponse = response;
         console.log(`[MainAgent] LLM 响应 (round=${rounds + 1}/${maxRounds}): provider=${resolved.providerId}, model=${resolved.model}, tokens=${response.usage.totalTokens}, finish=${response.finishReason}, content=${extractContent(response.message.content)?.slice(0, 60) ?? ''}`);
 
+        // V33: 发射流式事件（前端实时显示）
+        if (this.deps.streamEmitter) {
+          const rawContent = extractContent(response.message.content) ?? '';
+          const thinking = extractThinking(rawContent);
+          const cleanContent = filterThinkingContent(rawContent);
+          if (thinking) {
+            this.deps.streamEmitter({ type: 'thinking', data: thinking, agentId: this.deps.agentId });
+          }
+          if (cleanContent) {
+            this.deps.streamEmitter({ type: 'text', data: cleanContent, agentId: this.deps.agentId });
+          }
+          if (response.message.tool_calls?.length) {
+            this.deps.streamEmitter({ type: 'tool_calls', data: response.message.tool_calls.map(tc => ({
+              id: tc.toolCallId,
+              name: tc.toolName,
+              arguments: tc.arguments,
+            })), agentId: this.deps.agentId });
+          }
+        }
+
         // d. 持久化 assistant 消息（V30: 增强的 thinking 过滤，覆盖所有常见格式）
         const assistantContent = filterThinkingContent(extractContent(response.message.content));
         await this.deps.historyStore.append({
@@ -740,6 +778,11 @@ export class MainAgent {
       const durationMs = Date.now() - startTime;
       console.log(`[MainAgent] handle() 完成 (agent=${this.deps.agentId}, source=${event.source}): rounds=${rounds}, totalTokens=${totalTokens}, durationMs=${durationMs}, truncated=${truncated}, error=${truncated ? 'MAX_ROUNDS_EXCEEDED' : pipelineError ?? 'none'}, finalResponse=${finalResponse.slice(0, 60)}${finalResponse.length > 60 ? '...' : ''}`);
 
+      // V33: 发射 done 事件
+      if (this.deps.streamEmitter) {
+        this.deps.streamEmitter({ type: 'done', data: { finalResponse, rounds, totalTokens, durationMs, truncated }, agentId: this.deps.agentId });
+      }
+
       return {
         finalResponse,
         rounds,
@@ -799,6 +842,10 @@ export class MainAgent {
   // ════════════════════════════════════════════════════════════
 
   private fail(startTime: number, rounds: number, totalTokens: number, error: string): MainAgentResult {
+    // V33: 发射 done 事件（错误终止）
+    if (this.deps.streamEmitter) {
+      this.deps.streamEmitter({ type: 'done', data: { error }, agentId: this.deps.agentId });
+    }
     return {
       finalResponse: '',
       rounds,

@@ -57,6 +57,19 @@ import { getMemoryManager } from './memory-handler'
 
 export { setMemoryManager, getSharedAgentConfigManager }
 
+/** V33: 主窗口引用（用于发送流式事件到渲染进程） */
+let _mainWindow: BrowserWindow | null = null
+
+/** V33: 设置主窗口引用（在 createWindow 之后调用） */
+export function setMainWindowRef(mainWindow: BrowserWindow): void {
+  _mainWindow = mainWindow
+}
+
+/** V33: 获取主窗口引用 */
+export function getMainWindowRef(): BrowserWindow | null {
+  return _mainWindow
+}
+
 /** V28：获取 ConnectionResolver 实例（供 agent-handler 使用） */
 export function getConnectionResolver(): import('../agent/connection-resolver').ConnectionResolver | null {
   return _connectionResolver
@@ -207,6 +220,14 @@ export async function bootstrapAndWireAgents(tcpServer: TcpServer): Promise<Main
   // 3a. V22：构造元编排层共享组件
   const orchestratorFactory = buildOrchestratorFactory()
 
+  // V33: 创建流式事件发射器，通过主窗口发送到渲染进程
+  const streamEmitter = (event: { type: 'thinking' | 'text' | 'tool_calls' | 'done'; data?: unknown }) => {
+    const win = _mainWindow
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('chat:stream-event', event)
+    }
+  }
+
   _agentRegistry = new MainAgentRegistry({
     agentConfigManager,
     toolRegistry,
@@ -220,6 +241,7 @@ export async function bootstrapAndWireAgents(tcpServer: TcpServer): Promise<Main
     promptBuilderFactory: (reg) => new PromptBuilder({ toolRegistry: reg }),
     maxRounds: 5,
     orchestratorFactory,
+    streamEmitter,
   })
 
   // V28：注入 chat-history store 到 IPC handler，使前端能查询 LLM 对话历史

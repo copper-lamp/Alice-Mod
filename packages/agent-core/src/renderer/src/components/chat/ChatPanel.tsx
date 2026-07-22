@@ -2,20 +2,25 @@ import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useAgentStore } from '../../stores/agentStore'
 import { chatApi } from '../../lib/ipc'
 import type { ChatMessage } from '../../lib/types'
+import type { StreamEvent } from '../../stores/chatStore'
 import MessageList from './MessageList'
 
 /**
- * 智能体对话日志面板
+ * V33: 智能体对话日志面板（支持流式输出）
  *
  * 从后端加载当前智能体的 LLM 对话历史（chat:history），
- * 支持实时轮询更新（每 5 秒检查新消息）和加载更多。
+ * 同时监听 chat:stream-event 实时流式事件，通过 MessageList 实时显示。
+ * 流式结束后自动刷新历史记录。
  */
 const ChatPanel: React.FC = () => {
   const currentAgent = useAgentStore(s => s.currentAgent)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [limit, setLimit] = useState(50)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [streamingEvents, setStreamingEvents] = useState<StreamEvent[]>([])
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const unsubStreamRef = useRef<(() => void) | null>(null)
   const lastMessageIdRef = useRef<string>('')
 
   const workspaceId = currentAgent?.workspaceId ?? ''
@@ -42,11 +47,48 @@ const ChatPanel: React.FC = () => {
     }
   }, [workspaceId, agentId, limit])
 
-  // 轮询增量更新
-  const pollNewMessages = useCallback(async () => {
+  // 监听流式事件
+  useEffect(() => {
+    // 清理之前的订阅
+    if (unsubStreamRef.current) {
+      unsubStreamRef.current()
+      unsubStreamRef.current = null
+    }
+
     if (!agentId) return
+
+    unsubStreamRef.current = chatApi.onStreamEvent((event) => {
+      // 只处理当前 agent 的事件
+      if (event.agentId !== agentId) return
+
+      if (event.type === 'done') {
+        // 流式结束：重置流式状态，刷新历史
+        setIsStreaming(false)
+        setStreamingEvents([])
+        loadHistory(false)
+      } else {
+        // thinking / text / tool_calls：追加到流式事件列表
+        setIsStreaming(true)
+        setStreamingEvents(prev => [...prev, {
+          type: event.type as StreamEvent['type'],
+          data: event.data as StreamEvent['data'],
+        }])
+      }
+    })
+
+    return () => {
+      if (unsubStreamRef.current) {
+        unsubStreamRef.current()
+        unsubStreamRef.current = null
+      }
+    }
+  }, [agentId, loadHistory])
+
+  // 轮询增量更新（用于流式结束后刷新历史）
+  const pollNewMessages = useCallback(async () => {
+    if (!agentId || isStreaming) return
     try {
-      const data = await chatApi.history(workspaceId, 50)
+      const data = await chatApi.history(workspaceId, 50, agentId)
       if (data.length > 0) {
         const lastId = data[data.length - 1].id
         if (lastId !== lastMessageIdRef.current) {
@@ -56,7 +98,7 @@ const ChatPanel: React.FC = () => {
     } catch {
       // 静默处理轮询错误
     }
-  }, [workspaceId, agentId, loadHistory])
+  }, [workspaceId, agentId, loadHistory, isStreaming])
 
   // 初始加载 + 定时轮询
   useEffect(() => {
@@ -93,14 +135,17 @@ const ChatPanel: React.FC = () => {
           </svg>
           {loading ? '加载中...' : '刷新'}
         </button>
+        {isStreaming && (
+          <span className="text-xs text-blue-500 animate-pulse">LLM 响应中...</span>
+        )}
       </div>
 
       {/* 消息列表 */}
-      {loading && messages.length === 0 ? (
+      {loading && messages.length === 0 && !isStreaming ? (
         <div className="flex-1 min-h-0 flex items-center justify-center py-12 text-sm text-gray-400">
           加载中...
         </div>
-      ) : messages.length === 0 ? (
+      ) : messages.length === 0 && !isStreaming ? (
         <div className="flex-1 min-h-0 flex items-center justify-center text-gray-400 px-5 py-16">
           <div className="text-center">
             <p className="text-base font-medium text-gray-500">LLM 对话面板</p>
@@ -110,13 +155,13 @@ const ChatPanel: React.FC = () => {
       ) : (
         <MessageList
           messages={messages}
-          isStreaming={false}
-          streamingEvents={[]}
+          isStreaming={isStreaming}
+          streamingEvents={streamingEvents}
         />
       )}
 
       {/* 加载更多 */}
-      {messages.length > 0 && (
+      {messages.length > 0 && !isStreaming && (
         <div className="shrink-0 py-2 text-center">
           <button
             className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer"

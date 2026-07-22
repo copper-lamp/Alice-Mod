@@ -37,6 +37,18 @@ export const chatApi = {
   /** 清除 QQ 对话历史 */
   clearQQHistory: (workspaceId: string, agentId: string) =>
     window.electronAPI.invoke('chat:clear-qq-history', { workspaceId, agentId }) as Promise<{ success: boolean; deleted?: number; error?: string }>,
+
+  /**
+   * V33: 监听 LLM 流式事件（thinking / text / tool_calls / done）
+   * agentId 用于标识事件来源，供前端按 agent 过滤显示。
+   * 返回取消订阅函数
+   */
+  onStreamEvent: (callback: (event: { type: 'thinking' | 'text' | 'tool_calls' | 'done'; data?: unknown; agentId?: string }) => void) => {
+    return window.electronAPI.on('chat:stream-event', (...args: unknown[]) => {
+      const event = args[0] as { type: 'thinking' | 'text' | 'tool_calls' | 'done'; data?: unknown; agentId?: string }
+      callback(event)
+    })
+  },
 }
 
 /** IPC 调用封装 - 配置 */
