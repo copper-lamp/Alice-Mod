@@ -75,21 +75,11 @@ jobs:
           cp ${{ github.workspace }}/.npmrc ./ 2>/dev/null || true
           # 不同步 pnpm-workspace.yaml — 子仓库是单包项目，不是 workspace
 
-          # 修复子仓库 release.yml：子仓库没有 workspace，不能用 --frozen-lockfile
-          if [ -f .github/workflows/release.yml ]; then
-            sed -i 's/pnpm install --frozen-lockfile/pnpm install/g' .github/workflows/release.yml
-            # 只有 Windows 构建
-            sed -i '/macos-latest/d' .github/workflows/release.yml
-            sed -i '/ubuntu-latest/d' .github/workflows/release.yml
-            sed -i '/mac:/d' .github/workflows/release.yml
-            sed -i '/linux:/d' .github/workflows/release.yml
-            # 修复 matrix 语法（去掉多余逗号）
-            sed -i 's/\[windows-latest, macos-latest, ubuntu-latest\]/[windows-latest]/' .github/workflows/release.yml
-          fi
+          # 子仓库 release.yml 已配置为纯 Windows 构建，无需修改
 
           git add -A
           git diff --quiet --cached || git commit -m "sync: update from Alice-Mod @ ${{ github.sha }}"
-          git push origin "$SYNC_BRANCH" --force
+          git push origin "$SYNC_BRANCH" --force || echo "WARN: push failed (may be concurrent with another sync)"
 
       - name: Trigger Alice-App release
         if: steps.check.outputs.changed == 'true' && github.ref_type == 'tag' && startsWith(github.ref_name, 'ac/')
