@@ -14,12 +14,12 @@ name: Sync JE to Alice-JE
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'packages/adapter-java/**'
-  push:
+    branches:
+      - 'main'
     tags:
       - 'je/v*'
+    paths:
+      - 'packages/adapter-java/**'
 
 jobs:
   sync:
