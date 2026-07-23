@@ -74,8 +74,7 @@ jobs:
           mkdir -p packages
           cp -r ${{ github.workspace }}/packages/shared ./packages/shared
 
-          # 复制 monorepo 根级文件
-          cp ${{ github.workspace }}/pnpm-lock.yaml ./ 2>/dev/null || true
+          # 复制 monorepo 根级文件（不复制 pnpm-lock.yaml: agent-core package.json 与根级 lockfile 不匹配）
           cp ${{ github.workspace }}/pnpm-workspace.yaml ./ 2>/dev/null || true
           cp ${{ github.workspace }}/.npmrc ./ 2>/dev/null || true
 
