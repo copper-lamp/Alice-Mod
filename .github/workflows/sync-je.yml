@@ -1,3 +1,15 @@
+# ============================================================
+# Sync JE to Alice-JE
+# 
+# 触发时机:
+#   1. main 分支推送, 且 packages/adapter-java/** 有变更
+#   2. 推送 je/v* 标签时
+#
+# 行为:
+#   - 分支推送: 同步源码到 Alice-JE 仓库对应分支
+#   - 标签推送: 同步源码 + 推送剥离前缀的标签到 Alice-JE,
+#               触发 Alice-JE 的发布工作流 (Matrix 构建所有 MC 版本)
+# ============================================================
 name: Sync JE to Alice-JE
 
 on:
@@ -5,6 +17,9 @@ on:
     branches: [main]
     paths:
       - 'packages/adapter-java/**'
+  push:
+    tags:
+      - 'je/v*'
 
 jobs:
   sync:
@@ -20,30 +35,55 @@ jobs:
           path: target-repo
           token: ${{ secrets.SUBREPO_PAT }}
 
+      - name: Determine target branch
+        id: branch
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "branch=main" >> $GITHUB_OUTPUT
+          else
+            echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Sync files to Alice-JE
         working-directory: target-repo
+        env:
+          TARGET_BRANCH: ${{ steps.branch.outputs.branch }}
         run: |
           git config user.name "Alice Mod Bot"
           git config user.email "bot@alice-mod.dev"
 
-          # 保留子仓库独有的文件（versions.json、release.yml 等）
-          cp .github/workflows/release.yml /tmp/release.yml 2>/dev/null || true
-          cp versions.json /tmp/versions.json 2>/dev/null || true
+          git checkout "$TARGET_BRANCH" 2>/dev/null || git checkout -b "$TARGET_BRANCH"
 
+          # 保留子仓库独有的文件（release.yml）
+          mkdir -p /tmp/je-sync-backup
+          cp .github/workflows/release.yml /tmp/je-sync-backup/release.yml 2>/dev/null || true
+
+          # 清空并复制 JE 源码
           rm -rf ./*
           cp -r ${{ github.workspace }}/packages/adapter-java/* ./
           cp ${{ github.workspace }}/packages/adapter-java/.* ./ 2>/dev/null || true
 
           # 恢复子仓库独有的文件
-          cp /tmp/release.yml .github/workflows/release.yml 2>/dev/null || true
-          cp /tmp/versions.json ./versions.json 2>/dev/null || true
+          mkdir -p .github/workflows
+          cp /tmp/je-sync-backup/release.yml .github/workflows/release.yml 2>/dev/null || true
 
           git add -A
           git diff --quiet --cached || git commit -m "sync: update from Alice-Mod @ ${{ github.sha }}"
-          git push origin ${{ github.ref_name }} --force
+          git push origin "$TARGET_BRANCH" --force || echo "WARN: push failed (may be concurrent with another sync)"
 
-      - name: Trigger Alice-JE release
-        if: startsWith(github.ref, 'refs/tags/je/')
+      - name: Push tag to Alice-JE
+        if: github.ref_type == 'tag'
+        working-directory: target-repo
+        run: |
+          TAG="${{ github.ref_name }}"
+          # 去掉 je/ 前缀: je/v1.0.0 → v1.0.0
+          STRIPPED_TAG="${TAG#je/}"
+          git tag -f "$STRIPPED_TAG"
+          git push origin "$STRIPPED_TAG" --force
+          echo "Pushed tag '$STRIPPED_TAG' to Alice-JE (from '$TAG')"
+
+      - name: Trigger Alice-JE release (via repository_dispatch)
+        if: github.ref_type == 'tag'
         run: |
           curl -X POST \
             -H "Authorization: Bearer ${{ secrets.SUBREPO_PAT }}" \

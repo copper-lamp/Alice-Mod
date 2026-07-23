@@ -1,5 +1,5 @@
 plugins {
-    id("fabric-loom") version "1.7.4"
+    id("fabric-loom") version project.findProperty("loom_version") ?: "1.7.4"
     id("java-library")
     id("io.freefair.lombok") version "8.12.2.1"
 }
@@ -101,5 +101,8 @@ tasks.register('deployToServer') {
     }
 }
 
-// 让 build 任务自动部署
-tasks.named('build') { finalizedBy('deployToServer') }
+// 让 build 任务自动部署（仅在非 CI 环境中）
+// CI 环境由 GitHub Actions 自动设置 CI=true
+if (System.getenv('CI') == null) {
+    tasks.named('build') { finalizedBy('deployToServer') }
+}
