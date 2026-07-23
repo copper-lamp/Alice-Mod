@@ -67,7 +67,7 @@ jobs:
 
           git add -A
           git diff --quiet --cached || git commit -m "sync: update from Alice-Mod @ ${{ github.sha }}"
-          git push "https://x-access-token:${{ secrets.SUBREPO_PAT }}@github.com/copper-lamp/Alice-JE.git" "$TARGET_BRANCH" --force
+          git push "https://x-access-token:${{ secrets.SUBREPO_PAT }}@github.com/copper-lamp/Alice-JE.git" "$TARGET_BRANCH"
 
       - name: Push tag to Alice-JE
         if: github.ref_type == 'tag'
@@ -77,7 +77,7 @@ jobs:
           # 去掉 je/ 前缀: je/v1.0.0 → v1.0.0
           STRIPPED_TAG="${TAG#je/}"
           git tag -f "$STRIPPED_TAG"
-          git push "https://x-access-token:${{ secrets.SUBREPO_PAT }}@github.com/copper-lamp/Alice-JE.git" "refs/tags/$STRIPPED_TAG" --force
+          git push "https://x-access-token:${{ secrets.SUBREPO_PAT }}@github.com/copper-lamp/Alice-JE.git" "refs/tags/$STRIPPED_TAG"
           echo "Pushed tag '$STRIPPED_TAG' to Alice-JE (from '$TAG')"
 
       - name: Trigger Alice-JE release (via repository_dispatch)
