@@ -77,6 +77,7 @@ jobs:
           # 复制 monorepo 根级文件（不复制 pnpm-lock.yaml: agent-core package.json 与根级 lockfile 不匹配）
           cp ${{ github.workspace }}/pnpm-workspace.yaml ./ 2>/dev/null || true
           cp ${{ github.workspace }}/.npmrc ./ 2>/dev/null || true
+          cp ${{ github.workspace }}/tsconfig.json ./ 2>/dev/null || true
 
           # 子仓库 release.yml 已配置为纯 Windows 构建，无需修改
 
