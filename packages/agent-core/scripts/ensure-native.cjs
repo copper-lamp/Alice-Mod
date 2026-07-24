@@ -12,7 +12,7 @@
  *
  * 注意：require('better-sqlite3') 只加载 JS 包装层，不触发原生模块加载。
  * 原生模块在 new Database() 时才通过 bindings 包加载。因此检测必须
- * 尝试 new Database(':memory:') 或直接检查 .node 文件是否存在。
+ * 尝试 new Database(':memory:') 或直接检查 .node 文件是否存在
  */
 
 const { execSync } = require('child_process');
@@ -23,7 +23,7 @@ const target = process.argv[2];
 if (!target || !['electron', 'node'].includes(target)) {
   console.error('[ensure-native] 用法: node scripts/ensure-native.cjs <electron|node>');
   process.exit(1);
-}
+}no
 
 const CWD = path.join(__dirname, '..');
 
