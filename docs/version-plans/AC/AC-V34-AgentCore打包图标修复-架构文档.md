@@ -9,8 +9,8 @@
 输入：设计导出的多倍率 PNG 原图，位于 `packages/agent-core/src/res/aliceIcon`
 
 输出：
-- `packages/agent-core/build/icon.png`
-- `packages/agent-core/build/icon.ico`
+- `packages/agent-core/src/res/icon.png`
+- `packages/agent-core/src/res/icon.ico`
 - `packages/agent-core/package.json` 中更新后的 Windows 打包引用
 
 ## 2. 资源转换策略
@@ -30,9 +30,9 @@
 
 更新后链路如下：
 
-1. 打包读取 `build/icon.ico`
-2. NSIS 安装器使用该图标资源
-3. 生成的 `exe` 和快捷方式从同一图标源派生
+1. 打包读取 `src/res/icon.ico`
+2. GitHub Actions 与本地打包都从仓库内资源路径读取该文件
+3. NSIS 安装器、`exe` 和快捷方式从同一图标源派生
 
 ## 4. 清理策略
 

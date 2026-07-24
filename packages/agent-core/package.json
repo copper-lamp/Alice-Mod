@@ -70,7 +70,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "src/res/icon.ico"
     },
 
     "nsis": {

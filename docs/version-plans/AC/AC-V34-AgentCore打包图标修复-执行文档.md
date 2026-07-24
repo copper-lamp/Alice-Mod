@@ -8,23 +8,23 @@
 
 1. 检查 `src/res/aliceIcon` 中导出的多倍率 PNG 原图
 2. 确认最大图尺寸可作为统一源图
-3. 生成标准化 `build/icon.png`
-4. 生成多尺寸 `build/icon.ico`
-5. 将 `package.json` 中的 `build.win.icon` 从 `build/icon.png` 改为 `build/icon.ico`
+3. 生成标准化 `src/res/icon.png`
+4. 生成多尺寸 `src/res/icon.ico`
+5. 将 `package.json` 中的 `build.win.icon` 更新为 `src/res/icon.ico`
 6. 删除 `src/res/aliceIcon` 目录
 7. 检查生成结果和配置引用
 
 ## 2. 产出物
 
-- `packages/agent-core/build/icon.png`
-- `packages/agent-core/build/icon.ico`
+- `packages/agent-core/src/res/icon.png`
+- `packages/agent-core/src/res/icon.ico`
 - 更新后的 `packages/agent-core/package.json`
 - 删除后的原始导出目录 `packages/agent-core/src/res/aliceIcon`
 
 ## 3. 验证方式
 
-1. 检查 `build/icon.ico` 是否存在
-2. 检查 `package.json` 是否引用 `build/icon.ico`
+1. 检查 `src/res/icon.ico` 是否存在
+2. 检查 `package.json` 是否引用 `src/res/icon.ico`
 3. 重新执行 Windows 打包
 4. 检查安装器、安装目录中的 `Alice.exe`、桌面快捷方式图标是否一致
 5. 若图标仍未刷新，清理 Windows 图标缓存后再次核对

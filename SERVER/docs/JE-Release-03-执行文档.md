@@ -129,7 +129,7 @@ git push origin "je/v${VERSION}"
 
 1. 进入 GitHub Actions 页面，确认 sync-je.yml 运行成功
 2. 进入 copper-lamp/Alice-JE 仓库，确认 release.yml 运行成功
-3. 检查 Alice-JE Release 页面，确认包含当前白名单中的版本 JAR（现阶段为 1.21.4-1.21.10）
+3. 检查 Alice-JE Release 页面，确认包含当前白名单中的版本 JAR（现阶段为 1.21.4）
 
 ### 3.3 问题排查
 
