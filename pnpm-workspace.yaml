@@ -3,10 +3,10 @@ packages:
 allowBuilds:
   '@swc/core': true
   better-sqlite3: true
-  cpu-features: set this to true or false
+  cpu-features: true
   electron: true
   esbuild: true
   lzma-native: true
-  protobufjs: set this to true or false
-  ssh2: set this to true or false
+  protobufjs: true
+  ssh2: true
   unrs-resolver: true
