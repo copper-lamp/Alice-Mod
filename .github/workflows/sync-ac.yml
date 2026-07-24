@@ -35,6 +35,21 @@ jobs:
             echo "reason=no matching files changed" >> $GITHUB_OUTPUT
           fi
 
+      - uses: pnpm/action-setup@v4
+        if: steps.check.outputs.changed == 'true'
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.changed == 'true'
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install workspace dependencies
+        if: steps.check.outputs.changed == 'true'
+        run: pnpm install --no-frozen-lockfile
+
       - uses: actions/checkout@v4
         if: steps.check.outputs.changed == 'true'
         with:
