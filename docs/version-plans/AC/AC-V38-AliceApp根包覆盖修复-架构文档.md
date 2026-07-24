@@ -29,12 +29,15 @@
 ## 3. 修复策略
 
 保留以下根级同步文件：
-- `pnpm-workspace.yaml`
 - `pnpm-lock.yaml`
 - `.npmrc`
 - `tsconfig.json`
 
+由同步步骤生成 `pnpm-workspace.yaml`，内容为：
+- `.`
+- `packages/*`
+
 移除以下覆盖行为：
 - 不再复制 monorepo 根 `package.json`
 
-这样目标仓库根目录将保持为同步后的 `agent-core` 包，同时仍可使用 pnpm 锁文件与工作区辅助配置。
+这样目标仓库根目录将保持为同步后的 `agent-core` 包，同时仍可让 `@mcagent/shared` 被 workspace 正确识别。

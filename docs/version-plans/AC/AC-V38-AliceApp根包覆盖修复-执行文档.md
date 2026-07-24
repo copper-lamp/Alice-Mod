@@ -16,7 +16,7 @@
 
 已更新 [sync-ac.yml](file:///D:/McAgent/.github/workflows/sync-ac.yml)：
 
-- 保留：`pnpm-workspace.yaml`
+- 生成：`pnpm-workspace.yaml`（包含 `.` 与 `packages/*`）
 - 保留：`pnpm-lock.yaml`
 - 保留：`.npmrc`
 - 保留：`tsconfig.json`

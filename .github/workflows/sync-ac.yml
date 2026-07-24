@@ -74,10 +74,16 @@ jobs:
           mkdir -p packages
           cp -r ${{ github.workspace }}/packages/shared ./packages/shared
 
-          # 复制锁文件与基础配置；Alice-App 为单包铺平结构，不同步 monorepo 的 pnpm-workspace.yaml，避免根包被排除在递归构建之外
+          # 复制锁文件与基础配置；Alice-App 为单包铺平结构，使用专用 workspace 配置同时包含根包与 packages/*
           cp ${{ github.workspace }}/pnpm-lock.yaml ./ 2>/dev/null || true
           cp ${{ github.workspace }}/.npmrc ./ 2>/dev/null || true
           cp ${{ github.workspace }}/tsconfig.json ./ 2>/dev/null || true
+
+          cat > pnpm-workspace.yaml <<'EOF'
+          packages:
+            - '.'
+            - 'packages/*'
+          EOF
 
           # 子仓库 release.yml 已配置为纯 Windows 构建，无需修改
 

@@ -24,7 +24,7 @@
 ## 4. 目标
 
 1. 保证 `Alice-App` 根目录的 `package.json` 保持为 `agent-core` 自身定义
-2. 继续同步 lockfile 等辅助文件，但不覆盖根包定义
+2. 保留 lockfile 等辅助文件，并生成适配 Alice-App 的专用 workspace 配置
 3. 让 `Alice-App` release workflow 可直接执行 `pnpm dist:win`
 
 ## 5. 验收标准
