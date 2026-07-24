@@ -53,6 +53,11 @@ jobs:
             echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Build shared before sync
+        if: steps.check.outputs.changed == 'true'
+        working-directory: ${{ github.workspace }}/packages/shared
+        run: pnpm build
+
       - name: Sync files to Alice-App
         if: steps.check.outputs.changed == 'true'
         working-directory: target-repo
@@ -70,7 +75,7 @@ jobs:
           # 复制 AC 代码到子仓库根目录（Alice-App 采用单包铺平结构，不保留 packages/agent-core 层级）
           cp -r ${{ github.workspace }}/packages/agent-core/* ./
 
-          # 复制 shared 包（agent-core 依赖 @mcagent/shared: workspace:*）
+          # 复制 shared 包源码与编译产物（agent-core 依赖 @mcagent/shared: workspace:*）
           mkdir -p packages
           cp -r ${{ github.workspace }}/packages/shared ./packages/shared
 
