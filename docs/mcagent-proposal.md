@@ -12,7 +12,7 @@
 
 ### 1.1 我们做什么
 
-Alice Mod 是一个面向 Minecraft 的通用 AI Agent 框架。我们让大语言模型（LLM）像真人玩家一样思考、规划和执行，在 Minecraft 世界中完成从挖矿建造到全物品备货的复杂任务。
+Alice Mod 是一个面向 Minecraft 的通用 AI Agent 框架。我们让大语言模型（LLM）像真人玩家一样思考、规划和执行，在 Minecraft 世界中完成从挖矿建造到全物品备货的复杂任务
 
 **核心数据**
 
