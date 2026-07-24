@@ -1,7 +1,7 @@
 /**
  * ensure-native.cjs
  *
- * 确保 better-sqlite3 原生模块已为当前运行时编译，避免手动切换
+ * 确保 better-sqlite3 原生模块已为当前运行时编译，避免手动切换awa
  * 用法: node scripts/ensure-native.cjs <electron|node>
  *
  * 系统 Node.js 和 Electron 使用不同的 NODE_MODULE_VERSION：
