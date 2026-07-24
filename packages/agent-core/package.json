@@ -8,6 +8,7 @@
     "dev": "chcp 65001 > NUL & electron-vite dev",
     "predev": "node scripts/ensure-native.cjs electron",
     "build": "electron-vite build",
+    "dist:win": "electron-builder --win --publish never",
     "preview": "chcp 65001 > NUL & electron-vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
