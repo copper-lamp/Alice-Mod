@@ -1,6 +1,6 @@
 {
   "name": "@mcagent/agent-core",
-  "version": "0.0.11",
+  "version": "0.0.17",
   "private": true,
   "description": "McAgent Agent Core - Electron + React 桌面客户端",
   "main": "./dist/main/index.js",
@@ -78,7 +78,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "include": "build/installer.nsh"
+      "include": "src/res/installer.nsh"
     },
     "publish": {
       "provider": "github",
