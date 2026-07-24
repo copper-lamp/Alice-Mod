@@ -74,8 +74,7 @@ jobs:
           mkdir -p packages
           cp -r ${{ github.workspace }}/packages/shared ./packages/shared
 
-          # 复制 monorepo 根级辅助文件；根 package.json 保持为 agent-core 自身定义，避免覆盖 electron-builder 依赖与脚本
-          cp ${{ github.workspace }}/pnpm-workspace.yaml ./ 2>/dev/null || true
+          # 复制锁文件与基础配置；Alice-App 为单包铺平结构，不同步 monorepo 的 pnpm-workspace.yaml，避免根包被排除在递归构建之外
           cp ${{ github.workspace }}/pnpm-lock.yaml ./ 2>/dev/null || true
           cp ${{ github.workspace }}/.npmrc ./ 2>/dev/null || true
           cp ${{ github.workspace }}/tsconfig.json ./ 2>/dev/null || true
