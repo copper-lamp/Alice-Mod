@@ -8,11 +8,10 @@ import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.saveddata.SavedDataType;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,13 +56,13 @@ public final class BotRepository extends SavedData {
     private static final Codec<Map<UUID, Entry>> CODEC =
             Codec.unboundedMap(UUIDUtil.STRING_CODEC, Entry.CODEC);
 
-    // ---- Factory ---- //
+    // ---- SavedData type ---- //
 
-    private static final Factory<BotRepository> FACTORY = new Factory<>(
+    private static final SavedDataType<BotRepository> TYPE = SavedDataType.builder(
+            DATA_NAME,
             BotRepository::new,
-            BotRepository::load,
-            net.minecraft.util.datafix.DataFixTypes.SAVED_DATA_RANDOM_SEQUENCES
-    );
+            BotRepository::load
+    ).build();
 
     // ---- 数据 ---- //
 
@@ -81,7 +80,7 @@ public final class BotRepository extends SavedData {
 
     /** 从主世界数据存储中获取注册表实例。 */
     public static BotRepository get(MinecraftServer server) {
-        return server.overworld().getDataStorage().computeIfAbsent(FACTORY, DATA_NAME);
+        return server.overworld().getDataStorage().computeIfAbsent(TYPE);
     }
 
     // ---- CRUD ---- //
@@ -90,7 +89,7 @@ public final class BotRepository extends SavedData {
     public void put(UUID uuid, BotEntry entry) {
         entries.put(uuid, new Entry(
                 entry.name(),
-                entry.dimension().toString(),
+                entry.dimension(),
                 entry.position().getX(),
                 entry.position().getY(),
                 entry.position().getZ(),

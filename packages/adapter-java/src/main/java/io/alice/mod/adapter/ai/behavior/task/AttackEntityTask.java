@@ -7,7 +7,6 @@ import io.alice.mod.adapter.api.types.Vec3;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.item.SwordItem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -11,7 +11,6 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -229,20 +228,7 @@ public final class BotAccess {
                 MinecraftServer srv = server;
                 if (srv == null) srv = getServer();
                 if (srv == null) return;
-                ServerLevel targetLevel = switch (dimension.toLowerCase()) {
-                    case "overworld", "minecraft:overworld" -> srv.overworld();
-                    case "nether", "minecraft:the_nether" -> srv.getLevel(Level.NETHER);
-                    case "end", "minecraft:the_end" -> srv.getLevel(Level.END);
-                    default -> {
-                        var dimId = net.minecraft.resources.ResourceLocation.tryParse(dimension);
-                        if (dimId != null) {
-                            yield srv.getLevel(
-                                    net.minecraft.resources.ResourceKey.create(
-                                            net.minecraft.core.registries.Registries.DIMENSION, dimId));
-                        }
-                        yield null;
-                    }
-                };
+                ServerLevel targetLevel = io.alice.mod.adapter.world.DimensionResolver.resolve(srv, dimension);
                 if (targetLevel != null) {
                     player.teleportTo(targetLevel, x, y, z, Set.of(), player.getYRot(), player.getXRot(), false);
                 }

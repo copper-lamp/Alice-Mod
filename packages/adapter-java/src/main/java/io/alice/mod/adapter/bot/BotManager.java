@@ -2,19 +2,16 @@ package io.alice.mod.adapter.bot;
 
 import carpet.patches.EntityPlayerMPFake;
 import com.mojang.authlib.GameProfile;
+import io.alice.mod.adapter.world.DimensionResolver;
 import io.alice.mod.adapter.world.WorldContext;
 import io.alice.mod.adapter.world.WorldContextManager;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.Registries;
-import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.world.level.GameType;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
@@ -315,10 +312,7 @@ public final class BotManager {
         if (entry == null) return null;
 
         if (level == null) {
-            ResourceLocation dimId = ResourceLocation.tryParse(entry.dimension());
-            if (dimId != null) {
-                level = server.getLevel(ResourceKey.create(Registries.DIMENSION, dimId));
-            }
+            level = DimensionResolver.resolve(server, entry.dimension());
             if (level == null) level = server.overworld();
         }
         if (pos == null) {
@@ -375,13 +369,8 @@ public final class BotManager {
             try {
                 BotRepository.Entry repoEntry = BotRepository.get(server).find(uuid);
                 if (repoEntry != null) {
-                    ServerLevel level = server.overworld();
-                    ResourceLocation dimId = ResourceLocation.tryParse(repoEntry.dimension());
-                    if (dimId != null) {
-                        ServerLevel dimLevel = server.getLevel(
-                                ResourceKey.create(Registries.DIMENSION, dimId));
-                        if (dimLevel != null) level = dimLevel;
-                    }
+                    ServerLevel level = DimensionResolver.resolve(server, repoEntry.dimension());
+                    if (level == null) level = server.overworld();
                     respawn(uuid, level, null);
                 } else {
                     pendingRespawns.remove(uuid);
@@ -418,7 +407,7 @@ public final class BotManager {
             UUID uuid = bot.getUUID();
             ServerLevel level = (ServerLevel) bot.level();
             result.add(new BotInfo(uuid, bot.getName().getString(), true,
-                    level.dimension().location(), bot.blockPosition(),
+                    level.dimension().location().toString(), bot.blockPosition(),
                     bot.getHealth(), bot.getMaxHealth(), getCreatedAt(uuid)));
         }
         BotRepository repository = BotRepository.get(server);
@@ -426,7 +415,7 @@ public final class BotManager {
             if (!bots.containsKey(entry.getKey())) {
                 BotRepository.Entry e = entry.getValue();
                 result.add(new BotInfo(entry.getKey(), e.name(), false,
-                        ResourceLocation.tryParse(e.dimension()),
+                        e.dimension(),
                         new BlockPos(e.x(), e.y(), e.z()), 0, 0, e.createdAt()));
             }
         }
@@ -491,7 +480,7 @@ public final class BotManager {
 
     /** 假人信息（用于列表查询）。 */
     public record BotInfo(UUID uuid, String name, boolean online,
-                          ResourceLocation dimension, BlockPos position,
+                          String dimension, BlockPos position,
                           float health, float maxHealth, long createdAt) {}
 
     /** IBotHandle 实现。 */
@@ -506,10 +495,9 @@ public final class BotManager {
         @Override public ServerPlayer getPlayer() { return player; }
 
         @Override
-        public void teleport(double x, double y, double z, ResourceLocation dimension) {
+        public void teleport(double x, double y, double z, String dimension) {
             MinecraftServer srv = instance().server;
-            ServerLevel level = srv.getLevel(
-                    ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, dimension));
+            ServerLevel level = DimensionResolver.resolve(srv, dimension);
             if (level != null) {
                 player.teleportTo(level, x, y, z, Set.of(), player.getYRot(), player.getXRot(), false);
             }
@@ -518,8 +506,8 @@ public final class BotManager {
         @Override public float getHealth() { return player.getHealth(); }
         @Override public float getMaxHealth() { return player.getMaxHealth(); }
         @Override public Vec3 getPosition() { return player.position(); }
-        @Override public ResourceLocation getDimension() {
-            return ((ServerLevel) player.level()).dimension().location();
+        @Override public String getDimension() {
+            return ((ServerLevel) player.level()).dimension().location().toString();
         }
         @Override public int getFoodLevel() { return player.getFoodData().getFoodLevel(); }
         @Override public int getExperienceLevel() { return player.experienceLevel; }

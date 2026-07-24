@@ -151,9 +151,8 @@ public class ItemStorageTracker extends Tracker {
     public Optional<Item> getBestSword() {
         ensureUpdated();
         return inventoryCounts.keySet().stream()
-                .filter(item -> item instanceof net.minecraft.world.item.SwordItem)
-                .max(Comparator.comparingDouble(item ->
-                        4.0f));
+                .filter(item -> item.builtInRegistryHolder().is(net.minecraft.tags.ItemTags.SWORDS))
+                .max(Comparator.comparingDouble(item -> 4.0f));
     }
 
     // ──────────────────────────────────────────────

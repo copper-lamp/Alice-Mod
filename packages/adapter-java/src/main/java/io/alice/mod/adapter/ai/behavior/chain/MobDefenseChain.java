@@ -10,9 +10,9 @@ import net.minecraft.world.entity.monster.*;
 import net.minecraft.world.entity.monster.piglin.Piglin;
 import net.minecraft.world.entity.monster.piglin.PiglinBrute;
 import net.minecraft.world.entity.monster.hoglin.Hoglin;
-import net.minecraft.world.entity.projectile.Fireball;
+import net.minecraft.world.entity.projectile.hurtingprojectile.Fireball;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.SwordItem;
 import net.minecraft.world.phys.AABB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -268,9 +268,9 @@ public class MobDefenseChain extends SingleTaskChain {
         List<Entity> hostiles = getHostileEntities(player);
         if (hostiles.isEmpty()) return 0;
 
-        // 检查最佳武器
-        SwordItem bestSword = getBestSword(bot);
-        boolean hasSword = bestSword != null;
+        // 检查是否持有近战武器
+        ItemStack bestWeapon = getBestWeapon(bot);
+        boolean hasSword = bestWeapon != null && !bestWeapon.isEmpty();
 
         List<Entity> toDealWith = new ArrayList<>();
         long now = System.currentTimeMillis();
@@ -383,9 +383,13 @@ public class MobDefenseChain extends SingleTaskChain {
         return entity.isAlive();
     }
 
-    private SwordItem getBestSword(BotHandle bot) {
-        // TODO: 从背包中获取最佳剑
-        return null;
+    private ItemStack getBestWeapon(BotHandle bot) {
+        ServerPlayer player = bot.getNativePlayer();
+        if (player == null) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack mainHand = player.getMainHandItem();
+        return mainHand.getMaxDamage() > 0 ? mainHand : ItemStack.EMPTY;
     }
 
     private void executeCommand(BotHandle bot, String command) {

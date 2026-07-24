@@ -11,6 +11,9 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
+    plugins {
+        id("fabric-loom") version "1.13-SNAPSHOT"
+    }
 }
 
 rootProject.name = "alice-mod-adapter"

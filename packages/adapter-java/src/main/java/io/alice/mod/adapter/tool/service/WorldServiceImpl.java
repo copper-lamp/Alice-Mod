@@ -4,14 +4,11 @@ import io.alice.mod.adapter.ai.BotAccess;
 import io.alice.mod.adapter.api.service.WorldService;
 import io.alice.mod.adapter.api.types.*;
 import net.minecraft.core.BlockPos;
+import io.alice.mod.adapter.world.DimensionResolver;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.shapes.VoxelShape;
@@ -137,20 +134,6 @@ public class WorldServiceImpl implements WorldService {
     // ---- 辅助方法 ---- //
 
     private ServerLevel getLevel(String dimension) {
-        MinecraftServer server = BotAccess.getServer();
-        if (server == null) return null;
-        if (dimension == null || dimension.isEmpty()) return server.overworld();
-
-        ResourceLocation dimId = ResourceLocation.tryParse(dimension);
-        if (dimId == null) {
-            return switch (dimension.toLowerCase()) {
-                case "overworld" -> server.overworld();
-                case "nether" -> server.getLevel(Level.NETHER);
-                case "end" -> server.getLevel(Level.END);
-                default -> server.overworld();
-            };
-        }
-        return server.getLevel(ResourceKey.create(
-                net.minecraft.core.registries.Registries.DIMENSION, dimId));
+        return DimensionResolver.resolve(BotAccess.getServer(), dimension);
     }
 }

@@ -1,0 +1,43 @@
+plugins {
+    id("net.fabricmc.fabric-loom") version "${loom_version}"
+    id("java-library")
+    id("io.freefair.lombok") version "9.2.0"
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of((project.findProperty("java_version") ?: "25") as int))
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven { url = uri("https://maven.fabricmc.net/") }
+    maven { url = uri("https://masa.dy.fi/maven/") }
+}
+
+dependencies {
+    minecraft("com.mojang:minecraft:${project.property("minecraftVersion")}")
+    implementation("net.fabricmc:fabric-loader:${project.property("loaderVersion")}")
+    implementation("net.fabricmc.fabric-api:fabric-api:${project.property("apiVersion")}")
+    implementation("carpet:fabric-carpet:${project.property("carpetVersion")}")
+
+    include(implementation("org.xerial:sqlite-jdbc:3.45.1.0"))
+    include(implementation("com.google.code.gson:gson:2.11.0"))
+
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.0")
+    testImplementation("org.mockito:mockito-core:5.12.0")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.12.0")
+}
+
+tasks.named("test") {
+    useJUnitPlatform()
+}
+
+lombok {
+    version = "1.18.42"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+}

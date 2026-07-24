@@ -7,12 +7,10 @@ import io.alice.mod.adapter.api.service.BotService;
 import io.alice.mod.adapter.api.types.Vec3;
 import io.alice.mod.adapter.bot.BotManager;
 import io.alice.mod.adapter.ai.BotAccess;
+import io.alice.mod.adapter.world.DimensionResolver;
 import io.alice.mod.adapter.world.WorldContextManager;
-import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -122,20 +120,7 @@ public class BotServiceImpl implements BotService {
     }
 
     private static ServerLevel resolveDimension(MinecraftServer server, String dimension) {
-        return switch (dimension.toLowerCase()) {
-            case "overworld", "minecraft:overworld" -> server.overworld();
-            case "nether", "minecraft:the_nether" -> server.getLevel(Level.NETHER);
-            case "end", "minecraft:the_end" -> server.getLevel(Level.END);
-            default -> {
-                ResourceLocation dimId = ResourceLocation.tryParse(dimension);
-                if (dimId != null) {
-                    yield server.getLevel(
-                            net.minecraft.resources.ResourceKey.create(
-                                    net.minecraft.core.registries.Registries.DIMENSION, dimId));
-                }
-                yield null;
-            }
-        };
+        return DimensionResolver.resolve(server, dimension);
     }
 
     /** BotHandle 实现，封装 EntityPlayerMPFake。 */

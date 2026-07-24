@@ -1,7 +1,6 @@
 package io.alice.mod.adapter.bot;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceLocation;
 
 /**
  * 假人注册表条目。
@@ -16,11 +15,11 @@ import net.minecraft.resources.ResourceLocation;
  */
 public record BotEntry(
         String name,
-        ResourceLocation dimension,
+        String dimension,
         BlockPos position,
         long createdAt
 ) {
-    public BotEntry(String name, ResourceLocation dimension, BlockPos position) {
+    public BotEntry(String name, String dimension, BlockPos position) {
         this(name, dimension, position, System.currentTimeMillis());
     }
 }

@@ -1,6 +1,5 @@
 package io.alice.mod.adapter.bot;
 
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 
@@ -27,7 +26,7 @@ public interface IBotHandle {
     ServerPlayer getPlayer();
 
     /** 传送假人到指定位置。 */
-    void teleport(double x, double y, double z, ResourceLocation dimension);
+    void teleport(double x, double y, double z, String dimension);
 
     /** 获取当前血量。 */
     float getHealth();
@@ -39,7 +38,7 @@ public interface IBotHandle {
     Vec3 getPosition();
 
     /** 获取当前维度 ID。 */
-    ResourceLocation getDimension();
+    String getDimension();
 
     /** 获取饥饿值。 */
     int getFoodLevel();

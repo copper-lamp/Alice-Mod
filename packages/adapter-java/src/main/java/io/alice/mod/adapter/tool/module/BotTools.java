@@ -7,12 +7,11 @@ import io.alice.mod.adapter.tool.ToolResult;
 import io.alice.mod.adapter.tool.annotation.ToolMethod;
 import io.alice.mod.adapter.tool.annotation.ToolModule;
 import io.alice.mod.adapter.tool.annotation.ToolParam;
+import io.alice.mod.adapter.world.DimensionResolver;
 import io.alice.mod.adapter.world.WorldContextManager;
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.*;
@@ -355,20 +354,7 @@ public enum BotTools {
     }
 
     private static ServerLevel getLevel(MinecraftServer server, String dimension) {
-        return switch (dimension.toLowerCase()) {
-            case "overworld", "minecraft:overworld" -> server.overworld();
-            case "nether", "minecraft:the_nether" -> server.getLevel(Level.NETHER);
-            case "end", "minecraft:the_end" -> server.getLevel(Level.END);
-            default -> {
-                ResourceLocation dimId = ResourceLocation.tryParse(dimension);
-                if (dimId != null) {
-                    yield server.getLevel(
-                            net.minecraft.resources.ResourceKey.create(
-                                    net.minecraft.core.registries.Registries.DIMENSION, dimId));
-                }
-                yield null;
-            }
-        };
+        return DimensionResolver.resolve(server, dimension);
     }
 
     /** 通过名称或 UUID 解析在线假人。 */
