@@ -14,7 +14,7 @@
 ## 2. 当前代码修改
 
 - 在 [agent-core/package.json](file:///D:/McAgent/packages/agent-core/package.json) 中保留 `dist:win`
-- 在 [package.json](file:///D:/McAgent/package.json) 中新增源仓库侧辅助脚本 `dist:win`，用于本地从 monorepo 根调用
+- 在 [package.json](file:///D:/McAgent/package.json) 中提供兼容脚本 `dist:win`：源仓库保留 monorepo 调用方式，目标仓库铺平结构下直接在根目录执行 electron-builder
 - 在 [sync-ac.yml](file:///D:/McAgent/.github/workflows/sync-ac.yml) 注释中明确说明 Alice-App 为单包铺平结构
 
 ## 3. 目标仓库应使用的命令

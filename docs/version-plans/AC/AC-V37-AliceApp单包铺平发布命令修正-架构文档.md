@@ -22,14 +22,14 @@
 
 ### 源仓库
 可使用：
-- `pnpm --dir packages/agent-core dist:win`
+- `pnpm dist:win`（根脚本自动识别 monorepo 结构并转发到 `packages/agent-core`）
 - 或 `pnpm --filter @mcagent/agent-core dist:win`
 
 ### 目标仓库
 应使用：
 - `pnpm dist:win`
 
-因为目标仓库根目录本身就是同步后的 `agent-core` 包。
+因为目标仓库根目录本身就是同步后的 `agent-core` 包，根脚本会直接在当前目录执行 electron-builder。
 
 ## 3. 设计原则
 
