@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell, Notification } from 'electron'
 import path from 'path'
 import fs, { existsSync, mkdirSync } from 'node:fs'
 import { execSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { initLogger, getLogger, getLogDb } from './log'
 import { registerAllIpcHandlers, setMemoryManager, bootstrapAndWireAgents, createResolveTarget, getSharedAgentConfigManager, getMainAgentRegistry, setMainWindowRef, forwardUpdaterEvents } from './ipc'
 import { initModelRegistry } from './ipc/model-handler'
@@ -133,15 +134,20 @@ async function initializeServices(): Promise<void> {
   // 依次尝试多个可能的路径
   let authTokens = new Set<string>()
   const candidatePaths: string[] = []
+  // #region debug-point A:token-source
+  const tokenFingerprint = (token: string) => createHash('sha256').update(token).digest('hex').slice(0, 12)
+  // #endregion
   const envPath = process.env.MCAGENT_INSTANCE_FILE
   if (envPath) candidatePaths.push(envPath)
   // 用户可能从项目根目录或 agent-core 目录启动
   candidatePaths.push(
-    path.join(process.cwd(), 'Alice', 'mcagent_instance.json'),                   // CWD/Alice/
-    path.resolve(process.cwd(), '..', 'bds26.10', 'Alice', 'mcagent_instance.json'), // CWD/../bds26.10/Alice/
-    path.resolve(process.cwd(), '..', '..', 'bds26.10', 'Alice', 'mcagent_instance.json'), // CWD/../../bds26.10/Alice/
-    path.resolve(process.cwd(), '..', 'serverjava', 'Alice', 'mcagent_instance.json'), // CWD/../serverjava/Alice/
-    path.resolve(process.cwd(), '..', '..', 'serverjava', 'Alice', 'mcagent_instance.json'), // CWD/../../serverjava/Alice/
+    path.join(process.cwd(), 'Alice', 'mcagent_instance.json'),
+    path.join(process.cwd(), 'bds26.10', 'Alice', 'mcagent_instance.json'),
+    path.join(process.cwd(), 'serverjava', 'Alice', 'mcagent_instance.json'),
+    path.resolve(process.cwd(), '..', 'bds26.10', 'Alice', 'mcagent_instance.json'),
+    path.resolve(process.cwd(), '..', '..', 'bds26.10', 'Alice', 'mcagent_instance.json'),
+    path.resolve(process.cwd(), '..', 'serverjava', 'Alice', 'mcagent_instance.json'),
+    path.resolve(process.cwd(), '..', '..', 'serverjava', 'Alice', 'mcagent_instance.json'),
   )
 
   for (const p of candidatePaths) {
@@ -150,7 +156,9 @@ async function initializeServices(): Promise<void> {
       const instance = JSON.parse(content)
       if (instance.auth?.token) {
         authTokens.add(instance.auth.token)
-        logger.info('SYSTEM', `已从实例文件加载 auth_token: ${p}`)
+        // #region debug-point A:token-loaded
+        logger.info('SYSTEM', `[DEBUG] token source=${p}, fingerprint=${tokenFingerprint(instance.auth.token)}`)
+        // #endregion
         // 不 break，继续扫描其他路径以收集所有有效的 auth_token
       }
     } catch {
@@ -163,6 +171,9 @@ async function initializeServices(): Promise<void> {
     authTokens.add('mcagent-default-token')
   }
 
+  // #region debug-point A:token-set
+  logger.info('SYSTEM', `[DEBUG] auth token set size=${authTokens.size}, fingerprints=${[...authTokens].map(tokenFingerprint).join(',')}`)
+  // #endregion
   tcpServerInstance = new TcpServer({
     host: '0.0.0.0',
     port: 27541,

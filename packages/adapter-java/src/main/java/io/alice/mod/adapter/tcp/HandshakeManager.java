@@ -6,6 +6,8 @@ import io.alice.mod.adapter.tcp.JsonRpcMessage.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -76,8 +78,10 @@ public final class HandshakeManager {
 
         sender.send(json, HANDSHAKE_ID);
 
-        LOG.info("Handshake sent: instance_id={}, world='{}', v2={}",
-                config.instanceId(), config.worldName(), config.worldName() != null);
+        // #region debug-point A:token-sent
+        LOG.info("[DEBUG] Handshake token fingerprint={}, instance_id={}, world='{}', v2={}",
+                tokenFingerprint(config.authToken()), config.instanceId(), config.worldName(), config.worldName() != null);
+        // #endregion
         return future;
     }
 
@@ -149,6 +153,20 @@ public final class HandshakeManager {
     }
 
     // ---- 内部辅助 ----
+
+    // #region debug-point A:token-fingerprint
+    private static String tokenFingerprint(String token) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(token.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(12);
+            for (int i = 0; i < 6; i++) result.append(String.format("%02x", digest[i]));
+            return result.toString();
+        } catch (Exception e) {
+            return "unavailable";
+        }
+    }
+    // #endregion
 
     private void completeFuture(HandshakeResult result) {
         if (pendingFuture != null && !pendingFuture.isDone()) {

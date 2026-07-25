@@ -2,7 +2,7 @@
   "name": "@mcagent/agent-core",
   "version": "0.0.17",
   "private": true,
-  "description": "McAgent Agent Core - Electron + React 桌面客户端",
+  "description": "Alice Mod App",
   "main": "./dist/main/index.js",
   "scripts": {
     "dev": "chcp 65001 > NUL & electron-vite dev",
@@ -51,7 +51,6 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^37.0.0",
-    "electron-builder": "^25.1.0",
     "electron-vite": "^5.0.0",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.3.2",

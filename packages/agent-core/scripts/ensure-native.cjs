@@ -23,7 +23,7 @@ const target = process.argv[2];
 if (!target || !['electron', 'node'].includes(target)) {
   console.error('[ensure-native] 用法: node scripts/ensure-native.cjs <electron|node>');
   process.exit(1);
-}no
+}
 
 const CWD = path.join(__dirname, '..');
 

@@ -57,6 +57,7 @@ serverjava/
 libs/
 SERVER/
 .codegraph/
+web/
 
 # Temporary local clones for subrepo sync
 tmp-app/
