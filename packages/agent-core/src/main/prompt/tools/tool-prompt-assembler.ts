@@ -25,7 +25,10 @@ export class DefaultToolPromptAssembler implements IToolPromptAssembler {
   private readonly CACHE_TTL = 60000; // 60s
 
   constructor(
-    private toolRegistry: { getTools(workspaceId: string): ToolSchema[] },
+    private toolRegistry: {
+      getTools(workspaceId: string): ToolSchema[];
+      getLocalTools?(workspaceId: string): ToolSchema[];
+    },
   ) {
     this.registerDefaultAdapters();
   }
@@ -37,8 +40,10 @@ export class DefaultToolPromptAssembler implements IToolPromptAssembler {
       return cached.tools;
     }
 
-    // 1. 获取原始工具 Schema
-    const schemas = this.toolRegistry.getTools(workspaceId);
+    // 1. 获取指定来源范围的原始工具 Schema
+    const schemas = options?.toolScope === 'local'
+      ? (this.toolRegistry.getLocalTools?.(workspaceId) ?? [])
+      : this.toolRegistry.getTools(workspaceId);
 
     // 2. 转换为中间格式
     let tools: ToolPromptDefinition[] = schemas.map(schema => this.schemaToPromptDef(schema));

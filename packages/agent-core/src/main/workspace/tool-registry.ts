@@ -55,6 +55,16 @@ export class ToolRegistry {
     return this.hashes.get(workspaceId);
   }
 
+  /** 仅获取 Adapter/Workspace 注册的工具。 */
+  getWorkspaceTools(workspaceId: string): ToolSchema[] {
+    return [...(this.registry.get(workspaceId) ?? [])];
+  }
+
+  /** 仅获取 Agent Core 本地注册的工具。 */
+  getLocalTools(workspaceId: string): ToolSchema[] {
+    return [...(this.localTools.get(workspaceId) ?? [])];
+  }
+
   /**
    * 获取工作区的工具列表（含本地工具）
    *
@@ -62,8 +72,8 @@ export class ToolRegistry {
    * 本地工具优先级高于 workspace 工具（同名时覆盖）。
    */
   getTools(workspaceId: string): ToolSchema[] {
-    const wsTools = this.registry.get(workspaceId) ?? [];
-    const local = this.localTools.get(workspaceId) ?? [];
+    const wsTools = this.getWorkspaceTools(workspaceId);
+    const local = this.getLocalTools(workspaceId);
     // 本地工具覆盖同名 workspace 工具
     const localNames = new Set(local.map((t) => t.name));
     const filtered = wsTools.filter((t) => !localNames.has(t.name));

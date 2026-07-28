@@ -41,6 +41,9 @@ export enum ToolVerbosity {
   Detailed = 'detailed',
 }
 
+/** 构建时可见的工具来源范围 */
+export type ToolScope = 'all' | 'local';
+
 // ════════════════════════════════════════════════════
 // 1. 智能体定义系统
 // ════════════════════════════════════════════════════
@@ -161,6 +164,10 @@ export interface BuildParams {
   source: BuildSource;
   /** 系统提示词覆盖（可选） */
   systemOverride?: string;
+  /** 工具来源范围（默认 all） */
+  toolScope?: ToolScope;
+  /** 是否包含 profile/custom fragments（默认 true） */
+  includeFragments?: boolean;
   /** 注入的自定义上下文（可选，供中间件使用） */
   extraContext?: Record<string, unknown>;
   /**
@@ -313,6 +320,8 @@ export interface IToolPromptAssembler {
 
 /** 组装选项 */
 export interface AssembleOptions {
+  /** 工具来源范围（默认 all） */
+  toolScope?: ToolScope;
   /** 目标 Provider（影响格式） */
   providerId?: string;
   /** 包含的类别（默认全部） */
@@ -545,7 +554,10 @@ export interface PromptBuilderConfig {
   /** 缓存 key 构建器 */
   cacheKeyBuilder?: ICacheKeyBuilder;
   /** 工具注册表 */
-  toolRegistry?: { getTools(workspaceId: string): ToolSchema[] };
+  toolRegistry?: {
+    getTools(workspaceId: string): ToolSchema[];
+    getLocalTools?(workspaceId: string): ToolSchema[];
+  };
 }
 
 /** 默认智能体定义 */
