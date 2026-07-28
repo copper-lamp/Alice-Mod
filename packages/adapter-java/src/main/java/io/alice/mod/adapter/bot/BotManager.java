@@ -196,7 +196,7 @@ public final class BotManager {
 
         // 持久化注册表
         BlockPos blockPos = player.blockPosition();
-        repository.put(uuid, new BotEntry(name, level.dimension().location(), blockPos));
+        repository.put(uuid, new BotEntry(name, level.dimension().location().toString(), blockPos));
         repository.setDirty();
 
         // 触发事件
@@ -225,7 +225,7 @@ public final class BotManager {
             BlockPos currentPos = player.blockPosition();
             repository.put(uuid, new BotEntry(
                     entry.name(),
-                    currentLevel.dimension().location(),
+                    currentLevel.dimension().location().toString(),
                     currentPos,
                     entry.createdAt()
             ));

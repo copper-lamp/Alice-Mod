@@ -11,7 +11,7 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
-import net.minecraft.world.level.saveddata.SavedDataType;
+import net.minecraft.util.datafix.DataFixTypes;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,11 +58,11 @@ public final class BotRepository extends SavedData {
 
     // ---- SavedData type ---- //
 
-    private static final SavedDataType<BotRepository> TYPE = SavedDataType.builder(
-            DATA_NAME,
+    private static final SavedData.Factory<BotRepository> TYPE = new SavedData.Factory<>(
             BotRepository::new,
-            BotRepository::load
-    ).build();
+            BotRepository::load,
+            DataFixTypes.LEVEL
+    );
 
     // ---- 数据 ---- //
 
@@ -80,7 +80,7 @@ public final class BotRepository extends SavedData {
 
     /** 从主世界数据存储中获取注册表实例。 */
     public static BotRepository get(MinecraftServer server) {
-        return server.overworld().getDataStorage().computeIfAbsent(TYPE);
+        return server.overworld().getDataStorage().computeIfAbsent(TYPE, DATA_NAME);
     }
 
     // ---- CRUD ---- //

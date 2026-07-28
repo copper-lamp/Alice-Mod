@@ -18,7 +18,7 @@ class AliceBotPlayerTest {
 
     @Test
     void shouldCreateBotEntry() {
-        var dim = net.minecraft.resources.ResourceLocation.parse("minecraft:overworld");
+        var dim = "minecraft:overworld";
         var pos = new net.minecraft.core.BlockPos(10, 64, 20);
         BotEntry entry = new BotEntry("Alice", dim, pos);
         assertEquals("Alice", entry.name());
@@ -29,7 +29,7 @@ class AliceBotPlayerTest {
 
     @Test
     void shouldCreateBotEntryWithTimestamp() {
-        var dim = net.minecraft.resources.ResourceLocation.parse("minecraft:the_nether");
+        var dim = "minecraft:the_nether";
         var pos = new net.minecraft.core.BlockPos(0, 80, 0);
         BotEntry entry = new BotEntry("Bot", dim, pos, 5000L);
         assertEquals(5000L, entry.createdAt());
@@ -38,13 +38,14 @@ class AliceBotPlayerTest {
     @Test
     void shouldHandleBotInfoRecord() {
         var uuid = java.util.UUID.randomUUID();
-        var dim = net.minecraft.resources.ResourceLocation.parse("minecraft:overworld");
+        var dim = "minecraft:overworld";
         var pos = new net.minecraft.core.BlockPos(1, 2, 3);
-        BotManager.BotInfo info = new BotManager.BotInfo(uuid, "TestBot", true, dim, pos, 20.0f, 20.0f, 1000L);
+        BotManager.BotInfo info = new BotManager.BotInfo(uuid, "TestBot", true, true, null, 0, dim, pos, 20.0f, 20.0f, 1000L);
 
         assertEquals(uuid, info.uuid());
         assertEquals("TestBot", info.name());
         assertTrue(info.online());
+        assertTrue(info.alive());
         assertEquals(dim, info.dimension());
         assertEquals(pos, info.position());
         assertEquals(20.0f, info.health());
@@ -55,11 +56,12 @@ class AliceBotPlayerTest {
     @Test
     void shouldHandleBotInfoOffline() {
         var uuid = java.util.UUID.randomUUID();
-        var dim = net.minecraft.resources.ResourceLocation.parse("minecraft:the_end");
+        var dim = "minecraft:the_end";
         var pos = new net.minecraft.core.BlockPos(0, 0, 0);
-        BotManager.BotInfo info = new BotManager.BotInfo(uuid, "OfflineBot", false, dim, pos, 0, 0, 2000L);
+        BotManager.BotInfo info = new BotManager.BotInfo(uuid, "OfflineBot", false, false, null, 0, dim, pos, 0, 0, 2000L);
 
         assertFalse(info.online());
+        assertFalse(info.alive());
         assertEquals(0, info.health());
         assertEquals(0, info.maxHealth());
     }

@@ -16,10 +16,14 @@ public final class DimensionResolver {
             case "overworld", "minecraft:overworld" -> server.overworld();
             case "nether", "minecraft:the_nether" -> server.getLevel(Level.NETHER);
             case "end", "minecraft:the_end" -> server.getLevel(Level.END);
-            default -> server.getAllLevels().stream()
-                    .filter(level -> level.dimension().location().toString().equals(dimension))
-                    .findFirst()
-                    .orElse(null);
+            default -> {
+                java.util.List<net.minecraft.server.level.ServerLevel> allLevels = new java.util.ArrayList<>();
+                server.getAllLevels().forEach(allLevels::add);
+                yield allLevels.stream()
+                        .filter(level -> level.dimension().location().toString().equals(dimension))
+                        .findFirst()
+                        .orElse(null);
+            }
         };
     }
 }

@@ -1,7 +1,6 @@
 package io.alice.mod.adapter.bot;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -11,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class BotEntryTest {
 
-    private static final ResourceLocation OVERWORLD = ResourceLocation.parse("minecraft:overworld");
+    private static final String OVERWORLD = "minecraft:overworld";
 
     @Test
     void shouldCreateEntryWithAllFields() {
@@ -37,7 +36,7 @@ class BotEntryTest {
 
     @Test
     void shouldHandleNetherDimension() {
-        ResourceLocation nether = ResourceLocation.parse("minecraft:the_nether");
+        String nether = "minecraft:the_nether";
         BlockPos pos = new BlockPos(0, 80, 0);
         BotEntry entry = new BotEntry("NetherBot", nether, pos);
 

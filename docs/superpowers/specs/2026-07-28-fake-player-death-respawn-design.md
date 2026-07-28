@@ -199,3 +199,44 @@ MainAgent 增加明确的运行状态和串行入口，避免当前单一 `abort
 - 本地 `ServerPlayer` 声明：`findRespawnPositionAndUseSpawnBlock(...)`。
 - 本地 Carpet 1.21.4 源码 `PlayerList_fakePlayersMixin` 在 `PlayerList.respawn` 中将新玩家构造重定向到 `EntityPlayerMPFake.respawnFake(...)`。
 - 本地 Carpet `EntityPlayerMPFake.die(...)` 在 `super.die(...)` 后调用 `kill(...)`，是当前死亡即断线的直接来源。
+
+## 执行状态
+
+### 已完成
+
+| 模块 | 组件 | 状态 |
+|------|------|------|
+| Adapter Java | `EntityPlayerMPFakeDeathMixin` — 仅拦截死亡末尾 `kill(Component)` | 已实现并注册 mixin |
+| Adapter Java | `BotManager` 生命周期: ALIVE/DEAD_WAITING/RESPAWNING | 已实现 |
+| Adapter Java | `BotManager.respawnDeadBot` — 40 tick 后调用 `PlayerList.respawn(...)` | 已实现 |
+| Adapter Java | `WorldContext.resolveTrustedTarget` — 支持 UUID bootstrap | 已实现 |
+| Adapter Java | 工具执行切到服务端线程 (`server.execute()`) | 已实现 |
+| Adapter Java | `copyTrustedMetadata` 处理 null bot_uuid | 已实现 |
+| Adapter Java | `bot_death`/`bot_respawn` 事件扩展 agent_id/位置/维度 | 已实现 |
+| Agent Core | `TrustedAgentIdentity` 协议身份元数据（不可由 LLM 覆盖） | 已实现 |
+| Agent Core | `BatchToolDispatcher` 每次分发从 provider 读取最新身份 | 已实现 |
+| Agent Core | `DefaultToolDispatcher.callTool` 从 config 构建身份 | 已实现 |
+| Agent Core | `MainAgent` 运行时事件队列与空闲唤醒 | 已实现 |
+| Agent Core | `MainAgentRegistry.routeBotLifecycleEvent` 直达路由 | 已实现 |
+| Agent Core | `index.ts` 生命周期事件特殊处理（不依赖 event_triggers） | 已实现 |
+| 测试 | Core 52 测试通过，typecheck 通过 | 已完成 |
+| 测试 | 信任身份、运行时事件、空闲唤醒、串行并发覆盖 | 已完成 |
+
+### 遗留阻塞
+
+Java `compileJava` 被仓库原有 4 个映射错误阻断，全在本任务未修改的文件中：
+
+| 文件 | 错误 | 原因 |
+|------|------|------|
+| `BotRepository.java:14` | `SavedDataType` 不存在 | 1.21.4 映射变化 |
+| `BotRepository.java:61` | `SavedDataType` 使用 | 同上 |
+| `MobDefenseChain.java:13` | `Fireball` 包不存在 | 1.21.4 映射变化 |
+| `EntityInteractionController.java:9` | `Sheep` 包不存在 | 1.21.4 映射变化 |
+
+### 关键设计决策
+
+1. **UUID bootstrap**：允许 `agent_id + bot_name` 在无 `bot_uuid` 时通过 `AgentConfig.botName → BotRepository → BotManager` 唯一解析；已传 UUID 时做严格三元校验。
+2. **服务端线程**：工具执行通过 `server.execute()` 调度到服务端主线程，`BotAccess.withCallTarget` 也在该线程设置；当前线程已在服务端线程时直接执行避免死锁。
+3. **身份刷新**：`BatchToolDispatcher` 以函数 `() => Promise<TrustedAgentIdentity>` 接收身份，每次分发从当前 AgentConfig 读取；`DefaultToolDispatcher.callTool` 每次调用从 config 构建 identity。
+4. **事件去重**：`enqueueRuntimeEvent` 先检查 `hasEvent` 历史去重，再检查 `queuedEventIds` 运行中 Set 去重。
+5. **空闲唤醒**：`enqueue` 后重新检查 `isRunning()`，避免 TOCTOU 竞态。

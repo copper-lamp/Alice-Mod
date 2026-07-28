@@ -6,6 +6,7 @@ import io.alice.mod.adapter.api.types.*;
 import net.minecraft.core.BlockPos;
 import io.alice.mod.adapter.world.DimensionResolver;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;

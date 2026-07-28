@@ -372,14 +372,27 @@ public class WorldContext {
 
         long start = System.currentTimeMillis();
 
-        // 异步执行工具，带超时
+        // 在服务端主线程执行工具（Minecraft 实体访问非线程安全）
         ToolResult result;
         try {
-            result = CompletableFuture.supplyAsync(() -> {
+            CompletableFuture<ToolResult> future = new CompletableFuture<>();
+            if (server.isSameThread()) {
+                // 已在服务端线程，直接执行
                 try (BotAccess.Scope ignored = BotAccess.withCallTarget(target.player())) {
-                    return tool.invoke(args);
+                    future.complete(tool.invoke(args));
+                } catch (Exception e) {
+                    future.completeExceptionally(e);
                 }
-            }).get(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            } else {
+                server.execute(() -> {
+                    try (BotAccess.Scope ignored = BotAccess.withCallTarget(target.player())) {
+                        future.complete(tool.invoke(args));
+                    } catch (Exception e) {
+                        future.completeExceptionally(e);
+                    }
+                });
+            }
+            result = future.get(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
             long duration = System.currentTimeMillis() - start;
             LOG.warn("Tool '{}' timed out after {}s", toolName, TOOL_TIMEOUT_SECONDS);
@@ -471,29 +484,45 @@ public class WorldContext {
     private TrustedTarget resolveTrustedTarget(JsonObject params) {
         String agentId = requiredString(params, "agent_id");
         String botName = requiredString(params, "bot_name");
-        String botUuidText = requiredString(params, "bot_uuid");
         AgentConfig config = agentConfigs.stream()
                 .filter(candidate -> agentId.equals(candidate.agentId()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Unknown agent_id: " + agentId));
         if (!botName.equals(config.botName())) {
-            throw new IllegalArgumentException("bot_name is not assigned to agent " + agentId);
+            throw new IllegalArgumentException("bot_name '" + botName + "' is not assigned to agent " + agentId);
         }
-        UUID botUuid;
-        try {
-            botUuid = UUID.fromString(botUuidText);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("Invalid bot_uuid", e);
-        }
+
+        // 从 AgentConfig 的 botName 解析 UUID（bootstrap：首次工具调用时 UUID 可能尚未绑定）
         UUID repositoryUuid = BotRepository.get(server).findByName(botName);
-        if (!botUuid.equals(repositoryUuid)) {
-            throw new IllegalArgumentException("bot_uuid does not match the configured bot");
+        UUID botUuid = repositoryUuid;
+
+        // 如果协议已传 UUID，做严格三元校验
+        String botUuidText = params.has("bot_uuid") && params.get("bot_uuid").isJsonPrimitive()
+                ? params.get("bot_uuid").getAsString()
+                : null;
+        if (botUuidText != null && !botUuidText.isBlank()) {
+            try {
+                UUID parsed = UUID.fromString(botUuidText);
+                if (repositoryUuid != null && !parsed.equals(repositoryUuid)) {
+                    throw new IllegalArgumentException(
+                            "bot_uuid " + parsed + " does not match repository UUID " + repositoryUuid
+                                    + " for bot " + botName);
+                }
+                botUuid = parsed;
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid bot_uuid", e);
+            }
         }
-        EntityPlayerMPFake player = botManager.get(botUuid);
-        if (player == null || !botName.equals(player.getName().getString())) {
-            throw new IllegalArgumentException("Configured bot is not online");
+
+        // 查找在线玩家实体（可能死亡状态，只检查实体存在性而非 alive）
+        EntityPlayerMPFake player = botUuid != null ? botManager.get(botUuid)
+                : botManager.findByName(botName);
+        if (player == null) {
+            throw new IllegalArgumentException("Bot '" + botName + "' is not online or not found");
         }
-        return new TrustedTarget(agentId, botName, botUuid, player);
+
+        // 若之前未持久化 UUID，通过事件响应让 Core 绑定（首次死亡/上线时已回填）
+        return new TrustedTarget(agentId, botName, player.getUUID(), player);
     }
 
     private static String requiredString(JsonObject params, String key) {
