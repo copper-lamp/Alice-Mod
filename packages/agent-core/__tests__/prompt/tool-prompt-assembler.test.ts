@@ -52,6 +52,7 @@ const mockTools: ToolSchema[] = [
 function createMockRegistry() {
   return {
     getTools: (_workspaceId: string) => mockTools,
+    getLocalTools: (_workspaceId: string) => mockTools.filter(t => t.name === 'chat_message'),
   };
 }
 
@@ -65,6 +66,11 @@ describe('DefaultToolPromptAssembler', () => {
   it('应组装所有工具', async () => {
     const tools = await assembler.assemble('ws-1');
     expect(tools).toHaveLength(4);
+  });
+
+  it('toolScope=local 时应只组装本地工具', async () => {
+    const tools = await assembler.assemble('ws-1', { toolScope: 'local' });
+    expect(tools.map(t => t.name)).toEqual(['chat_message']);
   });
 
   it('应按类别过滤', async () => {

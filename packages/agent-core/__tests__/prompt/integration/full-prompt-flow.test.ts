@@ -50,7 +50,10 @@ const mockState: PlayerState = {
 };
 
 function createMockRegistry() {
-  return { getTools: (_ws: string) => allTools };
+  return {
+    getTools: (_ws: string) => allTools,
+    getLocalTools: (_ws: string) => allTools.filter(t => t.name === 'memory_query'),
+  };
 }
 
 describe('完整提示词构建流程', () => {
@@ -101,6 +104,64 @@ describe('完整提示词构建流程', () => {
     expect(result.cache.key).toBeTruthy();
     expect(result.cache.staticTokens).toBeGreaterThan(0);
     expect(result.cache.dynamicTokens).toBeGreaterThan(0);
+  });
+
+  it('QQ 构建应只包含本地工具并隔离 fragments/progress/skills', async () => {
+    builder.registerFragment({ name: 'system-fragment', template: 'CUSTOM_SYSTEM_FRAGMENT', position: 'system_end', enabled: true });
+    builder.registerFragment({ name: 'before-fragment', template: 'CUSTOM_BEFORE_FRAGMENT', position: 'before_tools', enabled: true });
+    builder.registerFragment({ name: 'after-fragment', template: 'CUSTOM_AFTER_FRAGMENT', position: 'after_tools', enabled: true });
+
+    const result = await builder.build({
+      workspaceId: 'ws-1',
+      userInput: 'QQ 用户输入',
+      history: [{ role: 'assistant', content: 'QQ 独立历史' }],
+      state: { ...mockState, skip: true },
+      source: 'user',
+      systemOverride: 'QQ_SYSTEM_OVERRIDE',
+      toolScope: 'local',
+      includeFragments: false,
+      extraContext: { progress: 'MAIN_PROGRESS', skills: 'MAIN_SKILLS' },
+      peerContext: {
+        peerSource: 'game',
+        peerHistory: [{ role: 'assistant', content: 'GAME_PEER_CONTEXT', createdAt: 1 }],
+      },
+    });
+
+    expect(result.tools.map(t => t.name)).toEqual(['memory_query']);
+    expect(result.messages[0].content).toContain('QQ_SYSTEM_OVERRIDE');
+    expect(result.messages[0].content).toContain('GAME_PEER_CONTEXT');
+    expect(result.messages.some(m => m.content.includes('QQ 独立历史'))).toBe(true);
+    expect(result.messages.at(-1)?.content).toContain('QQ 用户输入');
+    const allContent = result.messages.map(m => m.content).join('\n');
+    expect(allContent).not.toContain('CUSTOM_SYSTEM_FRAGMENT');
+    expect(allContent).not.toContain('CUSTOM_BEFORE_FRAGMENT');
+    expect(allContent).not.toContain('CUSTOM_AFTER_FRAGMENT');
+    expect(allContent).not.toContain('MAIN_PROGRESS');
+    expect(allContent).not.toContain('MAIN_SKILLS');
+  });
+
+  it('主 Agent 默认应保留全部工具与 fragments/progress/skills', async () => {
+    builder.registerFragment({ name: 'system-fragment', template: 'CUSTOM_SYSTEM_FRAGMENT', position: 'system_end', enabled: true });
+    builder.registerFragment({ name: 'before-fragment', template: 'CUSTOM_BEFORE_FRAGMENT', position: 'before_tools', enabled: true });
+    builder.registerFragment({ name: 'after-fragment', template: 'CUSTOM_AFTER_FRAGMENT', position: 'after_tools', enabled: true });
+
+    const result = await builder.build({
+      workspaceId: 'ws-1',
+      userInput: '主 Agent 输入',
+      history: [],
+      state: mockState,
+      source: 'user',
+      systemOverride: 'MAIN_SYSTEM_OVERRIDE',
+      extraContext: { progress: 'MAIN_PROGRESS', skills: 'MAIN_SKILLS' },
+    });
+
+    expect(result.tools).toHaveLength(20);
+    const allContent = result.messages.map(m => m.content).join('\n');
+    expect(allContent).toContain('CUSTOM_SYSTEM_FRAGMENT');
+    expect(allContent).toContain('CUSTOM_BEFORE_FRAGMENT');
+    expect(allContent).toContain('CUSTOM_AFTER_FRAGMENT');
+    expect(allContent).toContain('MAIN_PROGRESS');
+    expect(allContent).toContain('MAIN_SKILLS');
   });
 
   it('2. 工具提示注入 + 分类过滤', async () => {

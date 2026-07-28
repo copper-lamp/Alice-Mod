@@ -4,7 +4,8 @@
   "package": "io.alice.mod.adapter.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "ChatEventMixin"
+    "ChatEventMixin",
+    "EntityPlayerMPFakeDeathMixin"
   ],
   "client": [],
   "server": [],

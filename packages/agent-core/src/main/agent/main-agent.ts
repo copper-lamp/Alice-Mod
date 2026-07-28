@@ -89,9 +89,16 @@ export interface MainAgentDeps {
 }
 
 export interface MainAgentEvent {
-  source: 'trigger' | 'qq' | 'debug' | 'system';
+  source: 'trigger' | 'plugin_event' | 'qq' | 'debug' | 'system';
   prompt: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface RuntimeAgentEvent {
+  id: string;
+  type: 'bot_death' | 'bot_respawn';
+  timestamp: number;
+  data: Record<string, unknown>;
 }
 
 export interface MainAgentResult {
@@ -311,6 +318,7 @@ function extractThinking(content: string): string | null {
 function toBuildSource(source: MainAgentEvent['source']): BuildSource {
   switch (source) {
     case 'trigger': return 'event';
+    case 'plugin_event': return 'event';
     case 'system': return 'system';
     case 'qq': return 'user';
     case 'debug': return 'user';
@@ -439,6 +447,7 @@ function validateMessagesForLLM(messages: ConversationMessage[]): ConversationMe
 function getPriority(source: MainAgentEvent['source']): SchedulePriority {
   switch (source) {
     case 'trigger': return 'high';
+    case 'plugin_event': return 'high';
     case 'qq': return 'normal';
     case 'system': return 'high';
     case 'debug': return 'low';
@@ -454,6 +463,11 @@ function getStorageAgentId(agentId: string, source: MainAgentEvent['source']): s
   return source === 'qq' ? `qq:${agentId}` : agentId;
 }
 
+function formatRuntimeEvent(event: RuntimeAgentEvent): string {
+  const label = event.type === 'bot_death' ? '假人死亡' : '假人重生';
+  return `[系统事件][${label}] event_id=${event.id}\n${JSON.stringify(event.data)}`;
+}
+
 // ════════════════════════════════════════════════════════════════
 // MainAgent 主体
 // ════════════════════════════════════════════════════════════════
@@ -461,9 +475,43 @@ function getStorageAgentId(agentId: string, source: MainAgentEvent['source']): s
 export class MainAgent {
   protected readonly deps: MainAgentDeps;
   private abortController: AbortController | null = null;
+  private activeRun: Promise<MainAgentResult> | null = null;
+  private readonly runtimeEvents: RuntimeAgentEvent[] = [];
+  private readonly queuedEventIds = new Set<string>();
 
   constructor(deps: MainAgentDeps) {
     this.deps = deps;
+  }
+
+  isRunning(): boolean {
+    return this.activeRun !== null;
+  }
+
+  async enqueueRuntimeEvent(event: RuntimeAgentEvent): Promise<boolean> {
+    if (this.queuedEventIds.has(event.id)) return false;
+    this.queuedEventIds.add(event.id);
+    try {
+      if (await this.deps.historyStore.hasEvent(this.deps.workspaceId, this.deps.agentId, event.id)) {
+        this.queuedEventIds.delete(event.id);
+        return false;
+      }
+
+      const content = formatRuntimeEvent(event);
+      await this.deps.historyStore.append({
+        workspaceId: this.deps.workspaceId,
+        agentId: this.deps.agentId,
+        source: 'system',
+        eventId: event.id,
+        role: 'system',
+        content,
+        createdAt: event.timestamp,
+      });
+      this.runtimeEvents.push(event);
+      return true;
+    } catch (error) {
+      this.queuedEventIds.delete(event.id);
+      throw error;
+    }
   }
 
   /**
@@ -472,7 +520,22 @@ export class MainAgent {
    * @throws AbortError 当外部 abort 或内部 abort() 被调用
    */
   async handle(event: MainAgentEvent): Promise<MainAgentResult> {
+    if (this.activeRun) {
+      await this.activeRun;
+    }
+
+    const run = this.runHandle(event);
+    this.activeRun = run;
+    try {
+      return await run;
+    } finally {
+      if (this.activeRun === run) this.activeRun = null;
+    }
+  }
+
+  private async runHandle(event: MainAgentEvent): Promise<MainAgentResult> {
     const startTime = Date.now();
+    const initiallyQueuedEventIds = new Set(this.runtimeEvents.map(item => item.id));
     this.abortController = new AbortController();
 
     // 合并外部 abort 信号
@@ -585,6 +648,9 @@ export class MainAgent {
 
       const promptResult = await this.deps.promptBuilder.build(buildParams);
       let messages: ConversationMessage[] = [...promptResult.messages];
+      // handle() 启动前已持久化的事件已通过历史或本次 plugin_event prompt 进入上下文，
+      // 这里只清理其队列标记；运行中到达的新事件会在 LLM 调用前注入。
+      this.removeRuntimeEvents(initiallyQueuedEventIds);
       // V32: QQ 来源时过滤掉 task/aim/maps 类别的工具（聊天 Agent 不需要管理工具）
       // V34: 非 QQ 来源时过滤掉 qq 类别工具（主 Agent 不需要 request_game_action 等 QQ 专属工具）
       const excludedCategories = new Set(['task', 'aim', 'maps']);
@@ -632,7 +698,9 @@ export class MainAgent {
           return this.fail(startTime, rounds, totalTokens, `PROVIDER_NOT_FOUND: ${resolved.providerId}`);
         }
 
-        // c. V31 FIX: 在 LLM 调用前验证 messages 中的 tool_calls/tool 配对
+        // c. 在每次 LLM 调用前优先注入运行中到达的生命周期事件。
+        this.injectRuntimeEvents(messages);
+        // V31 FIX: 在 LLM 调用前验证 messages 中的 tool_calls/tool 配对
         // 防止当前 session 中 pipeline 注入问题导致的损坏数据
         messages = validateMessagesForLLM(messages);
 
@@ -706,8 +774,11 @@ export class MainAgent {
           })),
         });
 
-        // e. 检查是否结束
+        // e. 检查是否结束。响应期间若有事件到达，追加一轮消费后再结束。
         if (response.finishReason !== 'tool_calls') {
+          if (this.runtimeEvents.length > 0 && rounds + 1 < maxRounds) {
+            continue;
+          }
           break;
         }
 
@@ -808,6 +879,24 @@ export class MainAgent {
     } finally {
       this.abortController = null;
     }
+  }
+
+  private injectRuntimeEvents(messages: ConversationMessage[]): void {
+    const pending = this.runtimeEvents.splice(0);
+    for (const event of pending) {
+      messages.push({ role: 'system', content: formatRuntimeEvent(event) });
+      this.queuedEventIds.delete(event.id);
+    }
+  }
+
+  private removeRuntimeEvents(eventIds: Set<string>): void {
+    if (eventIds.size === 0) return;
+    for (let i = this.runtimeEvents.length - 1; i >= 0; i--) {
+      if (eventIds.has(this.runtimeEvents[i]!.id)) {
+        this.runtimeEvents.splice(i, 1);
+      }
+    }
+    for (const id of eventIds) this.queuedEventIds.delete(id);
   }
 
   /**

@@ -36,7 +36,7 @@ import type { ToolRegistry } from '../workspace/tool-registry';
 import type { Orchestrator, MainAgentHandle } from '../orchestration/orchestrator';
 import type { MiddlewareContext } from '../pipeline/types';
 
-import { MainAgent } from './main-agent';
+import { MainAgent, type RuntimeAgentEvent } from './main-agent';
 import { BatchToolDispatcher } from '../pipeline/batch-tool-dispatcher';
 import { BatchResultCollector } from '../pipeline/batch-result-collector';
 import { NOTIFY_QQ_TOOL_SCHEMA } from '../qq-bot/tools/notify_qq';
@@ -228,8 +228,41 @@ export class MainAgentRegistry {
     return this.orchCache.get(makeKey(workspaceId, agentId));
   }
 
-  /**
-   * 失效指定 agentId 的缓存（agent 配置变更后调用）。
+  /** 将可信的假人死亡/重生事件直达路由到所属 Agent。 */
+  async routeBotLifecycleEvent(
+    workspaceId: string,
+    event: RuntimeAgentEvent,
+  ): Promise<boolean> {
+    const data = event.data;
+    const trustedAgentId = stringValue(data.agent_id) ?? stringValue(data.agentId);
+    const botUuid = stringValue(data.bot_uuid) ?? stringValue(data.botUuid);
+    if (!trustedAgentId && !botUuid) return false;
+
+    const configs = await this.deps.agentConfigManager.listByWorkspace(workspaceId);
+    const config = trustedAgentId
+      ? configs.find(item => item.id === trustedAgentId)
+      : configs.find(item => getConfiguredBotUuid(item) === botUuid);
+    if (!config?.id || config.enabled === false) return false;
+    if (botUuid) {
+      const configuredUuid = getConfiguredBotUuid(config);
+      if (configuredUuid && configuredUuid !== botUuid) return false;
+    }
+
+    const agent = await this.get(workspaceId, config.id);
+    if (!agent) return false;
+    const wasRunning = agent.isRunning();
+    if (!await agent.enqueueRuntimeEvent(event)) return true;
+    if (!wasRunning) {
+      void agent.handle({
+        source: 'plugin_event',
+        prompt: `处理刚收到的${event.type === 'bot_death' ? '假人死亡' : '假人重生'}系统事件。`,
+        metadata: { eventId: event.id, eventType: event.type },
+      }).catch(error => console.warn(`[MainAgentRegistry] 生命周期事件处理失败 (${event.id}):`, error));
+    }
+    return true;
+  }
+
+  /** 失效指定 agentId 的缓存（agent 配置变更后调用）。
    * 不区分 workspaceId —— 假设 agentId 全局唯一。
    */
   refresh(agentId: string): void {
@@ -950,6 +983,15 @@ export class MainAgentRegistry {
 }
 
 /** 拼 cache key */
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function getConfiguredBotUuid(config: AgentConfig): string | undefined {
+  const raw = config as AgentConfig & { botUuid?: string; bot_uuid?: string };
+  return stringValue(raw.botUuid) ?? stringValue(raw.bot_uuid);
+}
+
 function makeKey(workspaceId: string, agentId: string): string {
   return `${workspaceId}:${agentId}`;
 }

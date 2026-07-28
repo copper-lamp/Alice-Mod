@@ -237,6 +237,9 @@ public enum BotTools {
                 entry.put("uuid", info.uuid().toString());
                 entry.put("name", info.name());
                 entry.put("online", info.online());
+                entry.put("alive", info.alive());
+                entry.put("state", stateName(info));
+                entry.put("respawn_in_ticks", info.respawnInTicks());
                 entry.put("dimension", info.dimension() != null ? info.dimension().toString() : "unknown");
                 entry.put("position", Map.of(
                         "x", info.position().getX(),
@@ -300,6 +303,9 @@ public enum BotTools {
                             data.put("uuid", uuid.toString());
                             data.put("name", entry.name());
                             data.put("online", false);
+                            data.put("alive", false);
+                            data.put("state", "offline");
+                            data.put("respawn_in_ticks", 0);
                             data.put("dimension", entry.dimension());
                             data.put("position", Map.of("x", entry.x(), "y", entry.y(), "z", entry.z()));
                             data.put("created_at", entry.createdAt());
@@ -315,6 +321,9 @@ public enum BotTools {
             data.put("uuid", bot.getUUID().toString());
             data.put("name", bot.getName().getString());
             data.put("online", true);
+            data.put("alive", getBotManager().isAlive(bot.getUUID()));
+            data.put("state", getBotManager().getLifecycleState(bot.getUUID()).name().toLowerCase(Locale.ROOT));
+            data.put("respawn_in_ticks", getBotManager().getRespawnInTicks(bot.getUUID()));
             data.put("dimension", level.dimension().location().toString());
             data.put("position", Map.of("x", bot.getX(), "y", bot.getY(), "z", bot.getZ()));
             data.put("health", bot.getHealth());
@@ -331,6 +340,10 @@ public enum BotTools {
     }
 
     // ---- 辅助方法 ---- //
+
+    private static String stateName(BotInfo info) {
+        return info.state() != null ? info.state().name().toLowerCase(Locale.ROOT) : "offline";
+    }
 
     private static BotManager getBotManager() {
         return WorldContextManager.getActive().getBotManager();

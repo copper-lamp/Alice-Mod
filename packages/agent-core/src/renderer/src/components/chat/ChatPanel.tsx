@@ -34,7 +34,7 @@ const ChatPanel: React.FC = () => {
     }
     if (showLoading) setLoading(true)
     try {
-      const data = await chatApi.history(workspaceId, limit, agentId)
+      const data = await chatApi.history(workspaceId, { limit, agentId })
       setMessages(data)
       if (data.length > 0) {
         lastMessageIdRef.current = data[data.length - 1].id
@@ -88,7 +88,7 @@ const ChatPanel: React.FC = () => {
   const pollNewMessages = useCallback(async () => {
     if (!agentId || isStreaming) return
     try {
-      const data = await chatApi.history(workspaceId, 50, agentId)
+      const data = await chatApi.history(workspaceId, { limit: 50, agentId })
       if (data.length > 0) {
         const lastId = data[data.length - 1].id
         if (lastId !== lastMessageIdRef.current) {

@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type { AgentSummary, AgentConfig } from '../lib/types'
 import { agentApi } from '../lib/ipc'
 
+let latestAgentRequest = 0
+
 interface AgentState {
   agents: AgentSummary[]
   currentAgentId: string | null
@@ -24,12 +26,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   loading: false,
   error: null,
 
-  setCurrentAgentId: (id) => set({
-    currentAgentId: id,
-    currentAgent: null,
-    loading: id !== null,
-    error: null
-  }),
+  setCurrentAgentId: (id) => {
+    latestAgentRequest += 1
+    set({
+      currentAgentId: id,
+      currentAgent: null,
+      loading: id !== null,
+      error: null
+    })
+  },
 
   refreshAgents: async () => {
     try {
@@ -41,14 +46,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   fetchAgent: async (id) => {
-    set({ loading: true, error: null })
+    const requestId = ++latestAgentRequest
+    if (get().currentAgentId === id) {
+      set({ loading: true, error: null })
+    }
     try {
       const config = await agentApi.get(id)
-      if (get().currentAgentId === id) {
+      if (requestId === latestAgentRequest && get().currentAgentId === id) {
         set({ currentAgent: config, loading: false })
       }
     } catch (error) {
-      if (get().currentAgentId === id) {
+      if (requestId === latestAgentRequest && get().currentAgentId === id) {
         set({
           currentAgent: null,
           loading: false,

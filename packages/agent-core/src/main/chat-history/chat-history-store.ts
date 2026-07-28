@@ -18,7 +18,7 @@ export interface ChatHistoryEntry {
   workspaceId: string;
   agentId: string;
   /** 触发来源（V23 新增 'game' 用于主 Agent 自然动作，与 'trigger' 区分） */
-  source: 'trigger' | 'qq' | 'debug' | 'system' | 'game';
+  source: 'trigger' | 'plugin_event' | 'qq' | 'debug' | 'system' | 'game';
   /** 关联的 trigger event id（可空） */
   eventId?: string;
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -56,6 +56,8 @@ export interface ChatHistoryLoadWithPeerOptions extends ChatHistoryLoadOptions {
 
 export interface ChatHistoryStore {
   append(entry: ChatHistoryEntry): Promise<number>;
+  /** 按 workspace、Agent、事件 ID 判断系统事件是否已持久化。 */
+  hasEvent(workspaceId: string, agentId: string, eventId: string): Promise<boolean>;
   load(
     workspaceId: string,
     agentId: string,
@@ -124,6 +126,15 @@ export class SqliteChatHistoryStore implements ChatHistoryStore {
       created_at: now,
     });
     return Number(result.lastInsertRowid);
+  }
+
+  async hasEvent(workspaceId: string, agentId: string, eventId: string): Promise<boolean> {
+    const row = this.db.prepare(
+      `SELECT 1 FROM chat_history
+       WHERE workspace_id = ? AND agent_id = ? AND event_id = ?
+       LIMIT 1`,
+    ).get(workspaceId, agentId, eventId);
+    return row !== undefined;
   }
 
   async load(

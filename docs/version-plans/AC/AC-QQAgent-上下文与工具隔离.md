@@ -1,7 +1,7 @@
 # Agent Core — QQAgent 上下文与工具隔离
 
 > 日期：2026-07-28
-> 状态：设计已确认，待实施
+> 状态：已实施（2026-07-28）
 
 ## 第一部分：需求
 
@@ -124,3 +124,18 @@ QQ 游戏操作 ──> request_game_action ──> 主 Agent ──> Workspace 
 4. 调整 QQ 编译提示词来源。
 5. 增加单元与集成测试。
 6. 执行相关测试和 TypeScript 检查。
+
+### 3.4 实施结果
+
+- 已增加 Workspace/Local/Merged 三套工具读取接口。
+- QQAgent 的系统提示词与模型 tools 参数均固定使用 Local tools。
+- QQAgent 已关闭主 Agent fragments、progress 与 skills 注入。
+- QQ 请求运行时重新按当前 Local tools 编译提示词，不再信任旧 `qqCompiledPrompt`。
+- 主 Agent 保持合并工具与原有上下文能力。
+
+### 3.5 验证结果
+
+- ToolRegistry、工具组装器、QQ PromptCompiler、MainAgent：42 项测试通过。
+- QQ/local-only 与主 Agent 默认流程集成测试：2 项测试通过。
+- 合计：44 项相关测试通过。
+- `tsc --noEmit` 已执行；当前仅被 Renderer 既有的 `AgentViewTab` 类型错误阻塞，本模块修改文件无编辑器诊断。

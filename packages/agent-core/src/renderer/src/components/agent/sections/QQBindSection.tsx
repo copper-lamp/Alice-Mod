@@ -1,5 +1,5 @@
 import React from 'react'
-import { Select, ListBox, Switch } from '@heroui/react'
+import { Button, Chip, Select, ListBox, Switch } from '@heroui/react'
 import { useQQBotStore } from '../../../stores/qqBotStore'
 
 interface QQBinding {
@@ -64,6 +64,7 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
       {/* 启用开关 */}
       <div className="inline-flex items-center gap-2">
         <Switch
+          aria-label="启用 QQ 绑定"
           isSelected={binding.enabled}
           onChange={(val) => handleToggleEnabled(val)}
         >
@@ -121,18 +122,19 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
                 {binding.groupIds.map(gid => {
                   const group = allGroups.find(g => g.id === gid)
                   return (
-                    <span
-                      key={gid}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-green-50 text-green-600 rounded-full border border-green-200"
-                    >
+                    <Chip key={gid} variant="soft" className="gap-1">
                       {group?.name ?? gid}
-                      <button
-                        onClick={() => handleRemoveGroup(gid)}
-                        className="text-green-400 hover:text-green-600 ml-0.5"
+                      <Button
+                        isIconOnly
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`移除群组 ${group?.name ?? gid}`}
+                        onPress={() => handleRemoveGroup(gid)}
+                        className="min-w-5 h-5"
                       >
                         ×
-                      </button>
-                    </span>
+                      </Button>
+                    </Chip>
                   )
                 })}
               </div>
@@ -171,6 +173,7 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
           <div className="pt-2 border-t border-gray-100">
             <div className="inline-flex items-center gap-2">
               <Switch
+                aria-label="仅在群消息 @ 机器人时触发"
                 isSelected={binding.mentionOnly ?? false}
                 onChange={(val) => onChange({ ...binding, mentionOnly: val })}
               >

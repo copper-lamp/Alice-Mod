@@ -9,35 +9,54 @@ interface Props {
   messages: ChatMessage[]
   isStreaming: boolean
   streamingEvents: StreamEvent[]
+  autoFollow?: boolean
+  onAutoFollowChange?: (enabled: boolean) => void
+  header?: React.ReactNode
+  emptyTitle?: string
+  emptyDescription?: string
 }
 
 /** 消息列表 - 按有序事件渲染 */
 const MessageList: React.FC<Props> = ({
   messages,
   isStreaming,
-  streamingEvents = []
+  streamingEvents = [],
+  autoFollow = true,
+  onAutoFollowChange,
+  header,
+  emptyTitle = 'LLM 对话面板',
+  emptyDescription = '等待玩家通过游戏或 QQ 发起对话',
 }) => {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streamingEvents])
+    if (autoFollow) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, streamingEvents, autoFollow])
+
+  const handleScroll = () => {
+    const element = scrollRef.current
+    if (!element || !autoFollow) return
+    if (element.scrollHeight - element.scrollTop - element.clientHeight > 48) {
+      onAutoFollowChange?.(false)
+    }
+  }
 
   if (messages.length === 0 && !isStreaming) {
     return (
       <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center text-gray-400 px-5">
         <div className="text-center">
-          <p className="text-base font-medium text-gray-500">LLM 对话面板</p>
-          <p className="text-sm mt-1">等待玩家通过游戏或 QQ 发起对话</p>
+          <p className="text-base font-medium text-foreground">{emptyTitle}</p>
+          <p className="text-sm mt-1 text-muted">{emptyDescription}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
+    <div ref={scrollRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto">
       <div className="py-3 px-4">
+        {header}
         {messages.map(msg => (
           <MessageBubble key={msg.id} message={msg} />
         ))}

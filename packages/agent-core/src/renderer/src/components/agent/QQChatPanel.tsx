@@ -127,10 +127,7 @@ const QQChatPanel: React.FC<QQChatPanelProps> = ({ agentId }) => {
 
     try {
       if (agentId) {
-        const result = await chatApi.clearQQHistory(workspaceId, agentId)
-        if (!result.success) {
-          console.warn('[QQChatPanel] 清除后端历史失败:', result.error)
-        }
+        await chatApi.clearQQHistory(workspaceId, agentId)
       }
       // 清空前端消息列表
       setMessages([])

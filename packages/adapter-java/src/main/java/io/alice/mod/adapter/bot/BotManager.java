@@ -11,6 +11,7 @@ import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
@@ -51,16 +52,21 @@ public final class BotManager {
     /** 假人名称合法字符正则。 */
     public static final String NAME_PATTERN = "^[a-zA-Z0-9_]+$";
 
-    /** 重生死亡延迟（游戏刻），约 30 秒。 */
-    private static final long RESPAWN_DELAY_TICKS = 30 * 20;
+    /** 重生死亡延迟（游戏刻），正常 TPS 下约 2 秒。 */
+    private static final long RESPAWN_DELAY_TICKS = 40;
+
+    public enum LifecycleState {
+        ALIVE,
+        DEAD_WAITING,
+        RESPAWNING
+    }
 
     // ── 实例字段（新设计） ──
 
     private final MinecraftServer server;
     private final Map<UUID, EntityPlayerMPFake> bots = new ConcurrentHashMap<>();
     private final Map<String, UUID> nameIndex = new ConcurrentHashMap<>();
-    private final Map<UUID, Long> pendingRespawns = new ConcurrentHashMap<>();
-    private final Map<UUID, Boolean> deathHandled = new ConcurrentHashMap<>();
+    private final Map<UUID, DeathRecord> deaths = new ConcurrentHashMap<>();
     private final Map<UUID, Long> createdAtMap = new ConcurrentHashMap<>();
 
     // ── 静态委托（过渡期） ──
@@ -114,8 +120,7 @@ public final class BotManager {
     public void shutdown() {
         bots.clear();
         nameIndex.clear();
-        pendingRespawns.clear();
-        deathHandled.clear();
+        deaths.clear();
         createdAtMap.clear();
         LOG.info("BotManager shut down");
     }
@@ -248,8 +253,7 @@ public final class BotManager {
         }
 
         BotRepository.get(server).remove(uuid);
-        pendingRespawns.remove(uuid);
-        deathHandled.remove(uuid);
+        deaths.remove(uuid);
         createdAtMap.remove(uuid);
         BotEventDispatcher.fireDismiss(name, uuid);
 
@@ -275,25 +279,27 @@ public final class BotManager {
 
     // ---- 死亡处理 ---- //
 
-    private void onDeathInternal(EntityPlayerMPFake body) {
-        MinecraftServer srv = server;
-        if (srv == null) return;
+    private synchronized void onDeathInternal(EntityPlayerMPFake body) {
+        if (server == null) return;
 
         UUID uuid = body.getUUID();
+        if (deaths.containsKey(uuid)) return;
+
         String name = body.getName().getString();
         String deathMessage = body.getCombatTracker().getDeathMessage().getString();
+        Vec3 position = body.position();
+        String dimension = ((ServerLevel) body.level()).dimension().location().toString();
+        long deathTick = server.overworld().getGameTime();
+        deaths.put(uuid, new DeathRecord(body, deathTick, deathMessage, position, dimension,
+                LifecycleState.DEAD_WAITING));
 
-        BotEventDispatcher.fireDeath(name, uuid, deathMessage);
-        unregisterBot(body);
-        body.setHealth(body.getMaxHealth());
-        pendingRespawns.put(uuid, srv.overworld().getGameTime());
-
+        BotEventDispatcher.fireDeath(name, uuid, deathMessage, position, dimension);
         LOG.info("BotManager: bot '{}' died: {}", name, deathMessage);
     }
 
-    /** @deprecated 使用实例方法 */
-    @Deprecated
-    static void onDeath(EntityPlayerMPFake body) { instance().onDeathInternal(body); }
+    public static void onFakePlayerDeath(EntityPlayerMPFake body) {
+        instance().onDeathInternal(body);
+    }
 
     /** @deprecated 使用实例方法 */
     @Deprecated
@@ -331,10 +337,9 @@ public final class BotManager {
         player.teleportTo(level, pos.x, pos.y, pos.z, Set.of(), player.getYRot(), player.getXRot(), false);
         player.setHealth(player.getMaxHealth());
 
-        deathHandled.remove(uuid);
         registerBot(player);
-        pendingRespawns.remove(uuid);
-        BotEventDispatcher.fireRespawn(entry.name(), uuid);
+        BotEventDispatcher.fireRespawn(entry.name(), uuid, player.position(),
+                ((ServerLevel) player.level()).dimension().location().toString());
 
         LOG.info("BotManager: respawned bot '{}' (uuid={})", entry.name(), uuid);
         return player;
@@ -346,49 +351,45 @@ public final class BotManager {
     public void tick() {
         if (server == null) return;
 
-        // 死亡检测
-        for (EntityPlayerMPFake bot : bots.values()) {
-            UUID uuid = bot.getUUID();
-            if (!deathHandled.containsKey(uuid) && (bot.getHealth() <= 0.0f || bot.isDeadOrDying())) {
-                deathHandled.put(uuid, true);
-                onDeathInternal(bot);
-            }
-        }
-
-        // 重生检查
-        if (pendingRespawns.isEmpty()) return;
         long now = server.overworld().getGameTime();
         List<UUID> ready = new ArrayList<>();
-
-        for (Map.Entry<UUID, Long> entry : pendingRespawns.entrySet()) {
-            if (now - entry.getValue() >= RESPAWN_DELAY_TICKS) {
+        for (Map.Entry<UUID, DeathRecord> entry : deaths.entrySet()) {
+            DeathRecord death = entry.getValue();
+            if (death.state() == LifecycleState.DEAD_WAITING
+                    && now - death.deathTick() >= RESPAWN_DELAY_TICKS) {
                 ready.add(entry.getKey());
             }
         }
 
         for (UUID uuid : ready) {
-            try {
-                BotRepository.Entry repoEntry = BotRepository.get(server).find(uuid);
-                // #region debug-point C:death-respawn-state
-                try {
-                    java.net.http.HttpClient.newHttpClient().sendAsync(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event")).POST(java.net.http.HttpRequest.BodyPublishers.ofString(String.format("{\"sessionId\":\"fake-bot-event-loop\",\"runId\":\"pre-fix-lifecycle\",\"hypothesisId\":\"C\",\"location\":\"BotManager.java:368\",\"msg\":\"[DEBUG] death respawn state\",\"data\":{\"uuid\":\"%s\",\"trackedInBots\":%s,\"repoEntryFound\":%s},\"ts\":%d}", uuid, bots.containsKey(uuid), repoEntry != null, System.currentTimeMillis()))).build(), java.net.http.HttpResponse.BodyHandlers.discarding());
-                } catch (Exception ignored) {}
-                // #endregion
-                if (repoEntry != null) {
-                    ServerLevel level = DimensionResolver.resolve(server, repoEntry.dimension());
-                    if (level == null) level = server.overworld();
-                    respawn(uuid, level, null);
-                } else {
-                    pendingRespawns.remove(uuid);
-                }
-            } catch (Exception e) {
-                LOG.warn("BotManager: failed to respawn bot {}", uuid, e);
-                pendingRespawns.remove(uuid);
-            }
+            respawnDeadBot(uuid);
         }
     }
 
-    
+    private synchronized void respawnDeadBot(UUID uuid) {
+        DeathRecord death = deaths.get(uuid);
+        if (death == null || death.state() != LifecycleState.DEAD_WAITING) return;
+
+        deaths.put(uuid, death.withState(LifecycleState.RESPAWNING));
+        try {
+            ServerPlayer respawned = server.getPlayerList().respawn(
+                    death.player(), false, Entity.RemovalReason.KILLED);
+            if (!(respawned instanceof EntityPlayerMPFake fake)) {
+                throw new IllegalStateException("PlayerList.respawn returned non-fake player: "
+                        + respawned.getClass().getName());
+            }
+
+            bots.put(uuid, fake);
+            nameIndex.put(fake.getName().getString(), uuid);
+            deaths.remove(uuid);
+            BotEventDispatcher.fireRespawn(fake.getName().getString(), uuid, fake.position(),
+                    ((ServerLevel) fake.level()).dimension().location().toString());
+            LOG.info("BotManager: respawned dead bot '{}' (uuid={})", fake.getName().getString(), uuid);
+        } catch (Exception e) {
+            deaths.put(uuid, death.withState(LifecycleState.DEAD_WAITING));
+            LOG.warn("BotManager: failed to respawn dead bot {}", uuid, e);
+        }
+    }
 
     // ---- 查询 ---- //
 
@@ -406,23 +407,40 @@ public final class BotManager {
     /** 获取所有在线假人。 */
     public List<EntityPlayerMPFake> findAll() { return List.copyOf(bots.values()); }
 
+    public LifecycleState getLifecycleState(UUID uuid) {
+        DeathRecord death = deaths.get(uuid);
+        return death != null ? death.state() : LifecycleState.ALIVE;
+    }
+
+    public boolean isAlive(UUID uuid) {
+        return getLifecycleState(uuid) == LifecycleState.ALIVE;
+    }
+
+    public long getRespawnInTicks(UUID uuid) {
+        DeathRecord death = deaths.get(uuid);
+        if (death == null) return 0;
+        long elapsed = server.overworld().getGameTime() - death.deathTick();
+        return Math.max(0, RESPAWN_DELAY_TICKS - elapsed);
+    }
+
     /** 获取所有已注册的假人信息（在线 + 离线）。 */
     public List<BotInfo> listAll() {
         List<BotInfo> result = new ArrayList<>();
         for (EntityPlayerMPFake bot : bots.values()) {
             UUID uuid = bot.getUUID();
             ServerLevel level = (ServerLevel) bot.level();
+            LifecycleState state = getLifecycleState(uuid);
             result.add(new BotInfo(uuid, bot.getName().getString(), true,
-                    level.dimension().location().toString(), bot.blockPosition(),
+                    state == LifecycleState.ALIVE, state,
+                    getRespawnInTicks(uuid), level.dimension().location().toString(), bot.blockPosition(),
                     bot.getHealth(), bot.getMaxHealth(), getCreatedAt(uuid)));
         }
         BotRepository repository = BotRepository.get(server);
         for (Map.Entry<UUID, BotRepository.Entry> entry : repository.all()) {
             if (!bots.containsKey(entry.getKey())) {
                 BotRepository.Entry e = entry.getValue();
-                result.add(new BotInfo(entry.getKey(), e.name(), false,
-                        e.dimension(),
-                        new BlockPos(e.x(), e.y(), e.z()), 0, 0, e.createdAt()));
+                result.add(new BotInfo(entry.getKey(), e.name(), false, false, null, 0,
+                        e.dimension(), new BlockPos(e.x(), e.y(), e.z()), 0, 0, e.createdAt()));
             }
         }
         return result;
@@ -484,8 +502,16 @@ public final class BotManager {
 
     // ---- 内部类 ---- //
 
+    private record DeathRecord(EntityPlayerMPFake player, long deathTick, String deathMessage,
+                               Vec3 position, String dimension, LifecycleState state) {
+        private DeathRecord withState(LifecycleState nextState) {
+            return new DeathRecord(player, deathTick, deathMessage, position, dimension, nextState);
+        }
+    }
+
     /** 假人信息（用于列表查询）。 */
-    public record BotInfo(UUID uuid, String name, boolean online,
+    public record BotInfo(UUID uuid, String name, boolean online, boolean alive,
+                          @Nullable LifecycleState state, long respawnInTicks,
                           String dimension, BlockPos position,
                           float health, float maxHealth, long createdAt) {}
 

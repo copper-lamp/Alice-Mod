@@ -196,6 +196,8 @@ export interface AgentConfig {
   isMain?: boolean
   /** V20：agent 所属 workspace（默认 '' 表示全局 / 兼容存量） */
   workspaceId?: string
+  /** Adapter 确认并持久化的可信假人 UUID。 */
+  botUuid?: string
   /** V26：预编译的完整系统提示词文本，创建/更新时由 PromptCompiler 生成 */
   compiledPrompt?: string
   /** V28：QQ 智能体独立人设配置（与主 Agent persona 完全独立） */

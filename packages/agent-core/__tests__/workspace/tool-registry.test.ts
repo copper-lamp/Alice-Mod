@@ -23,6 +23,28 @@ describe('ToolRegistry', () => {
     expect(registry.getTools('unknown')).toEqual([]);
   });
 
+  it('should separate workspace and local tools while preserving merged behavior', () => {
+    const registry = new ToolRegistry();
+    registry.register('ws-1', [makeTool('workspace_only'), makeTool('shared')]);
+    registry.registerLocal('ws-1', [makeTool('local_only'), makeTool('shared')]);
+
+    expect(registry.getWorkspaceTools('ws-1').map(t => t.name)).toEqual(['workspace_only', 'shared']);
+    expect(registry.getLocalTools('ws-1').map(t => t.name)).toEqual(['local_only', 'shared']);
+    expect(registry.getTools('ws-1').map(t => t.name)).toEqual(['workspace_only', 'local_only', 'shared']);
+  });
+
+  it('should return safe copies for source-specific reads', () => {
+    const registry = new ToolRegistry();
+    registry.register('ws-1', [makeTool('workspace')]);
+    registry.registerLocal('ws-1', [makeTool('local')]);
+
+    registry.getWorkspaceTools('ws-1').push(makeTool('injected'));
+    registry.getLocalTools('ws-1').push(makeTool('injected'));
+
+    expect(registry.getWorkspaceTools('ws-1').map(t => t.name)).toEqual(['workspace']);
+    expect(registry.getLocalTools('ws-1').map(t => t.name)).toEqual(['local']);
+  });
+
   it('should replace tools on re-register', () => {
     const registry = new ToolRegistry();
     registry.register('ws-1', [makeTool('move_to')]);

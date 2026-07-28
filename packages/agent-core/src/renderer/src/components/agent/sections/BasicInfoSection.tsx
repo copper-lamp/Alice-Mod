@@ -1,5 +1,5 @@
 import React from 'react'
-import { TextField, Input, Label } from '@heroui/react'
+import { Button, TextField, Input, Label } from '@heroui/react'
 
 interface BasicInfoSectionProps {
   name: string
@@ -32,12 +32,16 @@ const BasicInfoSection: React.FC<BasicInfoSectionProps> = ({ name, skinData, onC
           {skinData ? (
             <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200">
               <img src={skinData} alt="皮肤预览" className="w-full h-full object-cover" />
-              <button
-                onClick={() => onChange(name, undefined)}
-                className="absolute top-0.5 right-0.5 w-4 h-4 bg-gray-800/60 rounded-full flex items-center justify-center text-white text-[10px] hover:bg-gray-800/80"
+              <Button
+                isIconOnly
+                size="sm"
+                variant="ghost"
+                aria-label="移除头像"
+                onPress={() => onChange(name, undefined)}
+                className="absolute right-0.5 top-0.5 min-w-5 h-5 bg-foreground/60 text-background"
               >
                 ×
-              </button>
+              </Button>
             </div>
           ) : (
             <div className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 text-xs bg-gray-50/50">

@@ -36,16 +36,19 @@ export const chatApi = {
   stream: (workspaceId: string, message: string) =>
     window.electronAPI.invoke('chat:stream', { workspaceId, message }) as Promise<void>,
 
-  history: (workspaceId: string, limit?: number, agentId?: string) =>
-    window.electronAPI.invoke('chat:history', { workspaceId, limit, agentId }) as Promise<ChatMessage[]>,
+  history: (workspaceId: string, options: { limit?: number; agentId?: string; source?: Exclude<AgentLogSource, 'all' | 'qq'> } = {}) =>
+    window.electronAPI.invoke('chat:history', { workspaceId, ...options }) as Promise<ChatMessage[]>,
 
   /** V28：获取 QQ 专属 LLM 对话历史 */
   qqHistory: (workspaceId: string, agentId: string, limit?: number) =>
     window.electronAPI.invoke('chat:qq-history', { workspaceId, agentId, limit }) as Promise<ChatMessage[]>,
 
-  /** 清除 QQ 对话历史 */
-  clearQQHistory: (workspaceId: string, agentId: string) =>
-    window.electronAPI.invoke('chat:clear-qq-history', { workspaceId, agentId }) as Promise<{ success: boolean; deleted?: number; error?: string }>,
+  /** 清除 QQ 对话历史，失败时抛出业务错误 */
+  clearQQHistory: async (workspaceId: string, agentId: string) => {
+    const result = await window.electronAPI.invoke('chat:clear-qq-history', { workspaceId, agentId }) as IpcMutationResult<{ deleted?: number }> & { deleted?: number }
+    unwrapMutation(result, '清空 QQ 历史失败')
+    return result.deleted ?? result.data?.deleted ?? 0
+  },
 
   /**
    * V33: 监听 LLM 流式事件（thinking / text / tool_calls / done）
@@ -166,11 +169,28 @@ export const agentApi = {
   create: (config: AgentConfig) =>
     window.electronAPI.invoke('agent:create', config) as Promise<{ id: string; success: boolean }>,
 
-  update: (id: string, config: Partial<AgentConfig>) =>
-    window.electronAPI.invoke('agent:update', { id, config }) as Promise<{ success: boolean }>,
+  update: async (id: string, config: Partial<AgentConfig>) => {
+    const result = await window.electronAPI.invoke('agent:update', { id, config }) as IpcMutationResult
+    unwrapMutation(result, '更新智能体失败')
+  },
 
-  delete: (id: string) =>
-    window.electronAPI.invoke('agent:delete', { id }) as Promise<{ success: boolean }>
+  delete: async (id: string) => {
+    const result = await window.electronAPI.invoke('agent:delete', { id }) as IpcMutationResult
+    unwrapMutation(result, '删除智能体失败')
+  },
+
+  status: (id: string) =>
+    window.electronAPI.invoke('agent:get-status', { id }) as Promise<AgentRuntimeStatus>,
+
+  setEnabled: async (id: string, enabled: boolean) => {
+    const result = await window.electronAPI.invoke('agent:set-enabled', { id, enabled }) as IpcMutationResult
+    unwrapMutation(result, '更新启用状态失败')
+  },
+
+  botControl: async (id: string, action: 'online' | 'offline') => {
+    const result = await window.electronAPI.invoke('agent:bot-control', { id, action }) as IpcMutationResult<unknown>
+    return unwrapMutation(result, `假人${action === 'online' ? '上线' : '下线'}失败`)
+  }
 }
 
 /** IPC 调用封装 - 模型管理 */

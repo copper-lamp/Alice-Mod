@@ -8,6 +8,8 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 
+import net.minecraft.world.phys.Vec3;
+
 /**
  * 假人生命周期事件分发器。
  * <p>
@@ -33,14 +35,14 @@ public final class BotEventDispatcher {
     /** 假人下线。参数：(botName, botUuid) */
     public static final List<BiConsumer<String, UUID>> ON_DESPAWN = new CopyOnWriteArrayList<>();
 
-    /** 假人死亡。参数：(botName, botUuid, deathMessage) */
-    public static final List<TriConsumer<String, UUID, String>> ON_DEATH = new CopyOnWriteArrayList<>();
+    /** 假人死亡。 */
+    public static final List<DeathListener> ON_DEATH = new CopyOnWriteArrayList<>();
 
     /** 假人永久销毁。参数：(botName, botUuid) */
     public static final List<BiConsumer<String, UUID>> ON_DISMISS = new CopyOnWriteArrayList<>();
 
-    /** 假人重生。参数：(botName, botUuid) */
-    public static final List<BiConsumer<String, UUID>> ON_RESPAWN = new CopyOnWriteArrayList<>();
+    /** 假人重生。 */
+    public static final List<PositionListener> ON_RESPAWN = new CopyOnWriteArrayList<>();
 
     private BotEventDispatcher() {}
 
@@ -69,10 +71,10 @@ public final class BotEventDispatcher {
     }
 
     /** 触发假人死亡事件。 */
-    static void fireDeath(String name, UUID uuid, String deathMessage) {
+    static void fireDeath(String name, UUID uuid, String deathMessage, Vec3 position, String dimension) {
         for (var listener : ON_DEATH) {
             try {
-                listener.accept(name, uuid, deathMessage);
+                listener.accept(name, uuid, deathMessage, position, dimension);
             } catch (Exception e) {
                 LOG.warn("BotEventDispatcher: ON_DEATH listener failed", e);
             }
@@ -91,20 +93,23 @@ public final class BotEventDispatcher {
     }
 
     /** 触发假人重生事件。 */
-    static void fireRespawn(String name, UUID uuid) {
+    static void fireRespawn(String name, UUID uuid, Vec3 position, String dimension) {
         for (var listener : ON_RESPAWN) {
             try {
-                listener.accept(name, uuid);
+                listener.accept(name, uuid, position, dimension);
             } catch (Exception e) {
                 LOG.warn("BotEventDispatcher: ON_RESPAWN listener failed", e);
             }
         }
     }
 
-    // ---- 三元消费者接口 ---- //
+    @FunctionalInterface
+    public interface DeathListener {
+        void accept(String name, UUID uuid, String deathMessage, Vec3 position, String dimension);
+    }
 
     @FunctionalInterface
-    public interface TriConsumer<A, B, C> {
-        void accept(A a, B b, C c);
+    public interface PositionListener {
+        void accept(String name, UUID uuid, Vec3 position, String dimension);
     }
 }

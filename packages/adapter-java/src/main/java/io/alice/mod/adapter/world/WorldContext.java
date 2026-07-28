@@ -512,6 +512,9 @@ public class WorldContext {
                         EntityPlayerMPFake bot = botManager.findByName(target);
                         if (bot != null) {
                             result.addProperty("online", true);
+                            result.addProperty("alive", botManager.isAlive(bot.getUUID()));
+                            result.addProperty("state", botManager.getLifecycleState(bot.getUUID()).name().toLowerCase(java.util.Locale.ROOT));
+                            result.addProperty("respawn_in_ticks", botManager.getRespawnInTicks(bot.getUUID()));
                             result.addProperty("health", bot.getHealth());
                             result.addProperty("max_health", bot.getMaxHealth());
                             result.addProperty("food", bot.getFoodData().getFoodLevel());
@@ -647,11 +650,14 @@ public class WorldContext {
         });
 
         // 假人死亡 → 事件推送
-        BotEventDispatcher.ON_DEATH.add((name, uuid, deathMessage) -> {
+        BotEventDispatcher.ON_DEATH.add((name, uuid, deathMessage, position, dimension) -> {
             JsonObject data = new JsonObject();
             data.addProperty("bot_name", name);
             data.addProperty("bot_uuid", uuid.toString());
             data.addProperty("death_message", deathMessage);
+            data.add("position", positionJson(position));
+            data.addProperty("dimension", dimension);
+            data.addProperty("timestamp", java.time.Instant.now().toString());
             eventDispatcher.dispatch("bot_death", "danger", data);
         });
 
@@ -664,14 +670,25 @@ public class WorldContext {
         });
 
         // 假人重生 → 事件推送
-        BotEventDispatcher.ON_RESPAWN.add((name, uuid) -> {
+        BotEventDispatcher.ON_RESPAWN.add((name, uuid, position, dimension) -> {
             JsonObject data = new JsonObject();
             data.addProperty("bot_name", name);
             data.addProperty("bot_uuid", uuid.toString());
+            data.add("position", positionJson(position));
+            data.addProperty("dimension", dimension);
+            data.addProperty("timestamp", java.time.Instant.now().toString());
             eventDispatcher.dispatch("bot_respawn", "info", data);
         });
 
         LOG.info("Bot event listeners registered for world '{}'", identity.worldName());
+    }
+
+    private static JsonObject positionJson(Vec3 position) {
+        JsonObject result = new JsonObject();
+        result.addProperty("x", position.x);
+        result.addProperty("y", position.y);
+        result.addProperty("z", position.z);
+        return result;
     }
 
     // ---- 游戏事件监听（玩家连接 + 健康度检测） ---- //

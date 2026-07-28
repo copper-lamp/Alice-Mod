@@ -274,9 +274,9 @@ function buildMocks(): MockDeps {
   return deps;
 }
 
-function buildAgent(deps: MockDeps, opts: { maxRounds?: number; abortSignal?: AbortSignal } = {}) {
+function buildAgent(deps: MockDeps, opts: { maxRounds?: number; abortSignal?: AbortSignal; agentConfig?: AgentConfig } = {}) {
   return new MainAgent({
-    agentConfig: makeAgentConfig(),
+    agentConfig: opts.agentConfig ?? makeAgentConfig(),
     workspaceId: 'ws-001',
     agentId: 'agent-test-01',
     toolRegistry: deps.toolRegistry,
@@ -349,6 +349,44 @@ describe('MainAgent', () => {
       // scheduler.schedule 的 providerId 应为 claude
       const scheduleReq = (deps.scheduler.schedule as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(scheduleReq.providerId).toBe('claude');
+    });
+
+    it('QQ 构建应使用 local scope、关闭 fragments 并忽略旧 qqCompiledPrompt', async () => {
+      deps.providerChatMock.mockResolvedValue(makeLLMResponse('stop'));
+      const config = makeAgentConfig();
+      config.compiledPrompt = 'MAIN_COMPILED_PROMPT';
+      config.qqCompiledPrompt = 'STALE_QQ_COMPILED_PROMPT';
+
+      const agent = buildAgent(deps, { agentConfig: config });
+      await agent.handle({
+        source: 'qq',
+        prompt: 'hi',
+        metadata: { progress: 'MAIN_PROGRESS', skills: 'MAIN_SKILLS' },
+      });
+
+      expect(deps.promptBuilder.build).toHaveBeenCalledWith(expect.objectContaining({
+        toolScope: 'local',
+        includeFragments: false,
+        systemOverride: expect.not.stringContaining('STALE_QQ_COMPILED_PROMPT'),
+        extraContext: expect.objectContaining({ progress: undefined, skills: undefined }),
+      }));
+    });
+
+    it('主 Agent 构建应保持 all scope 与 fragments/progress/skills', async () => {
+      deps.providerChatMock.mockResolvedValue(makeLLMResponse('stop'));
+
+      const agent = buildAgent(deps);
+      await agent.handle({
+        source: 'trigger',
+        prompt: 'run',
+        metadata: { progress: 'MAIN_PROGRESS', skills: 'MAIN_SKILLS' },
+      });
+
+      expect(deps.promptBuilder.build).toHaveBeenCalledWith(expect.objectContaining({
+        toolScope: 'all',
+        includeFragments: true,
+        extraContext: expect.objectContaining({ progress: 'MAIN_PROGRESS', skills: 'MAIN_SKILLS' }),
+      }));
     });
   });
 
