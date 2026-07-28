@@ -163,6 +163,27 @@ MainAgent 增加明确的运行状态和串行入口，避免当前单一 `abort
 5. MainAgent 增加串行运行状态、高优先级事件队列、轮次前注入和结束前补充轮次。
 6. 将死亡、重生和工具失败写入对应 Agent 的 `chat_history`，并记录事件消费状态以去重。
 
+### Agent Core TypeScript 模块文档
+
+#### 需求
+
+- 所有 Adapter 工具调用使用 Agent Core 从 workspace 与 Agent 配置生成的可信身份，LLM 业务参数仅原样作为 `parameters`，不能改变顶层授权身份。
+- 生命周期事件必须先进入 `chat_history`，再按 UUID 优先、名称兜底路由；普通 `plugin_event` 仍进入 TriggerModule。
+- 运行中事件串行注入，不并发启动第二个 `handle()`；结构化工具错误完整进入 LLM 上下文和历史。
+
+#### 架构
+
+- `agent-identity.ts` 统一实现 Java 同规则的 bot name 与工具协议字段；持久化 `agents.bot_uuid` 保存 Adapter 确认绑定。
+- Pipeline 的 `BatchToolDispatcher` 持有固定 Agent 身份；Trigger `call_tool` 必须从 `targetAgentId` 明确解析配置后调用单工具分发器。
+- `MainAgentRegistry` 负责生命周期事件映射，`MainAgent` 负责持久化去重、运行状态、队列与 LLM 前注入。
+
+#### 执行
+
+1. 创建 Agent 专属 Pipeline 时注入固定身份；单/批请求都把身份放在协议顶层。
+2. 解析并传递 `reason/detail/details`，历史与结果注入使用相同结构化错误信封。
+3. TCP `event` 通知先直达生命周期路由，再保持原有 TriggerModule 转发。
+4. 事件消费状态采用 `chat_history.event_id` 最小可靠持久化：已记录事件重启后不会再次唤醒；当前实现不单独记录“已注入但 LLM 未完成”的消费时间点。
+
 ### 测试与验证
 
 1. Java 单元测试：生命周期状态转换、40 tick 边界、工具分类、身份授权、错误信封。

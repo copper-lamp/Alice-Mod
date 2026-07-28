@@ -7,7 +7,7 @@ import ToolCallBlock from './ToolCallBlock'
 const SourceTag: React.FC<{ source: ChatMessage['source'] }> = ({ source }) => {
   if (source === 'game') {
     return (
-      <span className="inline-flex items-center gap-0.5 text-[10px] text-green-600 font-medium mb-1">
+      <span className="mb-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-success">
         <GameIcon />
         来自游戏
       </span>
@@ -15,7 +15,7 @@ const SourceTag: React.FC<{ source: ChatMessage['source'] }> = ({ source }) => {
   }
   if (source === 'qq') {
     return (
-      <span className="inline-flex items-center gap-0.5 text-[10px] text-blue-600 font-medium mb-1">
+      <span className="mb-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-muted">
         <QQIcon />
         来自 QQ
       </span>
@@ -72,11 +72,11 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = React.memo(({ message 
       <div className="flex justify-end mb-3">
         <div className="max-w-[75%]">
           <SourceTag source={message.source} />
-          <div className="bg-blue-500 text-white rounded-lg rounded-br-sm px-3.5 py-2.5">
-            <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+          <div className="rounded-lg rounded-br-sm bg-default px-3.5 py-2.5 text-default-foreground">
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
               {message.content}
             </p>
-            <p className="text-[10px] mt-1 text-blue-200">
+            <p className="mt-1 text-[10px] text-muted">
               {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
             </p>
           </div>
@@ -89,7 +89,7 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = React.memo(({ message 
   if (isSystem) {
     return (
       <div className="flex justify-center mb-3">
-        <div className="bg-gray-100 text-gray-500 text-xs rounded-lg px-3 py-1.5 max-w-[90%]">
+        <div className="max-w-[90%] rounded-lg bg-surface-secondary px-3 py-1.5 text-xs text-muted">
           <p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
         </div>
       </div>
@@ -102,16 +102,16 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = React.memo(({ message 
     if (!toolCall) {
       return (
         <div className="mb-4">
-          <p className="text-[10px] text-gray-400 mb-1">
+          <p className="mb-1 text-[10px] text-muted">
             {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
           </p>
-          <p className="text-sm text-gray-700 whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">{message.content}</p>
         </div>
       )
     }
     return (
       <div className="mb-4">
-        <p className="text-[10px] text-gray-400 mb-1">
+        <p className="mb-1 text-[10px] text-muted">
           {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
         </p>
         <ToolCallBlock call={toolCall} />
@@ -122,7 +122,7 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = React.memo(({ message 
   // Agent 消息 -> 纯文本，无卡片框
   return (
     <div className="mb-4">
-      <p className="text-[10px] text-gray-400 mb-1">
+      <p className="mb-1 text-[10px] text-muted">
         {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
       </p>
 
@@ -137,7 +137,7 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = React.memo(({ message 
       )}
 
       {message.content && (
-        <p className="text-sm text-gray-700 whitespace-pre-wrap break-words leading-relaxed">
+        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
           {message.content}
         </p>
       )}

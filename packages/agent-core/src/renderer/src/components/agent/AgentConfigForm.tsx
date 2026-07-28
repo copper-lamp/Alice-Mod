@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  Alert,
   Button,
   Label,
   ListBox,
@@ -281,7 +282,7 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId, onDirtyChang
 
     <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
       <div className="mx-auto max-w-4xl space-y-6">
-        {error ? <div role="alert" className="rounded-lg bg-danger-soft p-3 text-sm text-danger-soft-foreground">{error}</div> : null}
+        {error ? <Alert status="danger"><Alert.Content><Alert.Title>设置操作失败</Alert.Title><Alert.Description>{error}</Alert.Description></Alert.Content></Alert> : null}
 
         <Section title="基本与模型" description="设置智能体身份、头像和运行所使用的模型。">
           <div className="space-y-5">

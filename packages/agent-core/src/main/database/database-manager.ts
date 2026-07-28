@@ -239,6 +239,10 @@ export class DatabaseManager implements IDatabaseManager {
     // ── V28: agents.enabled 列（智能体是否启用） ──
     this.addColumnIfNotExists(db, 'agents', 'enabled', 'INTEGER NOT NULL DEFAULT 1');
 
+    // Adapter 生命周期事件确认的可信假人 UUID 绑定。
+    this.addColumnIfNotExists(db, 'agents', 'bot_uuid', 'TEXT');
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_agents_bot_uuid ON agents(workspace_id, bot_uuid);`);
+
     // ── V28: agents.qq_persona_json 列（QQ 智能体独立人设） ──
     this.addColumnIfNotExists(db, 'agents', 'qq_persona_json', 'TEXT');
     // ── V28: agents.qq_compiled_prompt 列（QQ 智能体预编译系统提示词） ──

@@ -100,6 +100,7 @@ export class DefaultResultCollector implements IResultCollector {
             data: toolResult.data,
             error: toolResult.error,
             errorCode: toolResult.errorCode,
+            errorDetails: toolResult.errorDetails,
             durationMs: toolResult.durationMs,
           };
 
@@ -192,7 +193,7 @@ export class DefaultResultCollector implements IResultCollector {
     workspaceId: string,
     options: CollectOptions,
     abortSignal?: AbortSignal,
-  ): Promise<{ results: Array<{ id: string; toolName?: string; success: boolean; data?: Record<string, unknown>; error?: string; errorCode?: string; durationMs: number }> }> {
+  ): Promise<{ results: Array<{ id: string; toolName?: string; success: boolean; data?: Record<string, unknown>; error?: string; errorCode?: string; errorDetails?: Record<string, unknown>; durationMs: number }> }> {
     // 使用带超时的 Promise.race
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {

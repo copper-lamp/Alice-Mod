@@ -18,6 +18,7 @@ import type { JsonRpcResponse, JsonRpcRequest } from '@mcagent/shared';
 
 import { TcpServer, ConnectionEvent, TcpConnection } from '../tcp';
 import { WorkspaceManager } from '../workspace';
+import { identityProtocolFields, type TrustedAgentIdentity } from '../agent/agent-identity';
 import type {
   IToolDispatcher,
   ScheduledBatch,
@@ -27,6 +28,17 @@ import type {
   DispatchStrategy,
   ToolCallContent,
 } from './types';
+
+export class StructuredToolCallError extends Error {
+  constructor(
+    public readonly reason: string,
+    message: string,
+    public readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = 'StructuredToolCallError';
+  }
+}
 
 /** 待处理请求 */
 interface PendingRequest {
@@ -91,13 +103,18 @@ class ResponseMatcher {
 
           // 业务层 success 判断：JSON-RPC 无 error 且 result.success 不为 false
           const businessSuccess = !resp.result || resp.result.success !== false
+          const businessError = resp.result?.error
+          const structuredError = typeof businessError === 'object' && businessError !== null
+            ? businessError as Record<string, unknown>
+            : undefined
           const result: ToolCallResult = {
             id: resp.id.toString(),
             toolName: entry.toolName,
             success: !resp.error && businessSuccess,
-            data: resp.result?.data || resp.result,
-            error: resp.error?.message || (resp.result?.success === false ? resp.result?.message : undefined),
-            errorCode: resp.error?.code?.toString(),
+            data: businessSuccess ? (resp.result?.data || resp.result) : undefined,
+            error: resp.error?.message || (structuredError?.detail as string | undefined) || resp.result?.message,
+            errorCode: resp.error?.code?.toString() || (structuredError?.reason as string | undefined) || (typeof businessError === 'string' ? businessError : undefined),
+            errorDetails: structuredError?.details as Record<string, unknown> | undefined,
             durationMs: resp.result?.duration_ms || 0,
           };
           entry.resolve(result);
@@ -157,7 +174,13 @@ export class DefaultToolDispatcher implements IToolDispatcher {
   /**
    * 调用单个工具（供触发器等模块使用）
    */
-  async callTool(workspaceId: string, toolName: string, parameters: Record<string, unknown>, timeoutMs = 30000): Promise<unknown> {
+  async callTool(
+    workspaceId: string,
+    toolName: string,
+    parameters: Record<string, unknown>,
+    identity: TrustedAgentIdentity,
+    timeoutMs = 30000,
+  ): Promise<unknown> {
     const workspace = this.workspaceManager.getWorkspace(workspaceId);
     if (!workspace) {
       throw new Error(`工作区 ${workspaceId} 不存在`);
@@ -182,6 +205,7 @@ export class DefaultToolDispatcher implements IToolDispatcher {
       id: requestId,
       method: 'tool_call',
       params: {
+        ...identityProtocolFields(identity),
         tool_name: toolName,
         parameters,
         timeout_ms: timeoutMs,
@@ -193,7 +217,11 @@ export class DefaultToolDispatcher implements IToolDispatcher {
     const result = await resultPromise;
 
     if (!result.success) {
-      throw new Error(result.error || `工具 ${toolName} 执行失败`);
+      throw new StructuredToolCallError(
+        result.errorCode ?? 'UNKNOWN',
+        result.error || `工具 ${toolName} 执行失败`,
+        result.errorDetails,
+      );
     }
     return result.data;
   }

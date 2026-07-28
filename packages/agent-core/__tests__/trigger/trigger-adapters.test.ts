@@ -303,6 +303,20 @@ describe('PluginEventTriggerAdapter', () => {
     const event = adapter.handle({ workspaceId: 'ws', eventType: 'test' });
     expect(event!.payload.data).toEqual({});
   });
+
+  it('应透传上游 eventId 与直达目标供 Trigger 观察和去重', () => {
+    const event = adapter.handle({
+      workspaceId: 'ws',
+      eventType: 'bot_death',
+      eventId: 'life-1',
+      directTargetAgentId: 'agent-1',
+      data: {},
+    });
+    expect(event).toMatchObject({
+      id: 'life-1',
+      payload: { directTargetAgentId: 'agent-1' },
+    });
+  });
 });
 
 describe('QQTriggerAdapter', () => {

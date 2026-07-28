@@ -507,6 +507,13 @@ export class MainAgent {
         createdAt: event.timestamp,
       });
       this.runtimeEvents.push(event);
+      if (!this.activeRun) {
+        void this.handle({
+          source: 'plugin_event',
+          prompt: `处理刚收到的${event.type === 'bot_death' ? '假人死亡' : '假人重生'}系统事件。`,
+          metadata: { eventId: event.id, eventType: event.type },
+        }).catch(error => console.warn(`[MainAgent] 生命周期事件处理失败 (${event.id}):`, error));
+      }
       return true;
     } catch (error) {
       this.queuedEventIds.delete(event.id);
@@ -520,22 +527,29 @@ export class MainAgent {
    * @throws AbortError 当外部 abort 或内部 abort() 被调用
    */
   async handle(event: MainAgentEvent): Promise<MainAgentResult> {
-    if (this.activeRun) {
-      await this.activeRun;
-    }
-
-    const run = this.runHandle(event);
+    const previousRun = this.activeRun;
+    const run = (async () => {
+      if (previousRun) await previousRun;
+      return this.runHandle(event);
+    })();
     this.activeRun = run;
     try {
       return await run;
     } finally {
-      if (this.activeRun === run) this.activeRun = null;
+      if (this.activeRun === run) {
+        this.activeRun = null;
+        if (this.runtimeEvents.length > 0) {
+          void this.handle({
+            source: 'plugin_event',
+            prompt: '处理运行结束前收到的高优先级假人生命周期事件。',
+          }).catch(error => console.warn('[MainAgent] 补充生命周期事件轮次失败:', error));
+        }
+      }
     }
   }
 
   private async runHandle(event: MainAgentEvent): Promise<MainAgentResult> {
     const startTime = Date.now();
-    const initiallyQueuedEventIds = new Set(this.runtimeEvents.map(item => item.id));
     this.abortController = new AbortController();
 
     // 合并外部 abort 信号
@@ -648,9 +662,7 @@ export class MainAgent {
 
       const promptResult = await this.deps.promptBuilder.build(buildParams);
       let messages: ConversationMessage[] = [...promptResult.messages];
-      // handle() 启动前已持久化的事件已通过历史或本次 plugin_event prompt 进入上下文，
-      // 这里只清理其队列标记；运行中到达的新事件会在 LLM 调用前注入。
-      this.removeRuntimeEvents(initiallyQueuedEventIds);
+      // runtimeEvents 是本轮专用注入队列；历史中的 system 事件仅用于审计，不替代首次注入。
       // V32: QQ 来源时过滤掉 task/aim/maps 类别的工具（聊天 Agent 不需要管理工具）
       // V34: 非 QQ 来源时过滤掉 qq 类别工具（主 Agent 不需要 request_game_action 等 QQ 专属工具）
       const excludedCategories = new Set(['task', 'aim', 'maps']);
@@ -808,7 +820,13 @@ export class MainAgent {
               success: toolResult.success,
             };
             if (toolResult.data) payload.data = toolResult.data;
-            if (toolResult.error) payload.error = toolResult.error;
+            if (toolResult.error || toolResult.errorCode || toolResult.errorDetails) {
+              payload.error = {
+                reason: toolResult.errorCode ?? 'UNKNOWN',
+                detail: toolResult.error ?? 'Unknown error',
+                ...(toolResult.errorDetails ? { details: toolResult.errorDetails } : {}),
+              };
+            }
             if (toolResult.durationMs >= 0) payload.duration_ms = toolResult.durationMs;
 
             // V34: 使用复合键分离 QQ 来源存储
@@ -887,16 +905,6 @@ export class MainAgent {
       messages.push({ role: 'system', content: formatRuntimeEvent(event) });
       this.queuedEventIds.delete(event.id);
     }
-  }
-
-  private removeRuntimeEvents(eventIds: Set<string>): void {
-    if (eventIds.size === 0) return;
-    for (let i = this.runtimeEvents.length - 1; i >= 0; i--) {
-      if (eventIds.has(this.runtimeEvents[i]!.id)) {
-        this.runtimeEvents.splice(i, 1);
-      }
-    }
-    for (const id of eventIds) this.queuedEventIds.delete(id);
   }
 
   /**

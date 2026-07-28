@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { StructuredToolCallError } from '../pipeline/tool-dispatcher';
 import type {
   AgentEvent,
   EventTrigger,
@@ -48,7 +49,7 @@ export class ActionExecutor {
         case 'create_task':
           return await this.executeCreateTask(action.config as CreateTaskActionConfig, event);
         case 'call_tool':
-          return await this.executeCallTool(action.config as CallToolActionConfig, event);
+          return await this.executeCallTool(action.config as CallToolActionConfig, event, trigger);
         case 'send_llm':
           return await this.executeSendLLM(action.config as SendLLMActionConfig, event, trigger);
         case 'send_qq':
@@ -61,6 +62,14 @@ export class ActionExecutor {
           return { success: false, error: `未知动作类型: ${(action as TriggerAction).type}` };
       }
     } catch (err) {
+      if (err instanceof StructuredToolCallError) {
+        return {
+          success: false,
+          error: err.message,
+          errorCode: err.reason,
+          errorDetails: err.details,
+        };
+      }
       return {
         success: false,
         error: err instanceof Error ? err.message : String(err),
@@ -95,13 +104,23 @@ export class ActionExecutor {
     return { success: true, data: { taskId: result.id } };
   }
 
-  private async executeCallTool(config: CallToolActionConfig, event: AgentEvent): Promise<ActionResult> {
+  private async executeCallTool(
+    config: CallToolActionConfig,
+    event: AgentEvent,
+    trigger?: EventTrigger,
+  ): Promise<ActionResult> {
     if (!this.deps.callTool) {
       return { success: false, error: 'callTool 未配置' };
     }
 
+    const workspaceId = event.workspaceId || trigger?.workspaceId;
+    const agentId = trigger?.targetAgentId;
+    if (!workspaceId || !agentId) {
+      return { success: false, error: 'call_tool 缺少明确的 workspace/agent 目标身份' };
+    }
+
     const parameters = this.renderObject(config.parameters ?? {}, event);
-    const result = await this.deps.callTool(event.workspaceId || 'global', config.toolName, parameters);
+    const result = await this.deps.callTool(workspaceId, agentId, config.toolName, parameters);
     return { success: true, data: result };
   }
 
@@ -110,16 +129,14 @@ export class ActionExecutor {
     event: AgentEvent,
     trigger?: EventTrigger,
   ): Promise<ActionResult> {
+    const resolvedTarget = this.deps.resolveTarget?.(config.target, event, trigger);
+    if (resolvedTarget && event.payload.directTargetAgentId === resolvedTarget.agentId) {
+      return { success: true, data: { skipped: true, reason: 'DIRECT_LIFECYCLE_ROUTE' } };
+    }
+
     // V22 优先走 Orchestrator 路径
-    if (this.deps.orchestratorProvider && this.deps.resolveTarget) {
-      const resolved = this.deps.resolveTarget(config.target, event, trigger);
-      if (!resolved) {
-        return {
-          success: false,
-          error: `无法解析 send_llm target='${config.target}'（trigger=${trigger?.id ?? 'unknown'}）`,
-        };
-      }
-      const orch = this.deps.orchestratorProvider(resolved);
+    if (this.deps.orchestratorProvider && resolvedTarget) {
+      const orch = this.deps.orchestratorProvider(resolvedTarget);
       if (orch) {
         const prompt = this.renderTemplate(config.prompt, event);
         const finalPrompt = config.includeEventContext !== false
@@ -143,19 +160,12 @@ export class ActionExecutor {
     }
 
     // V20 fallback：走 MainAgent 路径（mainAgentProvider + resolveTarget）
-    if (this.deps.mainAgentProvider && this.deps.resolveTarget) {
-      const resolved = this.deps.resolveTarget(config.target, event, trigger);
-      if (!resolved) {
-        return {
-          success: false,
-          error: `无法解析 send_llm target='${config.target}'（trigger=${trigger?.id ?? 'unknown'}）`,
-        };
-      }
-      const agent = this.deps.mainAgentProvider(resolved);
+    if (this.deps.mainAgentProvider && resolvedTarget) {
+      const agent = this.deps.mainAgentProvider(resolvedTarget);
       if (!agent) {
         return {
           success: false,
-          error: `未找到 MainAgent: ${resolved.workspaceId}:${resolved.agentId}`,
+          error: `未找到 MainAgent: ${resolvedTarget.workspaceId}:${resolvedTarget.agentId}`,
         };
       }
 
@@ -176,6 +186,13 @@ export class ActionExecutor {
         },
       });
       return { success: true, data: { response: result } };
+    }
+
+    if (this.deps.resolveTarget && !resolvedTarget) {
+      return {
+        success: false,
+        error: `无法解析 send_llm target='${config.target}'（trigger=${trigger?.id ?? 'unknown'}）`,
+      };
     }
 
     // 兼容旧式 sendLLM 回调（V20 之前）

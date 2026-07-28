@@ -49,6 +49,7 @@ import { getMemoryManager } from '../ipc/memory-handler';
 import { ToolCategory, type ToolSchema, type ParamDefinition } from '@mcagent/shared';
 import { StickerGroupRegistry } from '../qq-bot/sticker-group-registry';
 import { getWorkspaceManager } from '../workspace';
+import { buildTrustedAgentIdentity, deriveBotName } from './agent-identity';
 
 // ════════════════════════════════════════════════════════════════
 // V30: qq_send / qq_info 工具定义（ToolSchema 格式）
@@ -232,34 +233,28 @@ export class MainAgentRegistry {
   async routeBotLifecycleEvent(
     workspaceId: string,
     event: RuntimeAgentEvent,
-  ): Promise<boolean> {
+  ): Promise<string | false> {
     const data = event.data;
-    const trustedAgentId = stringValue(data.agent_id) ?? stringValue(data.agentId);
     const botUuid = stringValue(data.bot_uuid) ?? stringValue(data.botUuid);
-    if (!trustedAgentId && !botUuid) return false;
+    const botName = stringValue(data.bot_name) ?? stringValue(data.botName);
+    if (!botUuid && !botName) return false;
 
     const configs = await this.deps.agentConfigManager.listByWorkspace(workspaceId);
-    const config = trustedAgentId
-      ? configs.find(item => item.id === trustedAgentId)
-      : configs.find(item => getConfiguredBotUuid(item) === botUuid);
+    const config = (botUuid
+      ? configs.find(item => getConfiguredBotUuid(item) === botUuid)
+      : undefined)
+      ?? (botName ? configs.find(item => deriveBotName(item) === botName) : undefined);
     if (!config?.id || config.enabled === false) return false;
-    if (botUuid) {
-      const configuredUuid = getConfiguredBotUuid(config);
-      if (configuredUuid && configuredUuid !== botUuid) return false;
+
+    if (botUuid && !getConfiguredBotUuid(config)) {
+      await this.deps.agentConfigManager.updateBotUuid(config.id, botUuid);
+      config.botUuid = botUuid;
     }
 
     const agent = await this.get(workspaceId, config.id);
     if (!agent) return false;
-    const wasRunning = agent.isRunning();
-    if (!await agent.enqueueRuntimeEvent(event)) return true;
-    if (!wasRunning) {
-      void agent.handle({
-        source: 'plugin_event',
-        prompt: `处理刚收到的${event.type === 'bot_death' ? '假人死亡' : '假人重生'}系统事件。`,
-        metadata: { eventId: event.id, eventType: event.type },
-      }).catch(error => console.warn(`[MainAgentRegistry] 生命周期事件处理失败 (${event.id}):`, error));
-    }
-    return true;
+    await agent.enqueueRuntimeEvent(event);
+    return config.id;
   }
 
   /** 失效指定 agentId 的缓存（agent 配置变更后调用）。
@@ -333,7 +328,13 @@ export class MainAgentRegistry {
 
     // 独立 pipeline + 注入 dispatcher/collector
     const pipeline = this.deps.pipelineFactory();
-    pipeline.setDispatcher(new BatchToolDispatcher(this.deps.connectionResolver));
+    pipeline.setDispatcher(new BatchToolDispatcher(
+      this.deps.connectionResolver,
+      async () => {
+        const currentConfig = await this.deps.agentConfigManager.get(agentId);
+        return buildTrustedAgentIdentity(agentId, currentConfig ?? agentConfig);
+      },
+    ));
     pipeline.setCollector(new BatchResultCollector());
 
     // V27: 添加 notify_qq 本地处理器中间件

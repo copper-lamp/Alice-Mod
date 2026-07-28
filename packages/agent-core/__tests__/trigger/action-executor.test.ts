@@ -10,7 +10,8 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ActionExecutor } from '../../src/main/trigger/action-executor';
-import type { AgentEvent, TriggerAction } from '../../src/main/trigger/types';
+import { StructuredToolCallError } from '../../src/main/pipeline/tool-dispatcher';
+import type { AgentEvent, EventTrigger, TriggerAction } from '../../src/main/trigger/types';
 
 function makeEvent(overrides: Partial<AgentEvent> = {}): AgentEvent {
   return {
@@ -86,13 +87,29 @@ describe('ActionExecutor', () => {
         },
       };
 
-      const result = await executor.execute(action, makeEvent());
+      const result = await executor.execute(action, makeEvent(), {
+        id: 'trigger-1',
+        workspaceId: 'ws_001',
+        targetAgentId: 'agent-1',
+      } as EventTrigger);
       expect(result.success).toBe(true);
       expect(result.data).toEqual({ ok: true });
-      expect(callToolMock).toHaveBeenCalledWith('ws_001', 'send_msg', {
+      expect(callToolMock).toHaveBeenCalledWith('ws_001', 'agent-1', 'send_msg', {
         target: 'p1',
         message: 'hello world',
       });
+    });
+
+    it('缺少明确 Agent 目标身份时拒绝调用', async () => {
+      const callToolMock = vi.fn();
+      executor.setDeps({ callTool: callToolMock });
+      const action: TriggerAction = { type: 'call_tool', config: { toolName: 'send_msg' } };
+
+      const result = await executor.execute(action, makeEvent());
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('缺少明确');
+      expect(callToolMock).not.toHaveBeenCalled();
     });
 
     it('缺少 callTool 依赖应返回错误', async () => {
@@ -100,6 +117,28 @@ describe('ActionExecutor', () => {
       const result = await executor.execute(action, makeEvent());
       expect(result.success).toBe(false);
       expect(result.error).toBe('callTool 未配置');
+    });
+
+    it('保留结构化工具错误的 reason 与 details', async () => {
+      executor.setDeps({
+        callTool: vi.fn().mockRejectedValue(new StructuredToolCallError(
+          'BOT_DEAD',
+          'dead waiting',
+          { state: 'dead_waiting', respawn_in_ticks: 12 },
+        )),
+      });
+      const result = await executor.execute(
+        { type: 'call_tool', config: { toolName: 'move_to' } },
+        makeEvent(),
+        { workspaceId: 'ws_001', targetAgentId: 'agent-1' } as EventTrigger,
+      );
+
+      expect(result).toMatchObject({
+        success: false,
+        error: 'dead waiting',
+        errorCode: 'BOT_DEAD',
+        errorDetails: { state: 'dead_waiting', respawn_in_ticks: 12 },
+      });
     });
   });
 
@@ -142,6 +181,28 @@ describe('ActionExecutor', () => {
       const result = await executor.execute(action, makeEvent());
       expect(result.success).toBe(false);
       expect(result.error).toBe('sendLLM / mainAgentProvider 未配置');
+    });
+
+    it('生命周期事件已直达同一 Agent 时跳过重复 send_llm', async () => {
+      const handle = vi.fn();
+      executor.setDeps({
+        resolveTarget: () => ({ workspaceId: 'ws_001', agentId: 'agent-1' }),
+        mainAgentProvider: () => ({ handle }),
+      });
+      const event = makeEvent({
+        id: 'life-1',
+        type: 'bot_death',
+        source: 'plugin_event',
+        payload: { directTargetAgentId: 'agent-1', data: { bot_uuid: 'uuid-1' } },
+      });
+
+      const result = await executor.execute(
+        { type: 'send_llm', config: { target: 'main', prompt: '处理事件' } },
+        event,
+      );
+
+      expect(result).toEqual({ success: true, data: { skipped: true, reason: 'DIRECT_LIFECYCLE_ROUTE' } });
+      expect(handle).not.toHaveBeenCalled();
     });
   });
 

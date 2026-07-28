@@ -245,6 +245,8 @@ function buildMocks(): MockDeps {
     historyStore: {
       append: historyAppendMock,
       load: historyLoadMock,
+      hasEvent: vi.fn().mockResolvedValue(false),
+      deleteByIds: vi.fn().mockResolvedValue(0),
       clear: vi.fn(),
       getStats: vi.fn(),
     } as unknown as ChatHistoryStore,
@@ -528,6 +530,89 @@ describe('MainAgent', () => {
 
       // 下一轮 signal.aborted → 返回 ABORTED
       expect(result.error).toBe('ABORTED');
+    });
+  });
+
+  describe('运行时生命周期事件', () => {
+    it('运行中事件在下一次 LLM 调用前注入且不会并发调用 Provider', async () => {
+      let releaseFirst!: (response: LLMResponse) => void;
+      deps.providerChatMock
+        .mockReturnValueOnce(new Promise<LLMResponse>((resolve) => { releaseFirst = resolve; }))
+        .mockResolvedValueOnce(makeLLMResponse('stop', { content: '已处理事件' }));
+
+      const agent = buildAgent(deps, { maxRounds: 3 });
+      const run = agent.handle({ source: 'trigger', prompt: '执行任务' });
+      await vi.waitFor(() => expect(deps.providerChatMock).toHaveBeenCalledTimes(1));
+
+      await agent.enqueueRuntimeEvent({
+        id: 'death-1',
+        type: 'bot_death',
+        timestamp: Date.now(),
+        data: { bot_uuid: 'uuid-1', state: 'dead_waiting' },
+      });
+      expect(deps.providerChatMock).toHaveBeenCalledTimes(1);
+
+      releaseFirst(makeLLMResponse('stop', { content: '原任务完成' }));
+      await run;
+
+      expect(deps.providerChatMock).toHaveBeenCalledTimes(2);
+      const secondMessages = deps.providerChatMock.mock.calls[1]![0] as Array<{ role: string; content: string }>;
+      expect(secondMessages).toContainEqual(expect.objectContaining({
+        role: 'system',
+        content: expect.stringContaining('death-1'),
+      }));
+    });
+
+    it('空闲事件唤醒后的第一次 handle 会注入专用队列事件', async () => {
+      deps.providerChatMock.mockResolvedValue(makeLLMResponse('stop', { content: '已处理' }));
+      const agent = buildAgent(deps);
+
+      await agent.enqueueRuntimeEvent({
+        id: 'idle-death-1',
+        type: 'bot_death',
+        timestamp: Date.now(),
+        data: { bot_uuid: 'uuid-1' },
+      });
+
+      await vi.waitFor(() => expect(deps.providerChatMock).toHaveBeenCalledTimes(1));
+      const messages = deps.providerChatMock.mock.calls[0]![0] as Array<{ role: string; content: string }>;
+      expect(messages).toContainEqual(expect.objectContaining({
+        role: 'system',
+        content: expect.stringContaining('idle-death-1'),
+      }));
+    });
+
+    it('并发 handle 严格串行且不会覆盖 activeRun', async () => {
+      let releaseFirst!: (response: LLMResponse) => void;
+      deps.providerChatMock
+        .mockReturnValueOnce(new Promise<LLMResponse>((resolve) => { releaseFirst = resolve; }))
+        .mockResolvedValueOnce(makeLLMResponse('stop', { content: 'second' }))
+        .mockResolvedValueOnce(makeLLMResponse('stop', { content: 'third' }));
+      const agent = buildAgent(deps);
+
+      const first = agent.handle({ source: 'trigger', prompt: 'first' });
+      const second = agent.handle({ source: 'trigger', prompt: 'second' });
+      const third = agent.handle({ source: 'trigger', prompt: 'third' });
+      await vi.waitFor(() => expect(deps.providerChatMock).toHaveBeenCalledTimes(1));
+      releaseFirst(makeLLMResponse('stop', { content: 'first' }));
+      await Promise.all([first, second, third]);
+
+      expect(deps.providerChatMock).toHaveBeenCalledTimes(3);
+    });
+
+    it('同事件 ID 已持久化时去重', async () => {
+      (deps.historyStore.hasEvent as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+      const agent = buildAgent(deps);
+
+      const queued = await agent.enqueueRuntimeEvent({
+        id: 'duplicate-1',
+        type: 'bot_respawn',
+        timestamp: Date.now(),
+        data: { bot_uuid: 'uuid-1' },
+      });
+
+      expect(queued).toBe(false);
+      expect(deps.historyAppendMock).not.toHaveBeenCalled();
     });
   });
 

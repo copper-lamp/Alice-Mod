@@ -333,8 +333,9 @@ public class WorldContext {
         try {
             target = resolveTrustedTarget(params);
         } catch (IllegalArgumentException e) {
-            respond.accept(request.id(), buildToolResponse(
-                    ToolResult.fail("BOT_ACCESS_DENIED", e.getMessage()), 0));
+            ToolResult denied = ToolResult.fail("BOT_ACCESS_DENIED", e.getMessage());
+            respond.accept(request.id(), buildToolResponse(denied, 0));
+            logDeniedToolCall(toolName, paramsElement, denied);
             LOG.warn("Tool call denied: tool={}, world='{}', reason={}",
                     toolName, identity.worldName(), e.getMessage());
             return;
@@ -343,7 +344,7 @@ public class WorldContext {
         LOG.info("Tool call: tool={}, agent={}, bot={} ({}), world='{}'", toolName,
                 target.agentId(), target.botName(), target.botUuid(), identity.worldName());
 
-        if (!isStateTool(toolName) && !botManager.isAlive(target.botUuid())) {
+        if (requiresLiveBot(toolName) && !botManager.isAlive(target.botUuid())) {
             BotManager.LifecycleState state = botManager.getLifecycleState(target.botUuid());
             ToolResult dead = ToolResult.fail("BOT_DEAD",
                     "Bot '" + target.botName() + "' is dead and waiting to respawn",
@@ -503,8 +504,10 @@ public class WorldContext {
         return params.get(key).getAsString();
     }
 
-    private static boolean isStateTool(String toolName) {
-        return "bot_info".equals(toolName) || "bot_list".equals(toolName);
+    static boolean requiresLiveBot(String toolName) {
+        return !("bot_info".equals(toolName) || "bot_list".equals(toolName)
+                || "bot_spawn".equals(toolName) || "bot_despawn".equals(toolName)
+                || "bot_respawn".equals(toolName) || "bot_dismiss".equals(toolName));
     }
 
     private void logToolCall(String toolName, JsonElement paramsElement, ToolResult result,
@@ -513,10 +516,23 @@ public class WorldContext {
         try {
             databaseManager.toolLogs().insert(new ToolLogRepository.ToolLogEntry(
                     0, toolName, paramsElement != null ? paramsElement.toString() : "{}",
-                    result.success(), result.message(), duration,
-                    identity.worldName(), identity.instanceId(), target.botName(), target.botUuid()));
+                    result.success(), result.success() ? result.message()
+                            : result.errorCode() + ": " + result.errorMessage(), duration,
+                    identity.worldName(), identity.instanceId(), target.botName(), null));
         } catch (Exception e) {
             LOG.warn("Failed to log tool call: tool={}, bot={}", toolName, target.botName(), e);
+        }
+    }
+
+    private void logDeniedToolCall(String toolName, JsonElement paramsElement, ToolResult result) {
+        if (!databaseManager.isInitialized()) return;
+        try {
+            databaseManager.toolLogs().insert(new ToolLogRepository.ToolLogEntry(
+                    0, toolName, paramsElement != null ? paramsElement.toString() : "{}", false,
+                    result.errorCode() + ": " + result.errorMessage(), 0,
+                    identity.worldName(), identity.instanceId(), "", null));
+        } catch (Exception e) {
+            LOG.warn("Failed to log denied tool call: tool={}", toolName, e);
         }
     }
 
@@ -724,6 +740,7 @@ public class WorldContext {
         // 假人死亡 → 事件推送
         BotEventDispatcher.ON_DEATH.add((name, uuid, deathMessage, position, dimension) -> {
             JsonObject data = new JsonObject();
+            data.addProperty("agent_id", findAgentIdByBotName(name));
             data.addProperty("bot_name", name);
             data.addProperty("bot_uuid", uuid.toString());
             data.addProperty("death_message", deathMessage);
@@ -744,6 +761,7 @@ public class WorldContext {
         // 假人重生 → 事件推送
         BotEventDispatcher.ON_RESPAWN.add((name, uuid, position, dimension) -> {
             JsonObject data = new JsonObject();
+            data.addProperty("agent_id", findAgentIdByBotName(name));
             data.addProperty("bot_name", name);
             data.addProperty("bot_uuid", uuid.toString());
             data.add("position", positionJson(position));
@@ -753,6 +771,14 @@ public class WorldContext {
         });
 
         LOG.info("Bot event listeners registered for world '{}'", identity.worldName());
+    }
+
+    private String findAgentIdByBotName(String botName) {
+        return agentConfigs.stream()
+                .filter(agent -> botName.equals(agent.botName()))
+                .map(AgentConfig::agentId)
+                .findFirst()
+                .orElse("");
     }
 
     private static JsonObject positionJson(Vec3 position) {

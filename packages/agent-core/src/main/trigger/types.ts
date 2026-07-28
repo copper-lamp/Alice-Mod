@@ -178,6 +178,8 @@ export interface ActionResult {
   success: boolean;
   data?: unknown;
   error?: string;
+  errorCode?: string;
+  errorDetails?: Record<string, unknown>;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -288,6 +290,8 @@ export interface GameChatPayload {
 export interface PluginEventPayload {
   eventType: string;
   workspaceId: string;
+  eventId?: string;
+  directTargetAgentId?: string;
   entityId?: string;
   position?: {
     x: number;
@@ -395,7 +399,12 @@ export interface ActionExecutorDeps {
       metadata?: Record<string, unknown>;
     }) => Promise<{ id: string }>;
   };
-  callTool?: (workspaceId: string, toolName: string, params: Record<string, unknown>) => Promise<unknown>;
+  callTool?: (
+    workspaceId: string,
+    agentId: string,
+    toolName: string,
+    params: Record<string, unknown>,
+  ) => Promise<unknown>;
   /** 旧式 LLM 调用（V20 之后由 mainAgentProvider + resolveTarget 替代，保留兼容） */
   sendLLM?: (target: 'main' | 'qq_sub_agent', prompt: string, event: AgentEvent) => Promise<string>;
   sendQQ?: (target: string, content: string, messageType: 'group' | 'private') => Promise<boolean>;

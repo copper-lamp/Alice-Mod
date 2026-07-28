@@ -52,12 +52,13 @@ class BotEventDispatcherTest {
     void shouldFireDeathEvent() {
         List<String> capturedNames = new ArrayList<>();
         List<String> capturedMessages = new ArrayList<>();
-        BotEventDispatcher.ON_DEATH.add((name, uuid, msg) -> {
+        BotEventDispatcher.ON_DEATH.add((name, uuid, msg, position, dimension) -> {
             capturedNames.add(name);
             capturedMessages.add(msg);
         });
 
-        BotEventDispatcher.fireDeath("Alice", BOT_UUID, "fell from a high place");
+        BotEventDispatcher.fireDeath("Alice", BOT_UUID, "fell from a high place",
+                new net.minecraft.world.phys.Vec3(1, 2, 3), "minecraft:overworld");
 
         assertEquals(1, capturedNames.size());
         assertEquals("Alice", capturedNames.get(0));
@@ -78,9 +79,10 @@ class BotEventDispatcherTest {
     @Test
     void shouldFireRespawnEvent() {
         List<String> captured = new ArrayList<>();
-        BotEventDispatcher.ON_RESPAWN.add((name, uuid) -> captured.add(name));
+        BotEventDispatcher.ON_RESPAWN.add((name, uuid, position, dimension) -> captured.add(name));
 
-        BotEventDispatcher.fireRespawn("Dave", UUID.randomUUID());
+        BotEventDispatcher.fireRespawn("Dave", UUID.randomUUID(),
+                new net.minecraft.world.phys.Vec3(4, 5, 6), "minecraft:overworld");
 
         assertEquals(1, captured.size());
         assertEquals("Dave", captured.get(0));

@@ -143,6 +143,16 @@ export class AgentConfigManager {
     }
   }
 
+  async updateBotUuid(agentId: string, botUuid: string): Promise<boolean> {
+    await this.ensureLoaded()
+    const existing = this.cache.get(agentId)
+    if (!existing) return false
+    existing.botUuid = botUuid
+    existing.updatedAt = Date.now()
+    this.saveToDb(agentId, existing)
+    return true
+  }
+
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return
     this.loaded = true
@@ -154,7 +164,7 @@ export class AgentConfigManager {
         llm_config_json: string; compiled_prompt: string | null; created_at: number; updated_at: number
         is_main: number | null; workspace_id: string | null
         qq_persona_json: string | null; qq_compiled_prompt: string | null
-        enabled: number | null
+        enabled: number | null; bot_uuid: string | null
       }>
       for (const row of rows) {
         this.cache.set(row.id, {
@@ -171,6 +181,7 @@ export class AgentConfigManager {
           qqCompiledPrompt: row.qq_compiled_prompt ?? undefined,
           isMain: row.is_main === 1,
           workspaceId: row.workspace_id ?? undefined,
+          botUuid: row.bot_uuid ?? undefined,
           enabled: row.enabled !== 0,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
@@ -187,8 +198,8 @@ export class AgentConfigManager {
       // V24: 提取 qq_binding_account_id 以支持索引加速查找
       const qqBindingAccountId = config.qqBinding?.enabled ? (config.qqBinding.accountId ?? null) : null
       db.prepare(
-        `INSERT OR REPLACE INTO agents (id, name, alias, skin_data, persona_json, tools_json, qq_binding_json, qq_binding_account_id, llm_config_json, compiled_prompt, qq_persona_json, qq_compiled_prompt, is_main, workspace_id, enabled, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO agents (id, name, alias, skin_data, persona_json, tools_json, qq_binding_json, qq_binding_account_id, llm_config_json, compiled_prompt, qq_persona_json, qq_compiled_prompt, is_main, workspace_id, bot_uuid, enabled, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         id, config.name, config.alias ?? null, config.skinData ?? null,
         JSON.stringify(config.persona), JSON.stringify(config.tools),
@@ -197,7 +208,7 @@ export class AgentConfigManager {
         config.compiledPrompt ?? null,
         config.qqPersona ? JSON.stringify(config.qqPersona) : null,
         config.qqCompiledPrompt ?? null,
-        config.isMain ? 1 : 0, config.workspaceId ?? null,
+        config.isMain ? 1 : 0, config.workspaceId ?? null, config.botUuid ?? null,
         config.enabled !== false ? 1 : 0,
         config.createdAt ?? Date.now(), config.updatedAt ?? Date.now(),
       )

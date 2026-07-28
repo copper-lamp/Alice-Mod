@@ -154,6 +154,7 @@ export interface ToolCallResult {
   data?: Record<string, unknown>;
   error?: string;
   errorCode?: string;
+  errorDetails?: Record<string, unknown>;
   durationMs: number;
 }
 

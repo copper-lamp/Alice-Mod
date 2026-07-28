@@ -74,14 +74,14 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
             </Switch.Control>
           </Switch.Content>
         </Switch>
-        <span className="text-sm text-gray-700 select-none">启用 QQ 绑定</span>
+        <span className="select-none text-sm text-foreground">启用 QQ 绑定</span>
       </div>
 
       {binding.enabled && (
         <>
           {/* 账号选择 */}
           <div>
-            <label className="text-xs text-gray-500 font-medium mb-1.5 block">QQ 账号</label>
+            <label className="mb-1.5 block text-xs font-medium text-muted">QQ 账号</label>
             <Select
               selectedKey={binding.accountId ?? ''}
               onSelectionChange={(key) => handleAccountChange(key as string)}
@@ -95,7 +95,7 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
                 <ListBox>
                   {accounts.length === 0 && (
                     <ListBox.Item key="empty" id="empty" textValue="暂无可用账号">
-                      <span className="text-gray-400">暂无可用账号，请先在 QQ 机器人页面添加</span>
+                      <span className="text-muted">暂无可用账号，请先在 QQ 机器人页面添加</span>
                     </ListBox.Item>
                   )}
                   {accounts
@@ -103,7 +103,7 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
                     .map(acc => (
                       <ListBox.Item key={acc.id} id={acc.id} textValue={`${acc.nickname} (${acc.qqNumber})`}>
                         <div className="flex items-center gap-2">
-                          <span className={`w-1.5 h-1.5 rounded-full ${acc.status === 'online' ? 'bg-green-500' : acc.status === 'reconnecting' ? 'bg-yellow-500' : 'bg-gray-300'}`} />
+                          <span className={`h-1.5 w-1.5 rounded-full ${acc.status === 'online' ? 'bg-success' : acc.status === 'reconnecting' ? 'bg-warning' : 'bg-default'}`} />
                           {acc.nickname || acc.qqNumber} ({acc.qqNumber})
                         </div>
                         <ListBox.ItemIndicator />
@@ -116,7 +116,7 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
 
           {/* 群组选择 */}
           <div>
-            <label className="text-xs text-gray-500 font-medium mb-1.5 block">绑定群组</label>
+            <label className="mb-1.5 block text-xs font-medium text-muted">绑定群组</label>
             {binding.groupIds && binding.groupIds.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {binding.groupIds.map(gid => {
@@ -140,11 +140,11 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
               </div>
             )}
             {!selectedAccount ? (
-              <div className="text-xs text-gray-400">请先选择 QQ 账号</div>
+              <div className="text-xs text-muted">请先选择 QQ 账号</div>
             ) : allGroups.length === 0 ? (
-              <div className="text-xs text-gray-400">该账号暂无桥接配置的群组，请先在 QQ 机器人页面的桥接配置中添加群组</div>
+              <div className="text-xs text-muted">该账号暂无桥接配置的群组，请先在 QQ 机器人页面的桥接配置中添加群组</div>
             ) : availableGroups.length === 0 ? (
-              <div className="text-xs text-gray-400">已选择所有可用群组</div>
+              <div className="text-xs text-muted">已选择所有可用群组</div>
             ) : (
               <Select
                 selectedKey=""
@@ -170,7 +170,7 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
           </div>
 
           {/* V27: 仅 @ 触发 */}
-          <div className="pt-2 border-t border-gray-100">
+          <div className="rounded-lg bg-surface-secondary/60 p-3">
             <div className="inline-flex items-center gap-2">
               <Switch
                 aria-label="仅在群消息 @ 机器人时触发"
@@ -183,9 +183,9 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
                   </Switch.Control>
                 </Switch.Content>
               </Switch>
-              <span className="text-sm text-gray-700 select-none">仅 @ 触发</span>
+              <span className="select-none text-sm text-foreground">仅 @ 触发</span>
             </div>
-            <p className="text-xs text-gray-400 mt-1 ml-11">
+            <p className="ml-11 mt-1 text-xs text-muted">
               开启后仅处理 @ 机器人的群消息，其他消息将被忽略
             </p>
           </div>

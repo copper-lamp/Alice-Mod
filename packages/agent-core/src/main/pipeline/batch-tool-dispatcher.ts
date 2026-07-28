@@ -60,10 +60,12 @@ interface JeBatchCallResponse {
   duration_ms?: number;
 }
 
+export type TrustedAgentIdentityProvider = () => TrustedAgentIdentity | Promise<TrustedAgentIdentity>;
+
 export class BatchToolDispatcher implements IToolDispatcher {
   constructor(
     private readonly resolver: ConnectionResolver,
-    private readonly identity: TrustedAgentIdentity,
+    private readonly identityProvider: TrustedAgentIdentityProvider,
   ) {}
 
   async executeBatch(batch: ScheduledBatch, workspaceId: string): Promise<BatchExecuteResult> {
@@ -77,9 +79,10 @@ export class BatchToolDispatcher implements IToolDispatcher {
       timeout_ms: c.params.timeout_ms ?? batch.timeoutMs,
     }));
 
-    // 3. 发 request，等响应（batch 层超时 + 5s 网络余量）
+    // 3. 每次分发读取当前可信配置身份，再发 request（batch 层超时 + 5s 网络余量）
+    const identity = await this.identityProvider();
     const resp = await conn.sendRequestAndAwait('tool_call_batch', {
-      ...identityProtocolFields(this.identity),
+      ...identityProtocolFields(identity),
       calls: jeCalls,
     }, {
       timeoutMs: batch.timeoutMs + 5_000,

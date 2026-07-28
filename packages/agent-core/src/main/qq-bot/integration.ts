@@ -342,11 +342,20 @@ function forwardToGame(bridgeMsg: {
   const workspace = onlineWorkspaces[0];
   if (!workspace.connectionId) return;
 
-  dispatcher
-    .callTool(workspace.id, 'send_chat', { message: `[QQ] ${bridgeMsg.sender}: ${bridgeMsg.content}` })
-    .catch((err) => {
-      console.error('[QQBotIntegration] 转发消息到游戏失败:', err instanceof Error ? err.message : String(err));
-    });
+  void (async () => {
+    const { getSharedAgentConfigManager } = await import('../ipc/agent-handler');
+    const { buildTrustedAgentIdentity } = await import('../agent/agent-identity');
+    const config = await getSharedAgentConfigManager().getMainAgent(workspace.id);
+    if (!config?.id) throw new Error('无法解析 QQ 转发所需的可信主 Agent 身份');
+    return dispatcher.callTool(
+      workspace.id,
+      'send_chat',
+      { message: `[QQ] ${bridgeMsg.sender}: ${bridgeMsg.content}` },
+      buildTrustedAgentIdentity(config.id, config),
+    );
+  })().catch((err) => {
+    console.error('[QQBotIntegration] 转发消息到游戏失败:', err instanceof Error ? err.message : String(err));
+  });
 }
 
 function buildStatusReporter(): () => string {

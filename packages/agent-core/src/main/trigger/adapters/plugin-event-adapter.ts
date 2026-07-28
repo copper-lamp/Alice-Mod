@@ -26,13 +26,14 @@ export class PluginEventTriggerAdapter implements TriggerAdapter {
     }
 
     return {
-      id: generateEventId(),
+      id: payload.eventId || generateEventId(),
       type: payload.eventType,
       source: 'plugin_event',
       workspaceId: payload.workspaceId,
       timestamp: Date.now(),
       payload: {
         eventType: payload.eventType,
+        directTargetAgentId: payload.directTargetAgentId,
         entityId: payload.entityId,
         position: payload.position,
         data: payload.data ?? {},

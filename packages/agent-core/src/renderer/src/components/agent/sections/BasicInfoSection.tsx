@@ -8,6 +8,8 @@ interface BasicInfoSectionProps {
 }
 
 const BasicInfoSection: React.FC<BasicInfoSectionProps> = ({ name, skinData, onChange }) => {
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -27,36 +29,37 @@ const BasicInfoSection: React.FC<BasicInfoSectionProps> = ({ name, skinData, onC
       </TextField>
 
       <div>
-        <label className="text-xs text-gray-500 font-medium mb-1.5 block">皮肤 / 头像</label>
+        <label className="mb-1.5 block text-xs font-medium text-muted">皮肤 / 头像</label>
         <div className="flex items-center gap-4">
           {skinData ? (
-            <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-200">
-              <img src={skinData} alt="皮肤预览" className="w-full h-full object-cover" />
+            <div className="relative h-16 w-16 overflow-hidden rounded-lg border border-border">
+              <img src={skinData} alt="皮肤预览" className="h-full w-full object-cover" />
               <Button
                 isIconOnly
                 size="sm"
                 variant="ghost"
                 aria-label="移除头像"
                 onPress={() => onChange(name, undefined)}
-                className="absolute right-0.5 top-0.5 min-w-5 h-5 bg-foreground/60 text-background"
+                className="absolute right-0.5 top-0.5 h-5 min-w-5 bg-foreground/60 text-background"
               >
                 ×
               </Button>
             </div>
           ) : (
-            <div className="w-16 h-16 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 text-xs bg-gray-50/50">
+            <div className="flex h-16 w-16 items-center justify-center rounded-lg border-2 border-dashed border-border bg-surface-secondary/50 text-xs text-muted">
               无皮肤
             </div>
           )}
-          <label className="cursor-pointer px-3 py-1.5 text-xs text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors border border-blue-200">
+          <Button size="sm" variant="secondary" onPress={() => fileInputRef.current?.click()}>
             上传 .png 文件
-            <input
-              type="file"
-              accept=".png,image/png"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </label>
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".png,image/png"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
         </div>
       </div>
     </div>

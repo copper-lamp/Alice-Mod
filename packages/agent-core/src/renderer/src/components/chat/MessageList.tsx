@@ -44,7 +44,7 @@ const MessageList: React.FC<Props> = ({
 
   if (messages.length === 0 && !isStreaming) {
     return (
-      <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center text-gray-400 px-5">
+      <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center px-5 text-muted">
         <div className="text-center">
           <p className="text-base font-medium text-foreground">{emptyTitle}</p>
           <p className="text-sm mt-1 text-muted">{emptyDescription}</p>
@@ -64,7 +64,7 @@ const MessageList: React.FC<Props> = ({
         {/* 流式输出 - 按事件顺序渲染 */}
         {isStreaming && (
           <div className="mb-4">
-            <p className="text-[10px] text-gray-400 mb-1">
+            <p className="mb-1 text-[10px] text-muted">
               {new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
             </p>
 
@@ -87,10 +87,10 @@ const MessageList: React.FC<Props> = ({
                 const text = evt.data as string
                 const isLast = i === streamingEvents.length - 1
                 return text ? (
-                  <p key={i} className="text-sm text-gray-700 whitespace-pre-wrap break-words leading-relaxed mb-1">
+                  <p key={i} className="mb-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
                     {text}
                     {isLast && (
-                      <span className="inline-block w-1.5 h-4 bg-blue-500 animate-pulse ml-0.5 align-text-bottom" />
+                      <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground align-text-bottom" />
                     )}
                   </p>
                 ) : null

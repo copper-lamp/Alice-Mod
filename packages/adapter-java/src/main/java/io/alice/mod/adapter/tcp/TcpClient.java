@@ -459,6 +459,9 @@ public final class TcpClient {
             JsonObject callParams = new JsonObject();
             callParams.addProperty("tool_name", call.toolName());
             callParams.add("parameters", call.params());
+            for (var entry : call.trustedMetadata().entrySet()) {
+                callParams.add(entry.getKey(), entry.getValue());
+            }
 
             JsonRpcMessage.Request req = new JsonRpcMessage.Request(
                     JsonRpcId.of(-call.index()), "tool_call", callParams);
@@ -483,11 +486,21 @@ public final class TcpClient {
 
     /** 构建工具错误响应。 */
     private JsonElement buildToolError(String reason, String detail) {
+        JsonObject result = new JsonObject();
+        result.addProperty("success", false);
         JsonObject error = new JsonObject();
-        error.addProperty("success", false);
-        error.addProperty("error", reason);
-        error.addProperty("message", detail);
-        return error;
+        error.addProperty("reason", reason);
+        error.addProperty("detail", detail != null ? detail : "Unknown error");
+        result.add("error", error);
+        return result;
+    }
+
+    private static JsonObject copyTrustedMetadata(JsonObject params) {
+        JsonObject metadata = new JsonObject();
+        for (String key : List.of("agent_id", "bot_name", "bot_uuid")) {
+            if (params.has(key)) metadata.add(key, params.get(key).deepCopy());
+        }
+        return metadata;
     }
 
     /** 握手完成后的回调。 */
@@ -615,7 +628,8 @@ public final class TcpClient {
     // ---- 扩展：请求上下文记录 ----
 
     /** 批量调用中的一个工具调用。 */
-    private record BatchCall(int index, String toolName, JsonElement params, long timeoutMs) {}
+    private record BatchCall(int index, String toolName, JsonElement params, long timeoutMs,
+                             JsonObject trustedMetadata) {}
 
     // ---- 重连处理器 ----
 

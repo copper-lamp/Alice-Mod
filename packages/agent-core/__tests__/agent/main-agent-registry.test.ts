@@ -72,8 +72,9 @@ function buildRegistryDeps(opts: {
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      updateBotUuid: vi.fn().mockResolvedValue(true),
     } as unknown as AgentConfigManager,
-    toolRegistry: { getTools: () => [] } as unknown as ToolRegistry,
+    toolRegistry: { getTools: () => [], registerLocal: vi.fn() } as unknown as ToolRegistry,
     modelRouter: {} as IModelRouter,
     providerRegistry: {} as IProviderRegistry,
     connectionResolver: {} as ConnectionResolver,
@@ -84,6 +85,7 @@ function buildRegistryDeps(opts: {
     pipelineFactory: vi.fn().mockReturnValue({
       setDispatcher: vi.fn(),
       setCollector: vi.fn(),
+      use: vi.fn(),
     }),
     promptBuilderFactory: vi.fn().mockReturnValue({}),
     maxRounds: 5,

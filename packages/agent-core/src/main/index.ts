@@ -188,7 +188,7 @@ async function initializeServices(): Promise<void> {
   // 11. 设置 TCP 消息路由：工具注册 / 游戏聊天 / 插件事件
   tcpServerInstance.setMessageHandlerFactory((connectionId) => ({
     onNotification: (_clientId: string, notification: JsonRpcNotification) => {
-      handleTcpNotification(workspaceManager, notification, connectionId, logger)
+      void handleTcpNotification(workspaceManager, notification, connectionId, logger)
     },
     onRequest: async (_clientId: string, request: JsonRpcRequest): Promise<JsonRpcResponse | null> => {
       // 非 handshake/pong 的请求暂时不处理，返回方法未找到
@@ -315,12 +315,17 @@ async function initializeServices(): Promise<void> {
       db: dbManager.getDb(),
       actionDeps: {
         taskManager,
-        callTool: async (workspaceId, toolName, params) => {
+        callTool: async (workspaceId, agentId, toolName, params) => {
           const dispatcher = toolDispatcher
           if (!dispatcher) {
             throw new Error('ToolDispatcher 尚未初始化')
           }
-          return dispatcher.callTool(workspaceId, toolName, params)
+          const config = await getSharedAgentConfigManager().get(agentId)
+          if (!config || (config.workspaceId ?? '') !== workspaceId) {
+            throw new Error(`无法解析可信 Agent 身份: ${workspaceId}:${agentId}`)
+          }
+          const { buildTrustedAgentIdentity } = await import('./agent/agent-identity')
+          return dispatcher.callTool(workspaceId, toolName, params, buildTrustedAgentIdentity(agentId, config))
         },
         // V20：主链路 MainAgent 注入（trigger send_llm target='main'/'qq_sub_agent' 走此路径）
         mainAgentProvider: (p) => mainAgentRegistry.getSync(p.workspaceId, p.agentId),
@@ -409,12 +414,12 @@ async function initializeServices(): Promise<void> {
 /**
  * 处理 TCP 通知消息路由
  */
-function handleTcpNotification(
+async function handleTcpNotification(
   workspaceManager: ReturnType<typeof getWorkspaceManager>,
   notification: JsonRpcNotification,
   connectionId: string,
   logger: ReturnType<typeof getLogger>,
-): void {
+): Promise<void> {
   const workspace = workspaceManager.getWorkspaceByConnectionId(connectionId)
   const workspaceId = workspace?.id ?? ''
 
@@ -448,14 +453,36 @@ function handleTcpNotification(
       const params = notification.params as Record<string, unknown> | undefined
       if (!params) return
       try {
+        const eventType = typeof params.event_type === 'string' ? params.event_type : ''
+        const eventData = params.data && typeof params.data === 'object'
+          ? params.data as Record<string, unknown>
+          : {}
+        const eventId = typeof params.event_id === 'string'
+          ? params.event_id
+          : `${eventType}:${String(eventData.bot_uuid ?? eventData.bot_name ?? '')}:${String(eventData.timestamp ?? Date.now())}`
+        let directTargetAgentId: string | undefined
+        if (eventType === 'bot_death' || eventType === 'bot_respawn') {
+          const registry = getMainAgentRegistry()
+          try {
+            const routed = await registry.routeBotLifecycleEvent(workspaceId, {
+              id: eventId,
+              type: eventType,
+              timestamp: typeof eventData.timestamp === 'number' ? eventData.timestamp : Date.now(),
+              data: eventData,
+            })
+            directTargetAgentId = routed || undefined
+          } catch (error) {
+            logger.warn('TCP', `路由生命周期事件失败: ${(error as Error).message}`)
+          }
+        }
+
         const triggerModule = getTriggerModule()
-        // #region debug-point A:event-trigger-resolution
-        void fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'fake-bot-event-loop', runId: 'post-fix', hypothesisId: 'A', location: 'packages/agent-core/src/main/index.ts:448', msg: '[DEBUG] event resolved bundled TriggerModule', data: { workspaceId, eventType: params.event_type, triggerReady: Boolean(triggerModule) }, ts: Date.now() }) }).catch(() => {})
-        // #endregion
         triggerModule.handleRawEvent('plugin_event', {
           workspaceId,
+          eventId,
           eventType: params.event_type,
           data: params.data,
+          directTargetAgentId,
           entityId: params.entity_id,
           position: params.position,
         })

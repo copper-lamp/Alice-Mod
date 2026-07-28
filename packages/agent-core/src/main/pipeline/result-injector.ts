@@ -69,8 +69,12 @@ export class DefaultResultInjector implements IResultInjector {
       payload.data = result.data;
     }
 
-    if (result.error) {
-      payload.error = result.error;
+    if (result.error || result.errorCode || result.errorDetails) {
+      payload.error = {
+        reason: result.errorCode ?? 'UNKNOWN',
+        detail: result.error ?? 'Unknown error',
+        ...(result.errorDetails ? { details: result.errorDetails } : {}),
+      };
     }
 
     if (result.durationMs >= 0) {
