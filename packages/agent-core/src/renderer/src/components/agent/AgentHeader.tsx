@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Button, Chip, Switch, toast } from '@heroui/react'
+import { Button, Chip, toast } from '@heroui/react'
 import { Wifi, WifiOff } from 'lucide-react'
 import { agentApi } from '../../lib/ipc'
 import type { AgentConfig, AgentRuntimeStatus, AgentSummary } from '../../lib/types'
+import Toggle from '../ui/Toggle'
 
 interface Props {
   agent: AgentConfig
@@ -96,12 +97,10 @@ export default function AgentHeader({ agent, summary }: Props) {
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <Switch aria-label={`${enabled ? '禁用' : '启用'}智能体 ${agent.name}`} isSelected={enabled} isDisabled={enabledPending} onChange={set => void changeEnabled(set)}>
-          <Switch.Content>
-            <Switch.Control><Switch.Thumb /></Switch.Control>
-            <span className="text-sm">{enabled ? '启用中' : '已停用'}</span>
-          </Switch.Content>
-        </Switch>
+        <div className="flex items-center gap-2">
+          <Toggle selected={enabled} onChange={set => void changeEnabled(set)} disabled={enabledPending} label={`${enabled ? '禁用' : '启用'}智能体 ${agent.name}`} />
+          <span className="text-sm text-foreground">{enabled ? '启用中' : '已停用'}</span>
+        </div>
         <Button size="sm" variant="secondary" isPending={botPending} isDisabled={botPending} onPress={() => void controlBot()}>
           {botOnline ? <WifiOff size={14} /> : <Wifi size={14} />}
           {botPending ? '处理中' : botOnline ? '下线' : '上线'}

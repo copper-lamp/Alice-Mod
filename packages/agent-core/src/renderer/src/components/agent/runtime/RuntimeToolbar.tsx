@@ -1,6 +1,7 @@
-import { Button, Switch, ToggleButton, ToggleButtonGroup, Tooltip } from '@heroui/react'
+import { Button, ToggleButton, ToggleButtonGroup, Tooltip } from '@heroui/react'
 import { PanelRight, RefreshCw, Trash2 } from 'lucide-react'
 import type { AgentLogSource, AgentLogType } from '../../../lib/types'
+import Toggle from '../../ui/Toggle'
 
 interface Props {
   source: AgentLogSource
@@ -37,9 +38,8 @@ export default function RuntimeToolbar(props: Props) {
         ))}
       </ToggleButtonGroup>
       <div className="flex items-center gap-2">
-        <Switch aria-label="自动跟随最新日志" isSelected={props.autoFollow} onChange={props.onAutoFollowChange}>
-          <Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control><span className="text-sm">自动跟随</span></Switch.Content>
-        </Switch>
+        <Toggle selected={props.autoFollow} onChange={props.onAutoFollowChange} label="自动跟随最新日志" />
+        <span className="text-sm text-foreground">自动跟随</span>
         {props.source === 'qq' ? (
           <Tooltip>
             <Button isIconOnly size="sm" variant="ghost" aria-label="清空 QQ 历史" onPress={props.onClearQQ}><Trash2 size={15} /></Button>

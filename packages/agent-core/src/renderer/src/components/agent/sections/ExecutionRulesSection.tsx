@@ -1,5 +1,6 @@
 import React from 'react'
-import { Switch, Description } from '@heroui/react'
+import { Description } from '@heroui/react'
+import Toggle from '../../ui/Toggle'
 
 interface ExecutionRule {
   id: string
@@ -59,21 +60,13 @@ const ExecutionRulesSection: React.FC<ExecutionRulesSectionProps> = ({ rules, on
   return (
     <div className="space-y-2">
       {effectiveRules.map(rule => (
-        <Switch
-          key={rule.id}
-          isSelected={rule.enabled}
-          onChange={(val) => handleToggle(rule.id, val)}
-        >
-          <Switch.Content>
-            <Switch.Control>
-              <Switch.Thumb />
-            </Switch.Control>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-gray-700">{rule.name}</div>
-            </div>
-          </Switch.Content>
-          <Description>{rule.description}</Description>
-        </Switch>
+        <div key={rule.id} className="flex items-start gap-3 rounded-lg bg-surface px-3 py-2.5">
+          <Toggle selected={rule.enabled} onChange={(val) => handleToggle(rule.id, val)} label={rule.name} />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-foreground">{rule.name}</div>
+            <Description>{rule.description}</Description>
+          </div>
+        </div>
       ))}
     </div>
   )

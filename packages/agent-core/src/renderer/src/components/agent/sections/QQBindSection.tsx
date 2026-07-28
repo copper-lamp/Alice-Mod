@@ -1,6 +1,7 @@
 import React from 'react'
-import { Button, Chip, Select, ListBox, Switch } from '@heroui/react'
+import { Button, Chip, Select, ListBox } from '@heroui/react'
 import { useQQBotStore } from '../../../stores/qqBotStore'
+import Toggle from '../../ui/Toggle'
 
 interface QQBinding {
   enabled: boolean
@@ -63,17 +64,7 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
     <div className="space-y-4">
       {/* 启用开关 */}
       <div className="inline-flex items-center gap-2">
-        <Switch
-          aria-label="启用 QQ 绑定"
-          isSelected={binding.enabled}
-          onChange={(val) => handleToggleEnabled(val)}
-        >
-          <Switch.Content>
-            <Switch.Control>
-              <Switch.Thumb />
-            </Switch.Control>
-          </Switch.Content>
-        </Switch>
+        <Toggle selected={binding.enabled} onChange={handleToggleEnabled} label="启用 QQ 绑定" />
         <span className="select-none text-sm text-foreground">启用 QQ 绑定</span>
       </div>
 
@@ -172,17 +163,7 @@ const QQBindSection: React.FC<QQBindSectionProps> = ({ binding, onChange }) => {
           {/* V27: 仅 @ 触发 */}
           <div className="rounded-lg bg-surface-secondary/60 p-3">
             <div className="inline-flex items-center gap-2">
-              <Switch
-                aria-label="仅在群消息 @ 机器人时触发"
-                isSelected={binding.mentionOnly ?? false}
-                onChange={(val) => onChange({ ...binding, mentionOnly: val })}
-              >
-                <Switch.Content>
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
-                </Switch.Content>
-              </Switch>
+              <Toggle selected={binding.mentionOnly ?? false} onChange={(val) => onChange({ ...binding, mentionOnly: val })} label="仅 @ 触发" />
               <span className="select-none text-sm text-foreground">仅 @ 触发</span>
             </div>
             <p className="ml-11 mt-1 text-xs text-muted">

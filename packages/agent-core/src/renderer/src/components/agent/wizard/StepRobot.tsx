@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { Switch, Checkbox, Select, ListBox } from '@heroui/react'
+import { Checkbox, Select, ListBox } from '@heroui/react'
+import Toggle from '../../ui/Toggle'
 import { useWizardStore } from '../../../stores/wizardStore'
 import { useQQBotStore, type QQAccount } from '../../../stores/qqBotStore'
 
@@ -164,17 +165,8 @@ const StepRobot: React.FC = () => {
           {/* V27: 仅 @ 触发 */}
           <div className="pt-2 border-t border-gray-100">
             <div className="inline-flex items-center gap-2">
-              <Switch
-                isSelected={binding.mentionOnly ?? false}
-                onChange={(val) => updateQQBinding({ mentionOnly: val })}
-              >
-                <Switch.Content>
-                  <Switch.Control>
-                    <Switch.Thumb />
-                  </Switch.Control>
-                </Switch.Content>
-              </Switch>
-              <span className="text-sm text-gray-700 select-none">仅 @ 触发</span>
+              <Toggle selected={binding.mentionOnly ?? false} onChange={(val) => updateQQBinding({ mentionOnly: val })} label="仅 @ 触发" />
+              <span className="select-none text-sm text-foreground">仅 @ 触发</span>
             </div>
             <p className="text-xs text-gray-400 mt-1 ml-11">
               开启后仅处理 @ 机器人的群消息，其他消息将被忽略

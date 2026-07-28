@@ -7,7 +7,6 @@ import {
   ListBox,
   Modal,
   Select,
-  Switch,
   TextArea,
   TextField,
   toast,
@@ -165,16 +164,14 @@ const SkillList: React.FC<{
           const enabled = whitelist.length > 0 ? whitelist.includes(skill.name) : !(config.disabledSkills ?? []).includes(skill.name)
           return (
             <div key={skill.id} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2.5">
-              <Switch aria-label={`${labelPrefix}${skill.name}`} isSelected={enabled} onChange={() => {
+              <Toggle selected={enabled} onChange={() => {
                 if (whitelist.length > 0) {
                   onChange({ enabledSkills: enabled ? whitelist.filter(name => name !== skill.name) : [...whitelist, skill.name] })
                 } else {
                   const disabled = config.disabledSkills ?? []
                   onChange({ disabledSkills: enabled ? [...disabled, skill.name] : disabled.filter(name => name !== skill.name) })
                 }
-              }}>
-                <Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch.Content>
-              </Switch>
+              }} label={`${labelPrefix}${skill.name}`} />
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">{skill.name}</p>
                 <p className="truncate text-xs text-muted">{skill.description || '无描述'}</p>
