@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
+  Input,
   Label,
   ListBox,
   Modal,
@@ -25,6 +26,7 @@ import type {
   QQAgentSkillConfig,
   ToolInfo,
 } from '../../lib/types'
+import Toggle from '../ui/Toggle'
 import BasicInfoSection from './sections/BasicInfoSection'
 import QQBindSection from './sections/QQBindSection'
 import ScheduleSection from './sections/ScheduleSection'
@@ -108,7 +110,9 @@ function parsePersona(text: string, current: AgentPersona): AgentPersona {
   return result
 }
 
-const Section: React.FC<{ title: string; description: string; children: React.ReactNode; danger?: boolean }> = ({ title, description, children, danger }) => (
+/* ---------- 局部组件 ---------- */
+
+const SectionCard: React.FC<{ title: string; description: string; children: React.ReactNode; danger?: boolean }> = ({ title, description, children, danger }) => (
   <section className={`rounded-xl bg-surface-secondary/50 p-5 ${danger ? 'border border-danger/20' : ''}`}>
     <div className="mb-5">
       <h3 className={`text-base font-semibold ${danger ? 'text-danger' : 'text-foreground'}`}>{title}</h3>
@@ -140,29 +144,45 @@ const ModelSelect: React.FC<{
   </div>
 )
 
+const FollowSwitch: React.FC<{ label: string; selected: boolean; onChange: (v: boolean) => void }> = ({ label, selected, onChange }) => (
+  <div className="flex items-center gap-2">
+    <Toggle selected={selected} onChange={onChange} label={label} />
+    <span className="text-xs text-muted">{label}</span>
+  </div>
+)
+
 const SkillList: React.FC<{
   skills: SkillItem[]
   config: AgentSkillConfig
   onChange: (value: AgentSkillConfig) => void
   labelPrefix: string
 }> = ({ skills, config, onChange, labelPrefix }) => (
-  skills.length === 0 ? <p className="rounded-lg bg-surface p-4 text-center text-sm text-muted">暂无可用技能</p> :
-    <div className="space-y-2">
-      {skills.map(skill => {
-        const whitelist = config.enabledSkills ?? []
-        const enabled = whitelist.length > 0 ? whitelist.includes(skill.name) : !(config.disabledSkills ?? []).includes(skill.name)
-        return <div key={skill.id} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2.5">
-          <Switch aria-label={`${labelPrefix}${skill.name}`} isSelected={enabled} onChange={() => {
-            if (whitelist.length > 0) onChange({ enabledSkills: enabled ? whitelist.filter(name => name !== skill.name) : [...whitelist, skill.name] })
-            else {
-              const disabled = config.disabledSkills ?? []
-              onChange({ disabledSkills: enabled ? [...disabled, skill.name] : disabled.filter(name => name !== skill.name) })
-            }
-          }}><Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch.Content></Switch>
-          <div className="min-w-0"><p className="text-sm font-medium text-foreground">{skill.name}</p><p className="truncate text-xs text-muted">{skill.description || '无描述'}</p></div>
-        </div>
-      })}
-    </div>
+  skills.length === 0
+    ? <p className="rounded-lg bg-surface p-4 text-center text-sm text-muted">暂无可用技能</p>
+    : <div className="space-y-2">
+        {skills.map(skill => {
+          const whitelist = config.enabledSkills ?? []
+          const enabled = whitelist.length > 0 ? whitelist.includes(skill.name) : !(config.disabledSkills ?? []).includes(skill.name)
+          return (
+            <div key={skill.id} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2.5">
+              <Switch aria-label={`${labelPrefix}${skill.name}`} isSelected={enabled} onChange={() => {
+                if (whitelist.length > 0) {
+                  onChange({ enabledSkills: enabled ? whitelist.filter(name => name !== skill.name) : [...whitelist, skill.name] })
+                } else {
+                  const disabled = config.disabledSkills ?? []
+                  onChange({ disabledSkills: enabled ? [...disabled, skill.name] : disabled.filter(name => name !== skill.name) })
+                }
+              }}>
+                <Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch.Content>
+              </Switch>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">{skill.name}</p>
+                <p className="truncate text-xs text-muted">{skill.description || '无描述'}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
 )
 
 const ToolList: React.FC<{
@@ -170,21 +190,28 @@ const ToolList: React.FC<{
   enabledTools: Record<string, boolean>
   onChange: (value: Record<string, boolean>) => void
 }> = ({ tools, enabledTools, onChange }) => (
-  tools.length === 0 ? <p className="rounded-lg bg-surface p-4 text-center text-sm text-muted">暂无已注册工具，请先连接 Adapter Core</p> :
-    <div className="grid gap-2 sm:grid-cols-2">
-      {tools.map(tool => <div key={tool.name} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2.5">
-        <Switch aria-label={`QQ 工具 ${tool.displayName}`} isSelected={Boolean(enabledTools[tool.name])} onChange={() => onChange({ ...enabledTools, [tool.name]: !enabledTools[tool.name] })}>
-          <Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch.Content>
-        </Switch>
-        <div className="min-w-0"><p className="text-sm font-medium text-foreground">{tool.displayName}</p><p className="truncate text-xs text-muted">{tool.description}</p></div>
-      </div>)}
-    </div>
+  tools.length === 0
+    ? <p className="rounded-lg bg-surface p-4 text-center text-sm text-muted">暂无已注册工具，请先连接 Adapter Core</p>
+    : <div className="grid gap-2 sm:grid-cols-2">
+        {tools.map(tool => (
+          <div key={tool.name} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2.5">
+            <Toggle selected={Boolean(enabledTools[tool.name])} onChange={() => onChange({ ...enabledTools, [tool.name]: !enabledTools[tool.name] })} label={`工具 ${tool.displayName}`} />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">{tool.displayName}</p>
+              <p className="truncate text-xs text-muted">{tool.description}</p>
+            </div>
+          </div>
+        ))}
+      </div>
 )
 
+/* ---------- 主表单 ---------- */
+
 const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId, onDirtyChange, onDeleted }) => {
-  const { createAgent, fetchAgent, refreshAgents, currentAgent } = useAgentStore()
+  const { updateAgent, deleteAgent, fetchAgent, refreshAgents, currentAgent } = useAgentStore()
   const { models, fetchModels } = useModelStore()
   const { setLayoutMode, navigateToAgent, setActiveNav } = useUIStore()
+
   const [initialForm, setInitialForm] = useState<AgentConfig>(() => createDefaultConfig())
   const [form, setForm] = useState<AgentConfig>(() => createDefaultConfig())
   const [saving, setSaving] = useState(false)
@@ -202,21 +229,27 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId, onDirtyChang
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange])
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange])
 
+  /* ---------- 数据加载 ---------- */
+
   const loadTools = useCallback(async () => {
     setToolsLoading(true)
     try { setTools(await toolApi.listAll()) } catch { toast.danger('工具列表加载失败') } finally { setToolsLoading(false) }
   }, [])
 
-  useEffect(() => {
-    fetchModels()
-    loadTools()
-    memoryApi.list({ type: 'skill', limit: 100 }).then(result => setSkills((result.memories ?? []).map((memory: any) => {
-      const content = (memory.content as Record<string, unknown>) ?? {}
-      return { id: memory.id ?? '', name: String(content.name ?? ''), description: String(content.description ?? '') }
-    }))).catch(() => toast.danger('技能列表加载失败'))
-  }, [fetchModels, loadTools])
+  const loadSkills = useCallback(async () => {
+    try {
+      const result = await memoryApi.list({ type: 'skill', limit: 100 })
+      setSkills((result.memories ?? []).map((memory: any) => {
+        const content = (memory.content as Record<string, unknown>) ?? {}
+        return { id: memory.id ?? '', name: String(content.name ?? ''), description: String(content.description ?? '') }
+      }))
+    } catch { toast.danger('技能列表加载失败') }
+  }, [])
+
+  useEffect(() => { fetchModels(); loadTools(); loadSkills() }, [fetchModels, loadTools, loadSkills])
 
   useEffect(() => { if (agentId) fetchAgent(agentId) }, [agentId, fetchAgent])
+
   useEffect(() => {
     if (agentId && currentAgent?.id === agentId) {
       const normalized = normalizeConfig(currentAgent)
@@ -230,24 +263,20 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId, onDirtyChang
     }
   }, [agentId, currentAgent])
 
-  const updateField = <K extends keyof AgentConfig>(key: K, value: AgentConfig[K]) => setForm(previous => ({ ...previous, [key]: value }))
+  /* ---------- 更新操作 ---------- */
+
+  const updateField = <K extends keyof AgentConfig>(key: K, value: AgentConfig[K]) => setForm(prev => ({ ...prev, [key]: value }))
   const setModel = (key: 'mainModel' | 'qqBotModel' | 'compressionModel', value: ModelSelection) => updateField('llmConfig', { ...form.llmConfig, [key]: value })
 
   const handleSave = async () => {
+    if (!agentId) return
     setSaving(true); setError('')
     try {
-      if (agentId) {
-        const result = await window.electronAPI.invoke('agent:update', { id: agentId, config: cloneValue(form) }) as { success?: boolean; error?: string } | undefined
-        if (result && result.success === false) throw new Error(result.error || '保存失败')
-        await Promise.all([fetchAgent(agentId), refreshAgents()])
-        const saved = normalizeConfig(useAgentStore.getState().currentAgent ?? form)
-        setInitialForm(saved); setForm(cloneValue(saved))
-        toast.success('设置已保存')
-      } else {
-        const id = await createAgent(cloneValue(form))
-        if (!id) throw new Error('智能体创建失败')
-        setInitialForm(cloneValue(form)); navigateToAgent(id)
-      }
+      await updateAgent(agentId, cloneValue(form))
+      await Promise.all([fetchAgent(agentId), refreshAgents()])
+      const saved = normalizeConfig(useAgentStore.getState().currentAgent ?? form)
+      setInitialForm(saved); setForm(cloneValue(saved))
+      toast.success('设置已保存')
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : '保存失败'
       setError(message); toast.danger(message)
@@ -258,9 +287,7 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId, onDirtyChang
     if (!agentId) return
     setDeleting(true); setError('')
     try {
-      const result = await window.electronAPI.invoke('agent:delete', { id: agentId }) as { success?: boolean; error?: string } | undefined
-      if (result && result.success === false) throw new Error(result.error || '删除失败')
-      await refreshAgents()
+      await deleteAgent(agentId)
       deleteState.close(); onDirtyChange?.(false); onDeleted?.(); toast.success('智能体已删除')
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : '删除失败'
@@ -268,70 +295,285 @@ const AgentConfigForm: React.FC<AgentConfigFormProps> = ({ agentId, onDirtyChang
     } finally { setDeleting(false) }
   }
 
+  /* ---------- 派生值 ---------- */
+
   const qqTools = form.qqTools ?? { independent: false, enabledTools: {} }
   const qqSkills = form.qqSkills ?? { independent: false }
+  const canSave = Boolean(form.name.trim() && form.llmConfig.mainModel.modelId && form.schedule?.mode !== 'random')
 
-  return <div className="flex min-h-0 flex-1 flex-col bg-background">
-    <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-separator bg-background/95 px-6 py-3 backdrop-blur">
-      <div><h2 className="text-lg font-semibold text-foreground">统一设置</h2><p className="text-xs text-muted">{dirty ? '有未保存的修改' : '所有修改已保存'}</p></div>
-      <div className="flex gap-2">
-        <Button size="sm" variant="secondary" isDisabled={!dirty || saving} onPress={() => { setForm(cloneValue(initialForm)); setError('') }}>放弃修改</Button>
-        <Button size="sm" variant="primary" isPending={saving} isDisabled={saving || !dirty || form.schedule?.mode === 'random' || !form.name.trim() || !form.llmConfig.mainModel.modelId} onPress={handleSave}>保存更改</Button>
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
+      {/* 顶部操作栏 */}
+      <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-separator bg-background/95 px-6 py-3 backdrop-blur">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">智能体设置</h2>
+          <p className="text-xs text-muted">{dirty ? '有未保存的修改' : '所有修改已保存'}</p>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="secondary" isDisabled={!dirty || saving} onPress={() => { setForm(cloneValue(initialForm)); setError('') }}>
+            放弃修改
+          </Button>
+          <Button size="sm" variant="primary" isPending={saving} isDisabled={!dirty || saving || !canSave} onPress={handleSave}>
+            保存更改
+          </Button>
+        </div>
       </div>
-    </div>
 
-    <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-      <div className="mx-auto max-w-4xl space-y-6">
-        {error ? <Alert status="danger"><Alert.Content><Alert.Title>设置操作失败</Alert.Title><Alert.Description>{error}</Alert.Description></Alert.Content></Alert> : null}
+      {/* 表单内容 */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+        <div className="mx-auto max-w-4xl space-y-6">
+          {error ? (
+            <Alert status="danger">
+              <Alert.Content>
+                <Alert.Title>设置操作失败</Alert.Title>
+                <Alert.Description>{error}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          ) : null}
 
-        <Section title="基本与模型" description="设置智能体身份、头像和运行所使用的模型。">
-          <div className="space-y-5">
-            <BasicInfoSection name={form.name} skinData={form.skinData} onChange={(name, skinData) => setForm(value => ({ ...value, name, skinData }))} />
-            <div className="grid gap-4 md:grid-cols-2">
-              <ModelSelect label="主模型" value={form.llmConfig.mainModel} models={models} onChange={value => setModel('mainModel', value)} />
+          {/* ── 1. 基本与模型 ── */}
+          <SectionCard title="基本与模型" description="设置智能体名称、头像和运行所使用的模型。">
+            <div className="space-y-5">
+              <BasicInfoSection
+                name={form.name}
+                skinData={form.skinData}
+                onChange={(name, skinData) => setForm(v => ({ ...v, name, skinData }))}
+              />
+              <div className="grid gap-4 md:grid-cols-2">
+                <ModelSelect label="主模型" value={form.llmConfig.mainModel} models={models} onChange={v => setModel('mainModel', v)} />
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium text-foreground">压缩模型</span>
+                    <FollowSwitch label="跟随主模型" selected={form.llmConfig.compressionModel.sameAsMain ?? true} onChange={same => setModel('compressionModel', same ? emptyModel(true) : { ...form.llmConfig.compressionModel, sameAsMain: false })} />
+                  </div>
+                  {form.llmConfig.compressionModel.sameAsMain
+                    ? <p className="rounded-lg bg-surface p-3 text-sm text-muted">当前使用主模型</p>
+                    : <ModelSelect label="独立压缩模型" value={form.llmConfig.compressionModel} models={models} onChange={v => setModel('compressionModel', v)} />
+                  }
+                </div>
+              </div>
+              <Button size="sm" variant="ghost" onPress={() => { setLayoutMode('nav-view'); setActiveNav('model') }}>
+                添加模型
+              </Button>
+            </div>
+          </SectionCard>
+
+          {/* ── 2. 人设与系统提示词 ── */}
+          <SectionCard title="人设与系统提示词" description="配置智能体的身份描述、个性特征和系统提示词。">
+            <div className="space-y-5">
+              <TextField value={form.persona.identity} onChange={identity => updateField('persona', { ...form.persona, identity })}>
+                <Label>身份描述</Label>
+                <TextArea rows={3} placeholder="描述智能体的身份和角色定位…" />
+              </TextField>
+              <TextField value={form.persona.personality.join('\n')} onChange={v => updateField('persona', { ...form.persona, personality: v.split('\n').filter(Boolean) })}>
+                <Label>个性特征（每行一个）</Label>
+                <TextArea rows={3} placeholder="输入个性特征，每行一个…" />
+              </TextField>
               <div>
-                <div className="mb-2 flex items-center justify-between"><label className="text-sm font-medium text-foreground">压缩模型</label><Switch aria-label="压缩模型跟随主模型" isSelected={form.llmConfig.compressionModel.sameAsMain ?? true} onChange={same => setModel('compressionModel', same ? emptyModel(true) : { ...form.llmConfig.compressionModel, sameAsMain: false })}><Switch.Content><span className="text-xs text-muted">跟随主模型</span><Switch.Control><Switch.Thumb /></Switch.Control></Switch.Content></Switch></div>
-                {form.llmConfig.compressionModel.sameAsMain ? <p className="rounded-lg bg-surface p-3 text-sm text-muted">当前使用主模型</p> : <ModelSelect label="独立压缩模型" value={form.llmConfig.compressionModel} models={models} onChange={value => setModel('compressionModel', value)} />}
+                <h4 className="mb-2 text-sm font-medium text-foreground">系统提示词预览（只读）</h4>
+                <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-lg bg-surface p-4 text-xs text-foreground">
+                  {currentAgent?.compiledPrompt || '保存配置后将自动生成系统提示词'}
+                </pre>
               </div>
             </div>
-            <Button size="sm" variant="ghost" onPress={() => { setLayoutMode('nav-view'); setActiveNav('model') }}>添加模型</Button>
-          </div>
-        </Section>
+          </SectionCard>
 
-        <Section title="人设与能力" description="配置主智能体的人设、技能，并查看系统提示词。">
-          <div className="space-y-5">
-            <TextField value={form.persona.identity} onChange={identity => updateField('persona', { ...form.persona, identity })}><Label>身份描述</Label><TextArea rows={3} placeholder="描述智能体的身份和角色定位…" /></TextField>
-            <TextField value={form.persona.personality.join('\n')} onChange={value => updateField('persona', { ...form.persona, personality: value.split('\n').filter(Boolean) })}><Label>个性特征（每行一个）</Label><TextArea rows={3} /></TextField>
-            <div className="rounded-lg bg-surface p-4 text-sm text-muted">主工具已启用 <strong className="text-foreground">{Object.values(form.tools.enabledTools).filter(Boolean).length}</strong> 个</div>
-            <div><h4 className="mb-2 text-sm font-medium text-foreground">主技能</h4><SkillList skills={skills} config={form.skills ?? {}} onChange={value => updateField('skills', value)} labelPrefix="主技能 " /></div>
-            <div><h4 className="mb-2 text-sm font-medium text-foreground">主系统提示词（只读）</h4><pre className="max-h-72 overflow-y-auto whitespace-pre-wrap rounded-lg bg-surface p-4 text-xs text-foreground">{currentAgent?.compiledPrompt || '保存配置后将自动生成系统提示词'}</pre></div>
-          </div>
-        </Section>
-
-        <Section title="连接与自动化" description="统一管理 QQ 连接、独立能力与定时触发。">
-          <div className="space-y-7">
-            <QQBindSection binding={form.qqBinding} onChange={value => updateField('qqBinding', value)} />
-            <div className="grid gap-4 md:grid-cols-2">
-              <div><div className="mb-2 flex items-center justify-between"><h4 className="text-sm font-medium">QQ 模型</h4><Switch aria-label="QQ 模型跟随主模型" isSelected={form.llmConfig.qqBotModel.sameAsMain ?? true} onChange={same => setModel('qqBotModel', same ? emptyModel(true) : { ...form.llmConfig.qqBotModel, sameAsMain: false })}><Switch.Content><span className="text-xs text-muted">跟随主模型</span><Switch.Control><Switch.Thumb /></Switch.Control></Switch.Content></Switch></div>{form.llmConfig.qqBotModel.sameAsMain ? <p className="rounded-lg bg-surface p-3 text-sm text-muted">当前使用主模型</p> : <ModelSelect label="QQ 独立模型" value={form.llmConfig.qqBotModel} models={models} onChange={value => setModel('qqBotModel', value)} />}</div>
-              <div><div className="mb-2 flex items-center justify-between"><h4 className="text-sm font-medium">QQ 人设</h4><Switch aria-label="QQ 人设独立配置" isSelected={Boolean(form.qqPersona)} onChange={independent => updateField('qqPersona', independent ? cloneValue(form.persona) : undefined)}><Switch.Content><span className="text-xs text-muted">独立配置</span><Switch.Control><Switch.Thumb /></Switch.Control></Switch.Content></Switch></div><Button size="sm" variant="secondary" onPress={() => { setPromptText(formatPersona(form.qqPersona ?? form.persona)); setPromptRiskAccepted(false); promptState.open() }}>编辑 QQ 系统提示词</Button></div>
+          {/* ── 3. 工具与技能 ── */}
+          <SectionCard title="工具与技能" description="管理主智能体的工具和技能。">
+            <div className="space-y-5">
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <h4 className="text-sm font-medium text-foreground">主工具</h4>
+                  <span className="text-xs text-muted">已启用 {Object.values(form.tools.enabledTools).filter(Boolean).length} 个</span>
+                </div>
+                <ToolList
+                  tools={tools}
+                  enabledTools={form.tools.enabledTools}
+                  onChange={enabledTools => updateField('tools', { enabledTools })}
+                />
+              </div>
+              <div>
+                <h4 className="mb-2 text-sm font-medium text-foreground">主技能</h4>
+                <SkillList skills={skills} config={form.skills ?? {}} onChange={v => updateField('skills', v)} labelPrefix="主技能 " />
+              </div>
             </div>
+          </SectionCard>
 
-            <div><div className="mb-3 flex items-center justify-between"><div><h4 className="text-sm font-medium">QQ 工具</h4><p className="text-xs text-muted">默认跟随主智能体，可切换为独立配置。</p></div><div className="flex items-center gap-2"><Button isIconOnly size="sm" variant="ghost" aria-label="刷新 QQ 工具列表" isPending={toolsLoading} onPress={loadTools}><RefreshCw size={14} /></Button><Switch aria-label="QQ 工具独立配置" isSelected={qqTools.independent} onChange={independent => updateField('qqTools', independent ? { independent: true, enabledTools: { ...form.tools.enabledTools } } : { independent: false, enabledTools: {} })}><Switch.Content><span className="text-xs text-muted">独立配置</span><Switch.Control><Switch.Thumb /></Switch.Control></Switch.Content></Switch></div></div>{qqTools.independent ? <ToolList tools={tools} enabledTools={qqTools.enabledTools ?? {}} onChange={enabledTools => updateField('qqTools', { ...qqTools, enabledTools })} /> : <p className="rounded-lg bg-surface p-3 text-sm text-muted">当前跟随主智能体工具</p>}</div>
+          {/* ── 4. QQ 连接 ── */}
+          <SectionCard title="QQ 连接" description="配置 QQ 机器人绑定、模型、人设、工具和技能。">
+            <div className="space-y-6">
+              <QQBindSection binding={form.qqBinding} onChange={v => updateField('qqBinding', v)} />
 
-            <div><div className="mb-3 flex items-center justify-between"><div><h4 className="text-sm font-medium">QQ 技能</h4><p className="text-xs text-muted">默认跟随主智能体，可切换为独立配置。</p></div><Switch aria-label="QQ 技能独立配置" isSelected={qqSkills.independent} onChange={independent => updateField('qqSkills', independent ? { independent: true, enabledSkills: [...(form.skills?.enabledSkills ?? [])], disabledSkills: [...(form.skills?.disabledSkills ?? [])] } : { independent: false })}><Switch.Content><span className="text-xs text-muted">独立配置</span><Switch.Control><Switch.Thumb /></Switch.Control></Switch.Content></Switch></div>{qqSkills.independent ? <SkillList skills={skills} config={qqSkills} onChange={value => updateField('qqSkills', { independent: true, ...value } as QQAgentSkillConfig)} labelPrefix="QQ 技能 " /> : <p className="rounded-lg bg-surface p-3 text-sm text-muted">当前跟随主智能体技能</p>}</div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* QQ 模型 */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium text-foreground">QQ 模型</span>
+                    <FollowSwitch label="跟随主模型" selected={form.llmConfig.qqBotModel.sameAsMain ?? true} onChange={same => setModel('qqBotModel', same ? emptyModel(true) : { ...form.llmConfig.qqBotModel, sameAsMain: false })} />
+                  </div>
+                  {form.llmConfig.qqBotModel.sameAsMain
+                    ? <p className="rounded-lg bg-surface p-3 text-sm text-muted">当前使用主模型</p>
+                    : <ModelSelect label="QQ 独立模型" value={form.llmConfig.qqBotModel} models={models} onChange={v => setModel('qqBotModel', v)} />
+                  }
+                </div>
 
-            <div><h4 className="mb-1 text-sm font-medium">定时触发</h4><p className="mb-3 text-xs text-muted">需要先启用并绑定 QQ 账号。</p><ScheduleSection schedule={form.schedule} onChange={value => updateField('schedule', value)} /></div>
-          </div>
-        </Section>
+                {/* QQ 人设 */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium text-foreground">QQ 人设</span>
+                    <FollowSwitch label="独立配置" selected={Boolean(form.qqPersona)} onChange={independent => updateField('qqPersona', independent ? cloneValue(form.persona) : undefined)} />
+                  </div>
+                  <Button size="sm" variant="secondary" onPress={() => { setPromptText(formatPersona(form.qqPersona ?? form.persona)); setPromptRiskAccepted(false); promptState.open() }}>
+                    编辑 QQ 系统提示词
+                  </Button>
+                </div>
+              </div>
 
-        {agentId ? <Section title="危险操作" description="删除后无法恢复智能体及其配置。" danger><div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium text-foreground">删除智能体</p><p className="text-xs text-muted">此操作不可撤销。</p></div><Button size="sm" variant="danger" onPress={() => deleteState.open()}><Trash2 size={14} />删除智能体</Button></div></Section> : null}
+              {/* QQ 工具 */}
+              <div>
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-medium text-foreground">QQ 工具</h4>
+                    <p className="text-xs text-muted">默认跟随主智能体，可切换为独立配置。</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button isIconOnly size="sm" variant="ghost" aria-label="刷新工具列表" isPending={toolsLoading} onPress={loadTools}>
+                      <RefreshCw size={14} />
+                    </Button>
+                    <FollowSwitch label="独立配置" selected={qqTools.independent} onChange={independent => updateField('qqTools', independent ? { independent: true, enabledTools: { ...form.tools.enabledTools } } : { independent: false, enabledTools: {} })} />
+                  </div>
+                </div>
+                {qqTools.independent
+                  ? <ToolList tools={tools} enabledTools={qqTools.enabledTools ?? {}} onChange={enabledTools => updateField('qqTools', { ...qqTools, enabledTools })} />
+                  : <p className="rounded-lg bg-surface p-3 text-sm text-muted">当前跟随主智能体工具</p>
+                }
+              </div>
+
+              {/* QQ 技能 */}
+              <div>
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-medium text-foreground">QQ 技能</h4>
+                    <p className="text-xs text-muted">默认跟随主智能体，可切换为独立配置。</p>
+                  </div>
+                  <FollowSwitch label="独立配置" selected={qqSkills.independent} onChange={independent => {
+                    updateField('qqSkills', independent
+                      ? { independent: true, enabledSkills: [...(form.skills?.enabledSkills ?? [])], disabledSkills: [...(form.skills?.disabledSkills ?? [])] }
+                      : { independent: false })
+                  }} />
+                </div>
+                {qqSkills.independent
+                  ? <SkillList skills={skills} config={qqSkills} onChange={v => updateField('qqSkills', { independent: true, ...v } as QQAgentSkillConfig)} labelPrefix="QQ 技能 " />
+                  : <p className="rounded-lg bg-surface p-3 text-sm text-muted">当前跟随主智能体技能</p>
+                }
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* ── 5. 定时触发 ── */}
+          <SectionCard title="定时触发" description="配置智能体的定时任务调度。">
+            <ScheduleSection schedule={form.schedule} onChange={v => updateField('schedule', v)} />
+          </SectionCard>
+
+          {/* ── 6. 危险操作 ── */}
+          {agentId ? (
+            <SectionCard title="危险操作" description="删除后无法恢复智能体及其配置。" danger>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-foreground">删除智能体</p>
+                  <p className="text-xs text-muted">此操作不可撤销。</p>
+                </div>
+                <Button size="sm" variant="danger" onPress={() => deleteState.open()}>
+                  <Trash2 size={14} />删除智能体
+                </Button>
+              </div>
+            </SectionCard>
+          ) : null}
+        </div>
       </div>
+
+      {/* ── Modal：编辑 QQ 系统提示词 ── */}
+      <Modal state={promptState}>
+        <div />
+        <Modal.Backdrop>
+          <Modal.Container size="lg">
+            <Modal.Dialog>
+              {() => (
+                <>
+                  <Modal.Header>
+                    <Modal.Icon className="bg-warning-soft text-warning-soft-foreground">
+                      <AlertTriangle size={16} />
+                    </Modal.Icon>
+                    <Modal.Heading>编辑 QQ 系统提示词</Modal.Heading>
+                  </Modal.Header>
+                  <Modal.Body>
+                    {!promptRiskAccepted ? (
+                      <div className="rounded-lg bg-warning-soft p-4 text-sm text-warning-soft-foreground">
+                        <p className="font-medium">修改风险提示</p>
+                        <p className="mt-1 text-xs">
+                          不当修改可能导致 QQ 智能体行为异常。应用后只写入当前表单，仍需点击"保存更改"才会持久化。
+                        </p>
+                        <Button className="mt-4" size="sm" variant="secondary" onPress={() => setPromptRiskAccepted(true)}>
+                          我已了解风险，继续编辑
+                        </Button>
+                      </div>
+                    ) : (
+                      <TextField value={promptText} onChange={setPromptText}>
+                        <Label>系统提示词</Label>
+                        <TextArea rows={18} className="font-mono" />
+                      </TextField>
+                    )}
+                  </Modal.Body>
+                  <Modal.Footer>
+                    <Button size="sm" variant="secondary" onPress={() => promptState.close()}>取消</Button>
+                    <Button size="sm" variant="primary" isDisabled={!promptRiskAccepted} onPress={() => {
+                      updateField('qqPersona', parsePersona(promptText, form.qqPersona ?? form.persona))
+                      promptState.close()
+                    }}>
+                      应用到表单
+                    </Button>
+                  </Modal.Footer>
+                </>
+              )}
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
+
+      {/* ── Modal：确认删除 ── */}
+      <Modal state={deleteState}>
+        <div />
+        <Modal.Backdrop>
+          <Modal.Container size="xs">
+            <Modal.Dialog>
+              {() => (
+                <>
+                  <Modal.Header>
+                    <Modal.Icon className="bg-danger-soft text-danger-soft-foreground">
+                      <AlertTriangle size={16} />
+                    </Modal.Icon>
+                    <Modal.Heading>确认删除智能体</Modal.Heading>
+                  </Modal.Header>
+                  <Modal.Body>
+                    <p className="text-sm text-muted">
+                      确定删除 <strong className="text-foreground">{form.name}</strong>？此操作不可恢复。
+                    </p>
+                    {error
+                      ? <p role="alert" className="mt-3 rounded-lg bg-danger-soft p-3 text-sm text-danger-soft-foreground">{error}</p>
+                      : null}
+                  </Modal.Body>
+                  <Modal.Footer>
+                    <Button size="sm" variant="secondary" isDisabled={deleting} onPress={() => deleteState.close()}>取消</Button>
+                    <Button size="sm" variant="danger" isPending={deleting} isDisabled={deleting} onPress={handleDelete}>确认删除</Button>
+                  </Modal.Footer>
+                </>
+              )}
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
     </div>
-
-    <Modal state={promptState}><div /><Modal.Backdrop><Modal.Container size="lg"><Modal.Dialog>{() => <><Modal.Header><Modal.Icon className="bg-warning-soft text-warning-soft-foreground"><AlertTriangle size={16} /></Modal.Icon><Modal.Heading>编辑 QQ 系统提示词</Modal.Heading></Modal.Header><Modal.Body>{!promptRiskAccepted ? <div className="rounded-lg bg-warning-soft p-4 text-sm text-warning-soft-foreground"><p className="font-medium">修改风险提示</p><p className="mt-1 text-xs">不当修改可能导致 QQ 智能体行为异常。应用后只写入当前表单，仍需点击“保存更改”才会持久化。</p><Button className="mt-4" size="sm" variant="secondary" onPress={() => setPromptRiskAccepted(true)}>我已了解风险，继续编辑</Button></div> : <TextField value={promptText} onChange={setPromptText}><Label>系统提示词</Label><TextArea rows={18} className="font-mono" /></TextField>}</Modal.Body><Modal.Footer><Button size="sm" variant="secondary" onPress={() => promptState.close()}>取消</Button><Button size="sm" variant="primary" isDisabled={!promptRiskAccepted} onPress={() => { updateField('qqPersona', parsePersona(promptText, form.qqPersona ?? form.persona)); promptState.close() }}>应用到表单</Button></Modal.Footer></>}</Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>
-
-    <Modal state={deleteState}><div /><Modal.Backdrop><Modal.Container size="xs"><Modal.Dialog>{() => <><Modal.Header><Modal.Icon className="bg-danger-soft text-danger-soft-foreground"><AlertTriangle size={16} /></Modal.Icon><Modal.Heading>确认删除智能体</Modal.Heading></Modal.Header><Modal.Body><p className="text-sm text-muted">确定删除 <strong className="text-foreground">{form.name}</strong>？此操作不可恢复。</p>{error ? <p role="alert" className="mt-3 rounded-lg bg-danger-soft p-3 text-sm text-danger-soft-foreground">{error}</p> : null}</Modal.Body><Modal.Footer><Button size="sm" variant="secondary" isDisabled={deleting} onPress={() => deleteState.close()}>取消</Button><Button size="sm" variant="danger" isPending={deleting} isDisabled={deleting} onPress={handleDelete}>确认删除</Button></Modal.Footer></>}</Modal.Dialog></Modal.Container></Modal.Backdrop></Modal>
-  </div>
+  )
 }
 
 export default AgentConfigForm

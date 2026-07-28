@@ -968,13 +968,21 @@ interface IpcMutationResult<T = undefined> {
 ### 实际执行记录（2026-07-28）
 
 * 已完成智能体详情页“运行 / 设置”单层结构、统一日志、运行摘要、统一设置草稿及未保存导航保护的迁移。
+
 * 已检查 `AgentHeader`、`AgentInstanceView`、`AgentConfigForm`、`agent/runtime/*`、`MessageList`、`MessageBubble`，并同步收敛日志直接依赖的 `ThinkingBlock`、`ToolCallBlock`：移除本次页面中的 `gray-* / blue-* / green-* / red-* / yellow-*` 与十六进制状态色，改用 `foreground / muted / default / surface-secondary / separator / success / warning / danger` 等 HeroUI 语义 token。
+
 * 同类交互统一使用 HeroUI v3：普通操作采用 `Button` 的 `primary / secondary / ghost / danger`，状态采用 `Chip soft`，开关采用 `Switch`，持续错误采用 `Alert`，确认交互采用 `Modal`；思考和工具调用折叠入口由原生按钮改为 HeroUI `Button`。
+
 * 减少消息和工具结果中的描边，使用灰白语义背景与间距建立层次。
+
 * 全库检索确认无外部引用后，删除 `components/agent/QQPanel.tsx`、`QQChatPanel.tsx`、`QQConfigForm.tsx` 和 `components/layout/RightSidebar.tsx`；QQ 日志、配置、定时及运行摘要能力已由新页面组件承载。
+
 * 静态检查：VS Code diagnostics 无错误；旧组件名称在正式源码组件目录中无残留引用；本次页面目标组件中无上述颜色硬编码和原生折叠按钮残留。
+
 * `pnpm --filter @mcagent/agent-core typecheck`：通过。
+
 * `pnpm --filter @mcagent/agent-core build`：通过；仅保留既有动态/静态导入分块提示与 HarmonyOS Sans SC 字体运行时解析提示。
+
 * `pnpm --filter @mcagent/agent-core test`：未通过，共 76 个测试文件中 66 个通过、10 个失败；1125 项测试中 1019 项通过、26 项失败、80 项跳过，并有 2 个未处理错误。失败集中在 Java/AC 联合集成环境，包括 `127.0.0.1:27541` 端口占用及 Minecraft 方块挖掘/放置等 E2E 场景，与本次渲染层样式收敛和旧组件删除无直接关联，未在本次最小改动范围内修改。
 
 ## 四、实施约束
