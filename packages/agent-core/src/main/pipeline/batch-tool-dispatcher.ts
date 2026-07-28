@@ -25,6 +25,7 @@ import type {
 } from './types';
 import type { ConnectionResolver } from '../agent/connection-resolver';
 import type { JsonRpcResponse, JsonRpcSuccessResponse } from '@mcagent/shared';
+import { identityProtocolFields, type TrustedAgentIdentity } from '../agent/agent-identity';
 
 /**
  * 类型守卫：判断 JsonRpcResponse 是否为错误响应。
@@ -44,16 +45,26 @@ interface JeBatchCall {
 }
 
 /** JE 侧 tool_call_batch 单个 call 的响应形状（裸数组元素） */
+interface StructuredToolError {
+  reason?: string;
+  detail?: string;
+  details?: Record<string, unknown>;
+  suggestion?: string;
+}
+
 interface JeBatchCallResponse {
   success?: boolean;
   message?: string;
-  error?: string;
+  error?: string | StructuredToolError;
   data?: unknown;
   duration_ms?: number;
 }
 
 export class BatchToolDispatcher implements IToolDispatcher {
-  constructor(private readonly resolver: ConnectionResolver) {}
+  constructor(
+    private readonly resolver: ConnectionResolver,
+    private readonly identity: TrustedAgentIdentity,
+  ) {}
 
   async executeBatch(batch: ScheduledBatch, workspaceId: string): Promise<BatchExecuteResult> {
     // 1. 解析连接（NotConnectedError 若离线）
@@ -67,7 +78,10 @@ export class BatchToolDispatcher implements IToolDispatcher {
     }));
 
     // 3. 发 request，等响应（batch 层超时 + 5s 网络余量）
-    const resp = await conn.sendRequestAndAwait('tool_call_batch', { calls: jeCalls }, {
+    const resp = await conn.sendRequestAndAwait('tool_call_batch', {
+      ...identityProtocolFields(this.identity),
+      calls: jeCalls,
+    }, {
       timeoutMs: batch.timeoutMs + 5_000,
     });
 
@@ -100,13 +114,15 @@ export class BatchToolDispatcher implements IToolDispatcher {
     const results: ToolCallResult[] = batch.calls.map((c, i) => {
       const r = (arr[i] ?? {}) as JeBatchCallResponse;
       const isErr = r.success === false;
+      const structuredError = typeof r.error === 'object' && r.error !== null ? r.error : undefined;
       return {
         id: c.id,
         toolName: c.params.tool_name,
         success: !isErr,
         data: isErr ? undefined : (r.data as Record<string, unknown> | undefined) ?? {},
-        error: isErr ? (r.message ?? r.error ?? 'unknown') : undefined,
-        errorCode: isErr ? (r.error ?? 'UNKNOWN') : undefined,
+        error: isErr ? (structuredError?.detail ?? r.message ?? (typeof r.error === 'string' ? r.error : 'unknown')) : undefined,
+        errorCode: isErr ? (structuredError?.reason ?? (typeof r.error === 'string' ? r.error : 'UNKNOWN')) : undefined,
+        errorDetails: isErr ? structuredError?.details : undefined,
         durationMs: typeof r.duration_ms === 'number' ? r.duration_ms : 0,
       };
     });

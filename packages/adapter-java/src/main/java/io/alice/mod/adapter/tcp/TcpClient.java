@@ -365,7 +365,8 @@ public final class TcpClient {
             String toolName = call.has("tool_name") ? call.get("tool_name").getAsString() : "unknown";
             JsonElement callParams = call.has("parameters") ? call.get("parameters") : new JsonObject();
             long timeoutMs = call.has("timeout_ms") ? call.get("timeout_ms").getAsLong() : 30000;
-            batchCalls.add(new BatchCall(i, toolName, callParams, timeoutMs));
+            batchCalls.add(new BatchCall(i, toolName, callParams, timeoutMs,
+                    copyTrustedMetadata(params)));
         }
 
         // 分析依赖关系并执行

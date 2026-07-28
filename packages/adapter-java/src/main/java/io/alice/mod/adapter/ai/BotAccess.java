@@ -28,6 +28,7 @@ public final class BotAccess {
     private static MinecraftServer server;
     private static PathfindingService pathfindingService;
     private static TaskRunner taskRunner;
+    private static final ThreadLocal<ServerPlayer> CALL_TARGET = new ThreadLocal<>();
 
     private BotAccess() {}
 
@@ -71,6 +72,8 @@ public final class BotAccess {
      * @return 假人实例，或 null（如果没有在线假人）
      */
     public static ServerPlayer getBot() {
+        ServerPlayer callTarget = CALL_TARGET.get();
+        if (callTarget != null) return callTarget;
         io.alice.mod.adapter.bot.BotManager mgr = WorldContextManager.isActive()
                 ? WorldContextManager.getActive().getBotManager() : null;
         if (mgr == null) {
@@ -95,6 +98,20 @@ public final class BotAccess {
         io.alice.mod.adapter.bot.BotManager mgr = WorldContextManager.isActive()
                 ? WorldContextManager.getActive().getBotManager() : null;
         return mgr != null ? mgr.findByName(botName) : null;
+    }
+
+    public static Scope withCallTarget(ServerPlayer player) {
+        ServerPlayer previous = CALL_TARGET.get();
+        CALL_TARGET.set(player);
+        return () -> {
+            if (previous != null) CALL_TARGET.set(previous);
+            else CALL_TARGET.remove();
+        };
+    }
+
+    @FunctionalInterface
+    public interface Scope extends AutoCloseable {
+        @Override void close();
     }
 
     /**

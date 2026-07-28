@@ -2,6 +2,7 @@ package io.alice.mod.adapter.world;
 
 import io.alice.mod.adapter.bot.BotEventDispatcher;
 import io.alice.mod.adapter.bot.BotManager;
+import io.alice.mod.adapter.bot.BotRepository;
 import io.alice.mod.adapter.config.AlicePaths;
 import io.alice.mod.adapter.config.ConfigManager;
 import io.alice.mod.adapter.entry.InstanceFileGenerator;
@@ -324,11 +325,35 @@ public class WorldContext {
                 ? params.get("tool_name").getAsString()
                 : "unknown";
 
-        LOG.info("Tool call: tool={}, world='{}'", toolName, identity.worldName());
-
-        // 解析参数（修复：原代码三元两支都返回 Map.of()，导致所有参数丢失）
+        // 解析参数（业务 parameters 中的身份字段不参与授权）
         JsonElement paramsElement = params.get("parameters");
         Map<String, Object> args = parseJsonArgs(paramsElement);
+
+        TrustedTarget target;
+        try {
+            target = resolveTrustedTarget(params);
+        } catch (IllegalArgumentException e) {
+            respond.accept(request.id(), buildToolResponse(
+                    ToolResult.fail("BOT_ACCESS_DENIED", e.getMessage()), 0));
+            LOG.warn("Tool call denied: tool={}, world='{}', reason={}",
+                    toolName, identity.worldName(), e.getMessage());
+            return;
+        }
+
+        LOG.info("Tool call: tool={}, agent={}, bot={} ({}), world='{}'", toolName,
+                target.agentId(), target.botName(), target.botUuid(), identity.worldName());
+
+        if (!isStateTool(toolName) && !botManager.isAlive(target.botUuid())) {
+            BotManager.LifecycleState state = botManager.getLifecycleState(target.botUuid());
+            ToolResult dead = ToolResult.fail("BOT_DEAD",
+                    "Bot '" + target.botName() + "' is dead and waiting to respawn",
+                    Map.of("bot_name", target.botName(),
+                            "state", state.name().toLowerCase(java.util.Locale.ROOT),
+                            "respawn_in_ticks", botManager.getRespawnInTicks(target.botUuid())));
+            respond.accept(request.id(), buildToolResponse(dead, 0));
+            logToolCall(toolName, paramsElement, dead, 0, target);
+            return;
+        }
 
         // 查找并执行工具
         AliceTool tool = ToolRegistry.get(toolName);
@@ -349,8 +374,11 @@ public class WorldContext {
         // 异步执行工具，带超时
         ToolResult result;
         try {
-            result = CompletableFuture.supplyAsync(() -> tool.invoke(args))
-                    .get(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            result = CompletableFuture.supplyAsync(() -> {
+                try (BotAccess.Scope ignored = BotAccess.withCallTarget(target.player())) {
+                    return tool.invoke(args);
+                }
+            }).get(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
             long duration = System.currentTimeMillis() - start;
             LOG.warn("Tool '{}' timed out after {}s", toolName, TOOL_TIMEOUT_SECONDS);
@@ -381,19 +409,7 @@ public class WorldContext {
 
         long duration = System.currentTimeMillis() - start;
 
-        // 记录工具执行日志（V11）
-        if (databaseManager.isInitialized()) {
-            try {
-                databaseManager.toolLogs().insert(new ToolLogRepository.ToolLogEntry(
-                        0, toolName,
-                        paramsElement != null ? paramsElement.toString() : "{}",
-                        result.success(), result.message(), duration,
-                        identity.worldName(), identity.instanceId(), "", null
-                ));
-            } catch (Exception e) {
-                LOG.warn("Failed to log tool call: tool={}", toolName, e);
-            }
-        }
+        logToolCall(toolName, paramsElement, result, duration, target);
 
         JsonObject response = buildToolResponse(result, duration);
 
@@ -450,6 +466,62 @@ public class WorldContext {
 
         return response;
     }
+
+    private TrustedTarget resolveTrustedTarget(JsonObject params) {
+        String agentId = requiredString(params, "agent_id");
+        String botName = requiredString(params, "bot_name");
+        String botUuidText = requiredString(params, "bot_uuid");
+        AgentConfig config = agentConfigs.stream()
+                .filter(candidate -> agentId.equals(candidate.agentId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Unknown agent_id: " + agentId));
+        if (!botName.equals(config.botName())) {
+            throw new IllegalArgumentException("bot_name is not assigned to agent " + agentId);
+        }
+        UUID botUuid;
+        try {
+            botUuid = UUID.fromString(botUuidText);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid bot_uuid", e);
+        }
+        UUID repositoryUuid = BotRepository.get(server).findByName(botName);
+        if (!botUuid.equals(repositoryUuid)) {
+            throw new IllegalArgumentException("bot_uuid does not match the configured bot");
+        }
+        EntityPlayerMPFake player = botManager.get(botUuid);
+        if (player == null || !botName.equals(player.getName().getString())) {
+            throw new IllegalArgumentException("Configured bot is not online");
+        }
+        return new TrustedTarget(agentId, botName, botUuid, player);
+    }
+
+    private static String requiredString(JsonObject params, String key) {
+        if (!params.has(key) || !params.get(key).isJsonPrimitive()
+                || params.get(key).getAsString().isBlank()) {
+            throw new IllegalArgumentException("Missing trusted " + key);
+        }
+        return params.get(key).getAsString();
+    }
+
+    private static boolean isStateTool(String toolName) {
+        return "bot_info".equals(toolName) || "bot_list".equals(toolName);
+    }
+
+    private void logToolCall(String toolName, JsonElement paramsElement, ToolResult result,
+                             long duration, TrustedTarget target) {
+        if (!databaseManager.isInitialized()) return;
+        try {
+            databaseManager.toolLogs().insert(new ToolLogRepository.ToolLogEntry(
+                    0, toolName, paramsElement != null ? paramsElement.toString() : "{}",
+                    result.success(), result.message(), duration,
+                    identity.worldName(), identity.instanceId(), target.botName(), target.botUuid()));
+        } catch (Exception e) {
+            LOG.warn("Failed to log tool call: tool={}, bot={}", toolName, target.botName(), e);
+        }
+    }
+
+    private record TrustedTarget(String agentId, String botName, UUID botUuid,
+                                 EntityPlayerMPFake player) {}
 
     // ---- 世界在线通知 ---- //
 

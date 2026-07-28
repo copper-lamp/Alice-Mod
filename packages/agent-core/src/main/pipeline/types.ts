@@ -106,6 +106,7 @@ export interface ToolResultContent {
   data?: Record<string, unknown>;
   error?: string;
   errorCode?: string;
+  errorDetails?: Record<string, unknown>;
   durationMs: number;
   /** 兜底标记 */
   resolvedByFallback?: boolean;
