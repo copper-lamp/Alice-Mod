@@ -235,7 +235,7 @@ export class PromptCompiler {
       if (!wm) return [];
       const toolRegistry = wm.getToolRegistry();
       if (!toolRegistry) return [];
-      return toolRegistry.getTools(workspaceId);
+      return toolRegistry.getLocalTools(workspaceId);
     } catch {
       // ToolRegistry 未就绪时返回空列表
       return [];

@@ -17,8 +17,16 @@ import type {
   AgentSummary,
   AgentConfig,
   ModelConfigItem,
-  UpdateInfo
+  UpdateInfo,
+  IpcMutationResult,
+  AgentRuntimeStatus,
+  AgentLogSource
 } from './types'
+
+function unwrapMutation<T>(result: IpcMutationResult<T>, fallback: string): T | undefined {
+  if (!result.success) throw new Error(result.error || fallback)
+  return result.data
+}
 
 /** IPC 调用封装 - 对话 */
 export const chatApi = {

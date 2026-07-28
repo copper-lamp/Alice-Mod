@@ -55,7 +55,10 @@ export class PromptBuilder implements IPromptBuilder {
 
   // 上次构建的缓存 key，用于判断缓存命中
   private lastCacheKey: string | null = null;
-  private toolRegistry: { getTools(workspaceId: string): ToolSchema[] };
+  private toolRegistry: {
+    getTools(workspaceId: string): ToolSchema[];
+    getLocalTools?(workspaceId: string): ToolSchema[];
+  };
 
   constructor(config?: PromptBuilderConfig) {
     this.profile = config?.profile ?? DEFAULT_AGENT_PROFILE;
@@ -71,10 +74,14 @@ export class PromptBuilder implements IPromptBuilder {
   async build(params: BuildParams): Promise<PromptBuildResult> {
     this.stats.totalBuilds++;
 
-    // 1. 合并自定义片段到 profile 中
+    const includeFragments = params.includeFragments !== false;
+
+    // 1. 按构建选项合并自定义片段到 profile 中
     const mergedProfile: AgentProfile = {
       ...this.profile,
-      fragments: [...this.profile.fragments, ...this.customFragments],
+      fragments: includeFragments
+        ? [...this.profile.fragments, ...this.customFragments]
+        : [],
     };
 
     // 1b. 从 extraContext 注入用户配置（V19 新增）
@@ -86,9 +93,9 @@ export class PromptBuilder implements IPromptBuilder {
     if (params.systemOverride) {
       systemPrompt = params.systemOverride;
       // 追加 system_end 位置的自定义片段
-      const endFragments = this.customFragments.filter(
-        f => f.enabled && f.position === 'system_end',
-      );
+      const endFragments = includeFragments
+        ? this.customFragments.filter(f => f.enabled && f.position === 'system_end')
+        : [];
       for (const fragment of endFragments) {
         const rendered = this.templateEngine.render(fragment.template, {
           agent: this.profile,
@@ -112,8 +119,12 @@ export class PromptBuilder implements IPromptBuilder {
     }
 
     // 1c. V22：注入区域 7（任务进展）和区域 8（当前技能）
-    const progressText = params.extraContext?.progress as string | undefined;
-    const skillsText = params.extraContext?.skills as string | undefined;
+    const progressText = includeFragments
+      ? params.extraContext?.progress as string | undefined
+      : undefined;
+    const skillsText = includeFragments
+      ? params.extraContext?.skills as string | undefined
+      : undefined;
     if (progressText) {
       systemPrompt += '\n\n## 任务进展\n' + progressText;
       systemHash = this.hashString(systemPrompt);
@@ -127,6 +138,7 @@ export class PromptBuilder implements IPromptBuilder {
     // 从 extraContext 获取 agent 指定的禁用工具列表
     const excludeTools = params.extraContext?.excludeTools as string[] | undefined;
     const tools = await this.assembler.assemble(params.workspaceId, {
+      toolScope: params.toolScope ?? 'all',
       groupByCategory: true,
       verbosity: this.profile.preferences.verbosity >= 2 ? 'detailed' : 'standard',
       excludeTools,
@@ -156,10 +168,11 @@ export class PromptBuilder implements IPromptBuilder {
     this.updateHitRate();
 
     // 6. 处理 before_tools / after_tools 片段（添加到工具说明区域）
-    const beforeToolsFragments = this.getAllFragments().filter(
+    const fragments = includeFragments ? this.getAllFragments() : [];
+    const beforeToolsFragments = fragments.filter(
       f => f.enabled && f.position === 'before_tools',
     );
-    const afterToolsFragments = this.getAllFragments().filter(
+    const afterToolsFragments = fragments.filter(
       f => f.enabled && f.position === 'after_tools',
     );
 

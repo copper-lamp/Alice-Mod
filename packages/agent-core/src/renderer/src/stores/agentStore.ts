@@ -1,11 +1,13 @@
 import { create } from 'zustand'
 import type { AgentSummary, AgentConfig } from '../lib/types'
+import { agentApi } from '../lib/ipc'
 
 interface AgentState {
   agents: AgentSummary[]
   currentAgentId: string | null
   currentAgent: AgentConfig | null
   loading: boolean
+  error: string | null
 
   setCurrentAgentId: (id: string | null) => void
   refreshAgents: () => Promise<void>
@@ -20,34 +22,48 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   currentAgentId: null,
   currentAgent: null,
   loading: false,
+  error: null,
 
-  setCurrentAgentId: (id) => set({ currentAgentId: id }),
+  setCurrentAgentId: (id) => set({
+    currentAgentId: id,
+    currentAgent: null,
+    loading: id !== null,
+    error: null
+  }),
 
   refreshAgents: async () => {
     try {
-      const list = await window.electronAPI.invoke('agent:list') as AgentSummary[]
+      const list = await agentApi.list()
       set({ agents: list })
     } catch {
-      // ignore
+      // 列表刷新失败时保留已有摘要
     }
   },
 
   fetchAgent: async (id) => {
-    set({ loading: true })
+    set({ loading: true, error: null })
     try {
-      const config = await window.electronAPI.invoke('agent:get', { id }) as AgentConfig | null
-      set({ currentAgent: config, loading: false })
-    } catch {
-      set({ loading: false })
+      const config = await agentApi.get(id)
+      if (get().currentAgentId === id) {
+        set({ currentAgent: config, loading: false })
+      }
+    } catch (error) {
+      if (get().currentAgentId === id) {
+        set({
+          currentAgent: null,
+          loading: false,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
     }
   },
 
   createAgent: async (config) => {
     try {
-      const result = await window.electronAPI.invoke('agent:create', config) as { id: string; success: boolean }
+      const result = await agentApi.create(config)
       if (result.success) {
         await get().refreshAgents()
-        set({ currentAgentId: result.id })
+        get().setCurrentAgentId(result.id)
       }
       return result.id
     } catch {
@@ -56,24 +72,19 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   updateAgent: async (id, config) => {
-    try {
-      await window.electronAPI.invoke('agent:update', { id, config })
-      await get().fetchAgent(id)
-    } catch {
-      // ignore
-    }
+    await agentApi.update(id, config)
+    await Promise.all([
+      get().refreshAgents(),
+      get().currentAgentId === id ? get().fetchAgent(id) : Promise.resolve()
+    ])
   },
 
   deleteAgent: async (id) => {
-    try {
-      await window.electronAPI.invoke('agent:delete', { id })
-      const { currentAgentId } = get()
-      set({
-        currentAgentId: currentAgentId === id ? null : currentAgentId
-      })
-      await get().refreshAgents()
-    } catch {
-      // ignore
+    await agentApi.delete(id)
+    const isCurrentAgent = get().currentAgentId === id
+    if (isCurrentAgent) {
+      set({ currentAgentId: null, currentAgent: null, loading: false, error: null })
     }
+    await get().refreshAgents()
   }
 }))

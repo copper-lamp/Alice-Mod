@@ -554,26 +554,13 @@ export class MainAgent {
         }
       }
 
-      // V28: 兼容旧数据 — 惰性编译 QQ 提示词并回填
-      if (event.source === 'qq' && !this.deps.agentConfig.qqCompiledPrompt) {
-        try {
-          const { PromptCompiler } = await import('../prompt/compiler/prompt-compiler');
-          const qqCompiled = PromptCompiler.compileQQ(this.deps.agentConfig);
-          this.deps.agentConfig.qqCompiledPrompt = qqCompiled;
-          // 异步回填到数据库（不阻塞推理）
-          const { getSharedAgentConfigManager } = await import('../ipc/agent-handler');
-          getSharedAgentConfigManager().updateCompiledPrompt(this.deps.agentId, undefined, qqCompiled).catch(err =>
-            console.warn(`[MainAgent] QQ 提示词惰性编译回填失败 ${this.deps.agentId}:`, err),
-          );
-        } catch {
-          // 回退到动态组装
-        }
+      // QQ 提示词按当前 local tools 规则在每次 QQ 请求开始时重新编译。
+      // 不回写数据库，避免旧 qqCompiledPrompt 污染，也避免每轮工具调用重复写库。
+      let effectiveSystemPrompt = this.deps.agentConfig.compiledPrompt ?? undefined;
+      if (event.source === 'qq') {
+        const { PromptCompiler } = await import('../prompt/compiler/prompt-compiler');
+        effectiveSystemPrompt = PromptCompiler.compileQQ(this.deps.agentConfig);
       }
-
-      // V28 FIX: QQ 来源时使用 qqCompiledPrompt（与主 Agent 完全独立的提示词）
-      const effectiveSystemPrompt = (event.source === 'qq' && this.deps.agentConfig.qqCompiledPrompt)
-        ? this.deps.agentConfig.qqCompiledPrompt
-        : (this.deps.agentConfig.compiledPrompt ?? undefined);
 
       const buildParams: BuildParams = {
         workspaceId: this.deps.workspaceId,
@@ -583,13 +570,14 @@ export class MainAgent {
         state: event.source === 'qq' ? { skip: true, health: 0, hunger: 0, saturation: 0, position: { x: 0, y: 0, z: 0, dimension: '' }, statusEffects: [] } : this.getPlaceholderPlayerState(),
         source: toBuildSource(event.source),
         // V26: 优先使用预编译提示词，避免运行时动态组装
-        // V28 FIX: QQ 来源时自动使用 qqCompiledPrompt
         systemOverride: effectiveSystemPrompt,
+        toolScope: event.source === 'qq' ? 'local' : 'all',
+        includeFragments: event.source !== 'qq',
         extraContext: {
           excludeTools,
-          // V22：透传 Orchestrator 注入的进展状态与技能文本
-          progress: event.metadata?.progress,
-          skills: event.metadata?.skills,
+          // QQ 来源不继承主 Agent 的进展状态与技能文本
+          progress: event.source === 'qq' ? undefined : event.metadata?.progress,
+          skills: event.source === 'qq' ? undefined : event.metadata?.skills,
         },
         // V23：从 metadata 中透传 peerContext（QQ Agent 在 handleQQMessage 中注入）
         peerContext: event.metadata?.peerContext as BuildParams['peerContext'] | undefined,

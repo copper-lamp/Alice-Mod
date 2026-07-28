@@ -94,7 +94,34 @@ export type LayoutMode = 'nav-view' | 'agent-view' | 'agent-create'
 export type NavPanelType = 'dashboard' | 'model' | 'knowledge' | 'robot'
 
 /** 智能体实例 Tab */
-export type AgentViewTab = 'info' | 'config' | 'qq'
+export type AgentViewTab = 'runtime' | 'settings'
+
+/** 存在未保存设置时暂存的导航目标 */
+export type PendingAgentNavigation =
+  | { type: 'tab'; tab: AgentViewTab }
+  | { type: 'agent'; agentId: string }
+  | { type: 'layout'; layoutMode: LayoutMode }
+
+/** 智能体运行页日志来源 */
+export type AgentLogSource = 'all' | 'game' | 'qq'
+
+/** 智能体运行页日志类型 */
+export type AgentLogType = 'all' | 'message' | 'tool' | 'system'
+
+/** IPC mutation 统一结果 */
+export interface IpcMutationResult<T = undefined> {
+  success: boolean
+  data?: T
+  error?: string
+}
+
+/** 智能体运行时状态 */
+export interface AgentRuntimeStatus {
+  status: string
+  qqStatus: 'connected' | 'connecting' | 'disconnected' | string
+  botOnline?: boolean
+  roundLimit?: number
+}
 
 /** 仪表盘统计数据 */
 export interface DashboardStats {
