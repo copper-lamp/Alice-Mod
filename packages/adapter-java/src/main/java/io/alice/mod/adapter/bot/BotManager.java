@@ -284,6 +284,7 @@ public final class BotManager {
         String deathMessage = body.getCombatTracker().getDeathMessage().getString();
 
         BotEventDispatcher.fireDeath(name, uuid, deathMessage);
+        unregisterBot(body);
         body.setHealth(body.getMaxHealth());
         pendingRespawns.put(uuid, srv.overworld().getGameTime());
 
@@ -368,6 +369,11 @@ public final class BotManager {
         for (UUID uuid : ready) {
             try {
                 BotRepository.Entry repoEntry = BotRepository.get(server).find(uuid);
+                // #region debug-point C:death-respawn-state
+                try {
+                    java.net.http.HttpClient.newHttpClient().sendAsync(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://127.0.0.1:7777/event")).POST(java.net.http.HttpRequest.BodyPublishers.ofString(String.format("{\"sessionId\":\"fake-bot-event-loop\",\"runId\":\"pre-fix-lifecycle\",\"hypothesisId\":\"C\",\"location\":\"BotManager.java:368\",\"msg\":\"[DEBUG] death respawn state\",\"data\":{\"uuid\":\"%s\",\"trackedInBots\":%s,\"repoEntryFound\":%s},\"ts\":%d}", uuid, bots.containsKey(uuid), repoEntry != null, System.currentTimeMillis()))).build(), java.net.http.HttpResponse.BodyHandlers.discarding());
+                } catch (Exception ignored) {}
+                // #endregion
                 if (repoEntry != null) {
                     ServerLevel level = DimensionResolver.resolve(server, repoEntry.dimension());
                     if (level == null) level = server.overworld();

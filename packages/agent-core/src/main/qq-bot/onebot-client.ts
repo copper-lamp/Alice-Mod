@@ -362,6 +362,7 @@ export class OneBotClient {
 
     // 事件推送
     if (parsed.post_type === 'message') {
+      if (String(parsed.user_id) === String(parsed.self_id)) return;
       const qqMsg = this.toQQMessage(parsed);
       this.messageHandlers.forEach(h => h(qqMsg));
     } else if (parsed.post_type === 'notice') {

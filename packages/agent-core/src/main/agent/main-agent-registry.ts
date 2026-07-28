@@ -57,7 +57,7 @@ import { getWorkspaceManager } from '../workspace';
 /** qq_send 工具定义 */
 const QQ_SEND_TOOL_SCHEMA_LOCAL: ToolSchema = {
   name: 'qq_send',
-  description: '发送 QQ 消息，支持群消息、私聊、图片、文件、内置表情、表情组六种方式。当需要向 QQ 群或用户发送消息时使用此工具。回复用户消息时必须使用此工具。',
+  description: '发送 QQ 消息，支持群消息、私聊、图片、文件、内置表情、表情组六种方式。回复 QQ 用户必须使用此工具，普通文本输出不会作为 QQ 回复发送；一次回复内容只调用并发送一次。成功后若任务已完成应停止调用工具并结束，仅在仍有未完成查询或操作时继续。',
   category: ToolCategory.QQ,
   parameters: {
     type: { type: 'string', description: '发送类型：group_msg=发送到群聊（回复群消息时用）, private_msg=发送私聊（回复私聊时用）, image=发送图片, file=发送文件, face=发送指定内置表情（需填 face_id）, sticker=发送表情组（系统随机选，需填 sticker_group）', required: true } as ParamDefinition,
@@ -452,7 +452,7 @@ export class MainAgentRegistry {
               toolCallId: call.toolCallId,
               toolName: 'qq_send',
               success: true,
-              data: { message: '消息已加入发送队列（去重，实际未发送）' },
+              data: { message: '相同内容已经记录/加入发送队列，无需再次发送；若任务已完成则停止调用工具并结束，若仍有未完成查询/操作才继续' },
               durationMs: Date.now() - startTime,
             } as any);
             continue;
@@ -472,7 +472,7 @@ export class MainAgentRegistry {
             toolCallId: call.toolCallId,
             toolName: 'qq_send',
             success: true,
-            data: { message: '消息已加入发送队列' },
+            data: { message: '消息已经记录/加入发送队列，无需再次发送相同内容；若任务已完成则停止调用工具并结束，若仍有未完成查询/操作才继续' },
             durationMs: Date.now() - startTime,
           } as any);
         }

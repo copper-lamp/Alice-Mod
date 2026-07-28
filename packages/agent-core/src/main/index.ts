@@ -18,7 +18,7 @@ import { MemoryManager, DEFAULT_MEMORY_CONFIG } from './memory'
 import type { MemoryBranch } from './memory/types'
 import { TaskManager, setTaskManager } from './task'
 import { SQLiteStore } from './memory/sqlite-store'
-import { TriggerModule, setTriggerModule } from './trigger'
+import { TriggerModule, getTriggerModule, setTriggerModule } from './trigger'
 import { initQQBotIntegration } from './qq-bot/integration'
 import { autoStartQQBotAccounts } from './ipc/qq-bot-handler'
 import { updater } from './updater'
@@ -436,8 +436,7 @@ function handleTcpNotification(
       const params = notification.params as Record<string, unknown> | undefined
       if (!params) return
       try {
-        const { getTriggerModule } = require('./trigger')
-        const triggerModule = getTriggerModule() as TriggerModule
+        const triggerModule = getTriggerModule()
         triggerModule.handleRawEvent('game_chat', { ...params, workspaceId })
       } catch (err) {
         logger.warn('TCP', `转发 game_chat 事件失败: ${(err as Error).message}`)
@@ -449,8 +448,10 @@ function handleTcpNotification(
       const params = notification.params as Record<string, unknown> | undefined
       if (!params) return
       try {
-        const { getTriggerModule } = require('./trigger')
-        const triggerModule = getTriggerModule() as TriggerModule
+        const triggerModule = getTriggerModule()
+        // #region debug-point A:event-trigger-resolution
+        void fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'fake-bot-event-loop', runId: 'post-fix', hypothesisId: 'A', location: 'packages/agent-core/src/main/index.ts:448', msg: '[DEBUG] event resolved bundled TriggerModule', data: { workspaceId, eventType: params.event_type, triggerReady: Boolean(triggerModule) }, ts: Date.now() }) }).catch(() => {})
+        // #endregion
         triggerModule.handleRawEvent('plugin_event', {
           workspaceId,
           eventType: params.event_type,

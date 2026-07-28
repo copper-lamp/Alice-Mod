@@ -185,6 +185,27 @@ describe('OneBotClient', () => {
     expect(msg.userName).toBe('测试用户');
   });
 
+  it('机器人自身消息不应触发 handler', async () => {
+    await client.connect();
+
+    const handler = vi.fn();
+    client.onMessage(handler);
+
+    (client as any).handleRawMessage(JSON.stringify({
+      post_type: 'message',
+      message_type: 'group',
+      group_id: 123,
+      user_id: 789,
+      message: [{ type: 'text', data: { text: '机器人发出的消息' } }],
+      raw_message: '机器人发出的消息',
+      sender: { nickname: '机器人' },
+      time: Date.now(),
+      self_id: 789,
+    }));
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it('应触发私聊消息事件', async () => {
     await client.connect();
 

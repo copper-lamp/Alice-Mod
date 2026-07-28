@@ -196,8 +196,10 @@ export class PromptCompiler {
     // 通用工具使用规则
     lines.push('### 工具使用规则');
     lines.push('【务必遵守】');
-    lines.push('- 回复用户消息时，**必须**使用 qq_send 工具发送，不能直接输出文本作为回复');
-    lines.push('- 如果需要查询游戏信息（状态、坐标、背包等），使用 request_game_action 工具');
+    lines.push('- 回复 QQ 用户时，**必须**使用 qq_send 工具发送；普通文本不会作为 QQ 回复发送，最终可直接结束生成');
+    lines.push('- 一次回复内容只发送一次；qq_send 成功后不要再次发送相同内容');
+    lines.push('- qq_send 成功后，若任务已完成则停止调用工具并结束；仅在仍有未完成查询或操作时继续');
+    lines.push('- 如果涉及游戏内相关操作，使用 request_game_action 工具，让游戏内的你去完成');
     lines.push('- 如果需要查询互联网信息，使用 web_search 搜索，然后用 web_fetch 读取具体页面');
     lines.push('- 如果需要查询 Minecraft Wiki（合成表、方块、生物等），先 wiki_search 搜索，再 wiki_get_page 获取详情');
     lines.push('- **一次只调用一个工具**，等待工具返回结果后再决定下一步');
@@ -259,7 +261,9 @@ export class PromptCompiler {
    - 参数：description（描述）, priority（normal=普通/high=紧急）
 
 ### 工具使用规则
-- 回复用户消息时，**必须**使用 qq_send 工具发送，不能直接输出文本
+- 回复 QQ 用户时，**必须**使用 qq_send 工具发送；普通文本不会作为 QQ 回复发送，最终可直接结束生成
+- 一次回复内容只发送一次；qq_send 成功后不要再次发送相同内容
+- qq_send 成功后，若任务已完成则停止调用工具并结束；仅在仍有未完成查询或操作时继续
 - 如果你需要查询游戏信息，使用 request_game_action 工具
 - 如果你需要查询 QQ 群信息，使用 qq_info 工具
 - 一次只能调用一个工具，等待工具返回结果后再决定下一步
